@@ -129,6 +129,11 @@ jobs:
         with:
           name: fresh-qwen-two-task-checkpoint
           path: artifacts/recovered
+      - name: Check exact restored archive layout
+        run: |
+          test -f artifacts/recovered/fresh-loop/checkpoint.json
+          test -f artifacts/recovered/fresh-loop/result.json
+          test -f artifacts/recovered/gguf-7b-fresh-pilot-provenance.json
       - name: Prefetch disposable Docker image
         run: docker pull python:3.11-slim
       - name: Reconstruct model patches and independently rerun Docker controls
@@ -138,12 +143,12 @@ jobs:
           python3 scripts/bounded_qwen_autonomous_worker.py verify \
             --root . \
             --head-sha "$REVIEW_SHA" \
-            --checkpoint artifacts/recovered/checkpoint.json \
-            --report artifacts/recovered/replay.json
+            --checkpoint artifacts/recovered/fresh-loop/checkpoint.json \
+            --report artifacts/recovered/fresh-loop/replay.json
           python3 - <<'PY'
           import json
           from pathlib import Path
-          r=json.loads(Path("artifacts/recovered/replay.json").read_text())
+          r=json.loads(Path("artifacts/recovered/fresh-loop/replay.json").read_text())
           assert r["status"]=="fresh_two_model_patches_replayed"
           assert r["sandbox_patches"]==2
           assert r["queue_ci_attested"]==0
@@ -157,6 +162,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: fresh-qwen-two-task-recovery
-          path: artifacts/recovered/replay.json
+          path: artifacts/recovered/fresh-loop/replay.json
           if-no-files-found: warn
           retention-days: 7
