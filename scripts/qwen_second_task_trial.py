@@ -309,7 +309,10 @@ def benchmark(model, cli, gguf, metadata, root=Path("."), timeout=150):
             or meta.get("quantization") != "Q4_K_M"
             or sha256_file(gguf) != meta.get("sha256")):
         raise ValueError("untrusted official model provenance")
-    inference = CPUInference(model, cli, gguf, timeout_seconds=timeout)
+    # Explicit opt-in only for this constrained two-literal coding task.
+    # All output still faces the unchanged strict expression AST and Docker gates.
+    inference = CPUInference(model, cli, gguf, timeout_seconds=timeout,
+                             escape_quoted_controls=True)
     begin = time.perf_counter()
     state = trial(root, inference)
     state.update({
