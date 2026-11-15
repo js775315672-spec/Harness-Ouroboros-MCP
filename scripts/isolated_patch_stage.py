@@ -21,10 +21,10 @@ def stage_patch(response,source):
             if original.is_symlink() or staged.is_symlink():raise ValueError("symlink patch target denied")
             if original.exists() and not original.is_file():raise ValueError("nonfile patch target denied")
             if not staged.resolve().is_relative_to(target.resolve()):raise ValueError("path escapes workspace")
-        result=subprocess.run(["git","apply","--check","--no-index","-"],input=response["patch"],
+        result=subprocess.run(["git","apply","--check","-"],input=response["patch"],
                               text=True,cwd=target,capture_output=True,timeout=10)
         if result.returncode:raise ValueError("patch does not apply cleanly")
-        applied=subprocess.run(["git","apply","--no-index","-"],input=response["patch"],
+        applied=subprocess.run(["git","apply","-"],input=response["patch"],
                                text=True,cwd=target,capture_output=True,timeout=10)
         if applied.returncode:raise ValueError("patch application failed")
         return {"status":"staged_in_disposable_copy","files":inspection["files"],
