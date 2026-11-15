@@ -19,14 +19,12 @@ TASK={
 def prepare():
     contract=validate_task(TASK)
     prompt=(
-        "You are proposing a minimal change to a Python repository. "
-        "Return ONLY a unified git diff, no Markdown fences or explanation. "
-        "Do not execute code or request secrets. "
-        "Change exactly tests/test_model_feedback_loop.py, NOT scripts/model_feedback_loop.py. "
-        "Fix the EXISTING test_reject_multiple_fences assignment so it produces actual newline characters at runtime instead of literal backslash-n. "
-        "Replace ONLY that one line, without changing the method name or other code. "
-        "Return precisely six lines: diff --git header, --- marker, +++ marker, @@ one-line hunk header, one original - line, one corrected + line. "
-        "No extra files, hunks, prose or code fences. End with newline. If unable, output REJECT."
+        "Fix only the answer assignment in the existing "
+        "tests/test_model_feedback_loop.py test_reject_multiple_fences. "
+        "The string currently uses literal backslash-n; the corrected "
+        "Python assignment must evaluate to actual newline characters. "
+        "Output one complete answer= assignment line. "
+        "Never generate a diff, additional files, code execution or secrets."
     )
     return {"task":TASK,"contract":contract,"prompt":prompt,
             "model_called":False,"patch_applied":False,
