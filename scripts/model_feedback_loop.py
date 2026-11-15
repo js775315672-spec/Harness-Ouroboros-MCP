@@ -10,12 +10,30 @@ import re
 from pathlib import Path
 
 def extract_code(answer):
+    """Extract exactly one fenced Python code block, rejecting ambiguous fences."""
+    if len(answer)>4000:
+        raise ValueError("model response exceeds 4000 characters")
     answer=answer.strip()
-    match=re.fullmatch(r"```(?:python)?\s*\n(.*?)\n```",answer,re.S)
-    return match.group(1) if match else answer
+    fence=r"```(?:python|py)?[ \\t]*\\n([\\s\\S]*?)\\n```"
+    matches=list(re.finditer(fence,answer,re.I))
+    if not matches:
+        if "```" in answer:
+            raise ValueError("malformed code fence")
+        return answer
+    if len(matches)!=1 or answer.count("```")!=2:
+        raise ValueError("ambiguous or multiple code fences")
+    before=answer[:matches[0].start()]
+    after=answer[matches[0].end():]
+    # Explanatory prose is permitted, but no un-fenced Python statements.
+    for prose in (before,after):
+        if re.search(r"(?m)^\\s*(?:import |from |def |class |@|exec\\(|eval\\()",prose):
+            raise ValueError("executable-looking text outside code fence")
+    return matches[0].group(1)
+
 
 def verify_addition(answer):
-    code=extract_code(answer)
+    try: code=extract_code(answer)
+    except ValueError as exc:return False,str(exc)
     if len(code)>2000:return False,"output exceeds 2000 characters"
     try: tree=ast.parse(code)
     except SyntaxError as exc:return False,"syntax error: "+str(exc)
