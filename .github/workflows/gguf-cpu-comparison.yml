@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
           python scripts/harness_check.py
-      - name: Compile pinned llama.cpp CPU runner (no CUDA or CURL)
+      - name: Compile pinned llama-completion CPU runner (no CUDA or CURL)
         run: |
           set -euo pipefail
           mkdir -p vendor/llama.cpp
@@ -49,8 +49,8 @@ jobs:
           cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
             -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
             -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
-          cmake --build vendor/llama.cpp/build --config Release --target llama-cli -j 4
-          test -x vendor/llama.cpp/build/bin/llama-cli
+          cmake --build vendor/llama.cpp/build --config Release --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
       - name: Download official Apache-2.0 Qwen GGUF Q4_K_M with pinned model revision
         run: |
           python -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
@@ -64,7 +64,7 @@ jobs:
         run: |
           python scripts/gguf_cpu_benchmark.py \
             --model 0.5b \
-            --cli vendor/llama.cpp/build/bin/llama-cli \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
             --gguf models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
             --download-metadata artifacts/gguf-05-provenance.json \
             --timeout-seconds 150 \
@@ -116,7 +116,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
           python scripts/harness_check.py
-      - name: Compile pinned llama.cpp CPU runner (no CUDA or CURL)
+      - name: Compile pinned llama-completion CPU runner (no CUDA or CURL)
         run: |
           set -euo pipefail
           mkdir -p vendor/llama.cpp
@@ -128,8 +128,8 @@ jobs:
           cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
             -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
             -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
-          cmake --build vendor/llama.cpp/build --config Release --target llama-cli -j 4
-          test -x vendor/llama.cpp/build/bin/llama-cli
+          cmake --build vendor/llama.cpp/build --config Release --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
       - name: Download official Apache-2.0 Qwen GGUF Q4_K_M with pinned model revision
         run: |
           python -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
@@ -143,7 +143,7 @@ jobs:
         run: |
           python scripts/gguf_cpu_benchmark.py \
             --model 1.5b \
-            --cli vendor/llama.cpp/build/bin/llama-cli \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
             --gguf models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
             --download-metadata artifacts/gguf-15-provenance.json \
             --timeout-seconds 150 \
