@@ -16,9 +16,11 @@ import time
 try:
     from .gguf_output_boundary import extract_completion
     from .qwen_chatml_prompt import format_chatml
+    from .qwen_control_literal_boundary import escape_quoted_control_bytes
 except ImportError:
     from gguf_output_boundary import extract_completion
     from qwen_chatml_prompt import format_chatml
+    from qwen_control_literal_boundary import escape_quoted_control_bytes
 
 MODELS = {
     "0.5b": {
@@ -95,11 +97,15 @@ def sha256_file(path):
 
 
 class CPUInference:
-    def __init__(self, model, cli, gguf, timeout_seconds=150):
+    def __init__(self, model, cli, gguf, timeout_seconds=150,
+                 escape_quoted_controls=False):
         self.spec, self.cli, self.gguf = verify_paths(model, cli, gguf)
         if type(timeout_seconds) is not int or not 10 <= timeout_seconds <= 240:
             raise ValueError("invalid bounded inference timeout")
+        if type(escape_quoted_controls) is not bool:
+            raise ValueError("invalid narrow control-byte policy")
         self.timeout_seconds = timeout_seconds
+        self.escape_quoted_controls = escape_quoted_controls
         self.calls = []
 
     def generate(self, prompt):
@@ -132,13 +138,17 @@ class CPUInference:
         elapsed = round(time.perf_counter() - before, 3)
         if output.returncode != 0:
             raise ValueError("llama-cli returned nonzero status")
+        cleaned_stdout, controls_escaped = (
+            escape_quoted_control_bytes(output.stdout)
+            if self.escape_quoted_controls else (output.stdout, 0))
         raw, marker_stripped = extract_completion(
-            output.stdout, max_output_bytes=MAX_OUTPUT_BYTES)
+            cleaned_stdout, max_output_bytes=MAX_OUTPUT_BYTES)
         self.calls.append({
             "elapsed_seconds": elapsed,
             "prompt_template": "qwen2.5-chatml-v1",
             "stdout_sha256": hashlib.sha256(output.stdout.encode("utf-8")).hexdigest(),
             "terminal_marker_stripped": marker_stripped,
+            "quoted_control_bytes_escaped": controls_escaped,
             "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
             "response_chars": len(raw),
             "peak_child_rss_kib": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
