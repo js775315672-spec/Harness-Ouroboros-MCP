@@ -1,0 +1,1 @@
+One-shot opt-in experiment: Qwen2.5-0.5B-Instruct CPU inference in GitHub Actions. No API key, no model output execution, no merge.
