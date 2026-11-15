@@ -1,4 +1,5 @@
 import importlib.util,json,sys,tempfile,unittest,subprocess
+from unittest.mock import patch
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"))
@@ -19,6 +20,11 @@ class BridgeTests(unittest.TestCase):
         self.initialize()
         response=self.request("tools/call",{"name":"harness.evaluate","arguments":{}})
         self.assertFalse(response["result"]["isError"])
+    def test_git_failure_returns_tool_error(self):
+        self.initialize()
+        with patch('mcp_bridge.evaluate_gates',side_effect=subprocess.CalledProcessError(1,['git'])):
+            response=self.request('tools/call',{'name':'harness.evaluate','arguments':{}})
+        self.assertTrue(response['result']['isError'])
     def test_unknown_tool(self):
         self.initialize()
         self.assertEqual(self.request("tools/call",{"name":"run","arguments":{}})["error"]["code"],-32602)
