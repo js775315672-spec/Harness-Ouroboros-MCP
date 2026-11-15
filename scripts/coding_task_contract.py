@@ -48,7 +48,7 @@ def validate_task(task):
     if not isinstance(tests,list) or not 1<=len(tests)<=5:
         raise ValueError("acceptance tests required")
     for name in tests:
-        if not isinstance(name,str) or not re.fullmatch(r"tests/test_[a-zA-Z0-9_]+\\.py",name):
+        if not isinstance(name,str) or not re.fullmatch(r"tests/test_[a-zA-Z0-9_]+\.py",name):
             raise ValueError("acceptance tests must be test files")
         if name not in paths:
             raise ValueError("acceptance test must be within allowed_files")
