@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""One-shot real Qwen proposal for a scoped repository test change.
-
-Runs public CPU model weights in CI. Generated text is data only: never
-executed, applied, committed or merged. Rejection is recorded as evidence.
-"""
+"""Bounded Qwen repository patch proposals: no execution, application or merge."""
+import ast
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 try:
@@ -20,14 +18,79 @@ MODEL="Qwen/Qwen2.5-0.5B-Instruct"
 TARGET=Path("tests/test_model_feedback_loop.py")
 OUTPUT=Path("artifacts/real-repo-qwen-proposal.json")
 
-def assess(raw,task):
+def _target_line(source):
+    lines=source.splitlines()
+    matches=[i for i,line in enumerate(lines)
+             if line.strip()=="def test_reject_multiple_fences(self):"]
+    if len(matches)!=1:
+        raise ValueError("unique target regression test not found")
+    index=matches[0]+1
+    if index>=len(lines) or not lines[index].startswith('        answer='):
+        raise ValueError("target assignment not found")
+    return index+1,lines[index]
+
+def prompt_for_attempt(goal,source,reason=None):
+    number,line=_target_line(source)
+    prompt=(goal+"\n"
+            "Only replace the following exact source line, preserving its indentation.\n"
+            f"Line {number}: {line}\n"
+            f"Use ONE hunk: @@ -{number} +{number} @@\n"
+            "Make a '-' line matching the source exactly and a '+' line "
+            "with single-escaped newline sequences so Python evaluates real newlines. "
+            "Do not add any other diff headers, files or edits.\n")
+    if reason:
+        prompt+=f"Your previous answer was rejected: {reason[:160]}. Correct it; return diff only.\n"
+    return prompt
+
+def _check_one_line_change(raw,source):
+    lines=raw.splitlines()
+    if len(lines)!=6:
+        raise ValueError("task requires exactly one two-line replacement hunk")
+    match=re.fullmatch(r"@@ -(\d+)(?:,1)? \+(\d+)(?:,1)? @@",lines[3])
+    number,original=_target_line(source)
+    if not match or int(match.group(1))!=number or int(match.group(2))!=number:
+        raise ValueError("hunk must point to the real regression assignment")
+    if lines[4]!="-"+original:
+        raise ValueError("removed line must match repository source exactly")
+    replacement=lines[5][1:]
+    if not lines[5].startswith("+        answer=") or replacement==original:
+        raise ValueError("only the assignment may change")
+    current=source.splitlines(keepends=True)
+    current[number-1]=replacement+"\n"
+    tree=ast.parse("".join(current))
+    target_class=next((n for n in tree.body
+                       if isinstance(n,ast.ClassDef) and n.name=="FeedbackLoopTests"),None)
+    if target_class is None:
+        raise ValueError("test class not found")
+    methods=[n for n in target_class.body if isinstance(n,ast.FunctionDef)
+             and n.name=="test_reject_multiple_fences"]
+    if len(methods)!=1 or not methods[0].body:
+        raise ValueError("target method invalid")
+    assignment=methods[0].body[0]
+    if not isinstance(assignment,ast.Assign) or len(assignment.targets)!=1:
+        raise ValueError("target assignment altered")
+    if not isinstance(assignment.targets[0],ast.Name) or assignment.targets[0].id!="answer":
+        raise ValueError("answer variable missing")
+    value=assignment.value
+    fence=chr(96)*3
+    if not isinstance(value,ast.Constant) or not isinstance(value.value,str):
+        raise ValueError("answer must remain a string literal")
+    if value.value.count(fence+"python")!=2 or value.value.count(fence)!=4:
+        raise ValueError("test must retain two Python code fences")
+    if "\n" not in value.value or "\\n" in value.value:
+        raise ValueError("test input must use real newlines, not literal backslash-n")
+    return {"line":number,"source_content_matched":True,
+            "python_ast_parsed":True,"test_fixture_real_newlines":True}
+
+def assess(raw,task,source=None):
     proposal={"provider":"qwen","status":"proposal",
-              "summary":"One-shot model-generated regression-test diff",
-              "patch":raw}
+              "summary":"One-shot model-generated regression-test diff","patch":raw}
     try:
         inspection=inspect_scoped_patch(task,proposal)
+        if source is not None:
+            inspection["source_context"]=_check_one_line_change(raw,source)
         return {"status":"accepted_for_review","reason":None,"inspection":inspection}
-    except (ValueError,TypeError,KeyError) as exc:
+    except (ValueError,TypeError,KeyError,SyntaxError) as exc:
         return {"status":"rejected","reason":str(exc)[:300],"inspection":None}
 
 def main():
@@ -46,27 +109,37 @@ def main():
         if len(source)>12000:
             raise ValueError("source file exceeds prompt size budget")
         report["source_sha256"]=hashlib.sha256(source.encode()).hexdigest()
-        prompt=task["prompt"]+"\nCurrent file contents:\n"+source
+        report["task_id"]=task["task"]["task_id"]
+        report["inspection_kind"]="static_scope_structure_source_and_ast_only"
         tokenizer=AutoTokenizer.from_pretrained(MODEL,trust_remote_code=False)
         model=AutoModelForCausalLM.from_pretrained(
             MODEL,trust_remote_code=False,torch_dtype=torch.float32)
         model.eval()
-        tokens=tokenizer(tokenizer.apply_chat_template(
-            [{"role":"user","content":prompt}],tokenize=False,
-            add_generation_prompt=True),return_tensors="pt")
-        report["real_model_calls"]=1
-        with torch.inference_mode():
-            result=model.generate(**tokens,max_new_tokens=384,do_sample=False,
-                                  pad_token_id=tokenizer.eos_token_id)
-        raw=tokenizer.decode(result[0][tokens["input_ids"].shape[1]:],
-                             skip_special_tokens=True)
-        report["response_sha256"]=hashlib.sha256(raw.encode()).hexdigest()
-        report["response_chars"]=len(raw)
-        report["response_preview"]=raw[:1200]
-        report["response_ends_with_newline"]=raw.endswith("\n")
-        report.update(assess(raw,task["task"]))
-        report["task_id"]=task["task"]["task_id"]
-        report["inspection_kind"]="static_scope_and_unified_diff_only"
+        attempts=[]
+        reason=None
+        for attempt in range(task["contract"]["max_attempts"]):
+            prompt=prompt_for_attempt(task["prompt"],source,reason)
+            tokens=tokenizer(tokenizer.apply_chat_template(
+                [{"role":"user","content":prompt}],tokenize=False,
+                add_generation_prompt=True),return_tensors="pt")
+            report["real_model_calls"]+=1
+            with torch.inference_mode():
+                output=model.generate(**tokens,max_new_tokens=256,do_sample=False,
+                                      pad_token_id=tokenizer.eos_token_id)
+            raw=tokenizer.decode(output[0][tokens["input_ids"].shape[1]:],
+                                 skip_special_tokens=True)
+            assessment=assess(raw,task["task"],source)
+            attempts.append({"attempt":attempt+1,
+                             "response_sha256":hashlib.sha256(raw.encode()).hexdigest(),
+                             "response_chars":len(raw),"response_preview":raw[:1600],
+                             "response_ends_with_newline":raw.endswith("\n"),
+                             "status":assessment["status"],"reason":assessment["reason"]})
+            report.update(assessment)
+            if assessment["status"]=="accepted_for_review":
+                break
+            reason=assessment["reason"]
+        report["attempts"]=attempts
+        report["max_attempts"]=task["contract"]["max_attempts"]
     except Exception as exc:
         report["status"]="error"
         report["error_type"]=type(exc).__name__
