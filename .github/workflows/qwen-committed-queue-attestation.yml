@@ -1,0 +1,52 @@
+name: Attest Qwen source commits and advance Ouroboros queue
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/qwen-committed-queue-attestation.yml"
+      - "scripts/attest_two_qwen_commits.py"
+      - "tests/test_attest_two_qwen_commits.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  attest_real_source_commits:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout without persisted authorization
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Offline false-attestation and code-integrity regressions
+        run: |
+          python3 -m unittest discover -s tests -p test_attest_two_qwen_commits.py -v
+          python3 -m unittest discover -s tests -p test_feedback_controller_verified.py -v
+      - name: Verify two historical source commits and actual completed Harness CI
+        run: |
+          python3 scripts/attest_two_qwen_commits.py \
+            --output artifacts/attested-qwen-queue.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open("artifacts/attested-qwen-queue.json"))
+          r=json.load(open("artifacts/attested-two-tasks-receipt.json"))
+          assert p["index"] == 2 and p["generation"] == 2
+          assert p["controller"]["phase"] == "stopped"
+          assert p["requires_human_merge_approval"] is True
+          assert r["completed_tasks"] == 2 and r["merge_authorized"] is False
+          assert r["autonomous_worker_implemented"] is False
+          print("PASS: two separate source commits with independent successful Harness CI")
+          PY
+          test -z "$(git status --porcelain -- scripts/feedback_controller.py)"
+      - name: Publish source-backed task completion evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qwen-two-ci-attested-completions
+          path: |
+            artifacts/attested-qwen-queue.json
+            artifacts/attested-two-tasks-receipt.json
+          if-no-files-found: error
+          retention-days: 7
