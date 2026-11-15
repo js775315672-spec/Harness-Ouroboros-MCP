@@ -33,7 +33,7 @@ class BridgeTests(unittest.TestCase):
         self.initialize()
         record={"schema_version":1,"stage":"evaluate","outcome":"pass","note":"","commit":"a"*40,"timestamp":"2026-11-15T00:00:00+00:00","next_stage":"evolve","requires_human_merge_approval":True}
         with patch("mcp_bridge.subprocess.run") as git,patch("mcp_bridge.recover_latest",return_value=record) as recover:
-            git.return_value.stdout="a"*40+"\\n"
+            git.return_value.stdout="a"*40
             response=self.request("tools/call",{"name":"ouroboros.recover_latest","arguments":{}})
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(recover.call_args.kwargs["expected_commit"],"a"*40)
