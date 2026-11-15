@@ -11,10 +11,10 @@ class RealRepoTaskTests(unittest.TestCase):
 
     def test_prompt_explicitly_requires_diff_not_executable_code(self):
         prepared=prepare()
-        self.assertIn("unified git diff",prepared["prompt"])
-        self.assertIn("NOT scripts/model_feedback_loop.py",prepared["prompt"])
-        self.assertIn("End with newline",prepared["prompt"])
-        self.assertIn("@@ one-line hunk header",prepared["prompt"])
+        self.assertIn("one complete answer= assignment line",prepared["prompt"])
+        self.assertIn("tests/test_model_feedback_loop.py",prepared["prompt"])
+        self.assertIn("Never generate a diff",prepared["prompt"])
+        self.assertIn("test_reject_multiple_fences",prepared["prompt"])
         self.assertFalse(prepared["model_called"])
         self.assertFalse(prepared["patch_applied"])
         self.assertTrue(prepared["requires_human_review"])
