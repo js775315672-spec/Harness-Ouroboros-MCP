@@ -10,6 +10,15 @@ class TimedVerificationTests(unittest.TestCase):
     def test_invalid_provenance_fails_closed(self):
         with self.assertRaises(ValueError):
             verification_cycles.run_provenance({'GITHUB_REPOSITORY':'org/repo','GITHUB_RUN_ID':'abc','GITHUB_SHA':'a'*40})
+    def test_partial_provenance_fails_closed(self):
+        with self.assertRaises(ValueError):
+            verification_cycles.run_provenance({'GITHUB_REPOSITORY':'org/repo'})
+    def test_zero_run_id_fails_closed(self):
+        with self.assertRaises(ValueError):
+            verification_cycles.run_provenance({'GITHUB_REPOSITORY':'org/repo','GITHUB_RUN_ID':'0','GITHUB_SHA':'a'*40})
+    def test_repository_with_invalid_characters_fails_closed(self):
+        with self.assertRaises(ValueError):
+            verification_cycles.run_provenance({'GITHUB_REPOSITORY':'org/repo?x=1','GITHUB_RUN_ID':'123','GITHUB_SHA':'a'*40})
     def test_local_provenance(self):
         self.assertEqual(verification_cycles.run_provenance({})['source'],'local')
     def test_success_reports_elapsed_and_rounds(self):
