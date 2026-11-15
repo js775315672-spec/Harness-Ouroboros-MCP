@@ -3,6 +3,15 @@ from unittest.mock import patch
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/"scripts"))
 import verification_cycles
 class TimedVerificationTests(unittest.TestCase):
+    def test_github_provenance(self):
+        data=verification_cycles.run_provenance({'GITHUB_REPOSITORY':'org/repo','GITHUB_RUN_ID':'123','GITHUB_SHA':'a'*40})
+        self.assertEqual(data['run_url'],'https://github.com/org/repo/actions/runs/123')
+        self.assertIs(data['verified_externally'],False)
+    def test_invalid_provenance_fails_closed(self):
+        with self.assertRaises(ValueError):
+            verification_cycles.run_provenance({'GITHUB_REPOSITORY':'org/repo','GITHUB_RUN_ID':'abc','GITHUB_SHA':'a'*40})
+    def test_local_provenance(self):
+        self.assertEqual(verification_cycles.run_provenance({})['source'],'local')
     def test_success_reports_elapsed_and_rounds(self):
         class Result: returncode=0
         output=io.StringIO()
