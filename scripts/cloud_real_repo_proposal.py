@@ -155,6 +155,16 @@ def main():
             reason=assessment["reason"]
         report["attempts"]=attempts
         report["max_attempts"]=task["contract"]["max_attempts"]
+        if report["status"]=="accepted_for_review":
+            candidate={"provider":"qwen","status":"proposal",
+                       "summary":"Source-anchored single-line Qwen regression fixture",
+                       "patch":proposed_diff}
+            path=Path("artifacts/qwen-review-candidate.json")
+            path.parent.mkdir(parents=True,exist_ok=True)
+            payload=json.dumps(candidate,sort_keys=True,indent=2)+"\n"
+            path.write_text(payload,encoding="utf-8")
+            report["candidate_sha256"]=hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            report["candidate_artifact"]=str(path)
     except Exception as exc:
         report["status"]="error"
         report["error_type"]=type(exc).__name__
