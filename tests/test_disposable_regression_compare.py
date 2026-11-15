@@ -42,7 +42,7 @@ class DisposableRegressionCompareTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)/"repo"
             out=pathlib.Path(tmp)/"staging"
-            for rel in (TARGET,MODULE):
+            for rel in (TARGET,MODULE,"scripts/regression_mutation_probe.py"):
                 dest=root/rel
                 dest.parent.mkdir(parents=True,exist_ok=True)
                 dest.write_bytes((ROOT/rel).read_bytes())
