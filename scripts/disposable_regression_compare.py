@@ -151,6 +151,53 @@ def docker_regression(workspace,image=DOCKER_IMAGE):
             "network_disabled":True,"filesystem_read_only":True,
             "privileges_dropped":True}
 
+
+def verify_inference_provenance(inference_path,candidate_path,source_root):
+    """Bind the executable test candidate to one completed real Qwen inference."""
+    inference_bytes=Path(inference_path).read_bytes()
+    candidate_bytes=Path(candidate_path).read_bytes()
+    if len(inference_bytes)>120000 or len(candidate_bytes)>120000:
+        raise ValueError("oversized inference or candidate evidence")
+    report=json.loads(inference_bytes.decode("utf-8"))
+    candidate=json.loads(candidate_bytes.decode("utf-8"))
+    if not isinstance(report,dict) or not isinstance(candidate,dict):
+        raise ValueError("evidence must be JSON objects")
+    if (report.get("status")!="accepted_for_review" or
+        report.get("model")!="Qwen/Qwen2.5-0.5B-Instruct" or
+        report.get("patch_origin")!="deterministic_single_line_builder" or
+        report.get("model_output_format")!="single_python_assignment_line"):
+        raise ValueError("inference evidence lacks accepted real-model provenance")
+    calls=report.get("real_model_calls")
+    if type(calls) is not int or not 1<=calls<=2:
+        raise ValueError("model invocation count missing or invalid")
+    if (report.get("patch_applied") is not False or
+        report.get("merge_authorized") is not False or
+        report.get("full_harness_passed") is not False):
+        raise ValueError("unsafe inference evidence flags")
+    if candidate.get("provider")!="qwen" or candidate.get("status")!="proposal":
+        raise ValueError("candidate does not match expected model proposal")
+    if report.get("candidate_sha256")!=_digest(candidate_bytes):
+        raise ValueError("candidate payload digest differs from inference report")
+    source_digest=_digest(_safe_file(Path(source_root),TARGET).read_bytes())
+    if report.get("source_sha256")!=source_digest:
+        raise ValueError("source file differs from model prompt provenance")
+    attempts=report.get("attempts")
+    if not isinstance(attempts,list) or len(attempts)!=calls or not attempts:
+        raise ValueError("missing model attempt record")
+    last=attempts[-1]
+    if not isinstance(last,dict) or last.get("status")!="accepted_for_review":
+        raise ValueError("last model attempt did not pass static inspection")
+    patch=candidate.get("patch")
+    if (not isinstance(patch,str) or
+        last.get("synthesized_patch_sha256")!=_digest(patch.encode("utf-8"))):
+        raise ValueError("candidate diff does not match model-derived patch hash")
+    return {"real_model_calls":calls,
+            "inference_sha256":_digest(inference_bytes),
+            "candidate_sha256":_digest(candidate_bytes),
+            "source_sha256":source_digest,
+            "patch_sha256":_digest(patch.encode("utf-8")),
+            "provenance_verified":True}
+
 def compare(source_root,patch,image=DOCKER_IMAGE):
     with tempfile.TemporaryDirectory(prefix="harness-regression-") as temp:
         staged=prepare_candidate(source_root,patch,temp)
@@ -169,6 +216,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--source",type=Path,default=Path("."))
     parser.add_argument("--candidate",type=Path,required=True)
+    parser.add_argument("--inference-report",type=Path,required=True)
     parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args()
     report={"status":"error","patch_applied_to_checkout":False,
@@ -177,7 +225,9 @@ def main():
         response=json.loads(args.candidate.read_text(encoding="utf-8"))
         if set(response)!={"provider","status","summary","patch"}:
             raise ValueError("invalid candidate artifact fields")
+        provenance=verify_inference_provenance(args.inference_report,args.candidate,args.source)
         report=compare(args.source,response["patch"])
+        report["provenance"]=provenance
     except (OSError,ValueError,TypeError,KeyError,UnicodeError,subprocess.SubprocessError) as exc:
         report["error_type"]=type(exc).__name__
         report["error_message"]=str(exc)[:300]
