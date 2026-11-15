@@ -34,11 +34,14 @@ class WorkerTests(unittest.TestCase):
     def test_scoped_model_expressions_reject_arbitrary_code(self):
         self.assertEqual(parse(ANSWERS[0], 13), ANSWERS[0])
         self.assertEqual(parse(ANSWERS[1], 127), ANSWERS[1])
+        self.assertEqual(parse(r"'\x0d' in log", 13), r"'\x0d' in log")
+        self.assertEqual(parse(r"'\x7f' in log", 127), r"'\x7f' in log")
         self.assertEqual(parse(chr(96)+ANSWERS[0]+chr(96), 13), ANSWERS[0])
         bad = (
             "chr(27) in log", "chr(True) in log", "chr(13 + 0) in log",
             "chr(13) in other", "other(13) in log", "chr(13) not in log",
             "chr(13) in log or True", "__import__('os').system('id')",
+            r"'\x00' in log", r"'\x1b' in log", r"'\n' in log",
             "chr(13) in log\nprint(1)", "chr(13) in log" + chr(0),
             chr(27) + "[31m", "if True: pass", "chr(13) in log or chr(127) in log",
         )
@@ -85,7 +88,8 @@ class WorkerTests(unittest.TestCase):
             path = Path(tmp) / "queue.json"
             def decline_second(root, old, new, index):
                 return index == 0
-            model = FakeModel([ANSWERS[0], ANSWERS[1], ANSWERS[1], ANSWERS[1]])
+            model = FakeModel([ANSWERS[0], ANSWERS[1], "chr(127)  in log",
+                               "chr(127) in  log"])
             state = run(ROOT, COMMIT, model, path, compare=decline_second)
             self.assertEqual(state["state"], "blocked")
             self.assertEqual(state["completed_tasks"], 1)
@@ -94,6 +98,18 @@ class WorkerTests(unittest.TestCase):
                 verify(ROOT, path, COMMIT, compare=fake_docker)
             self.assertEqual(run(ROOT, COMMIT, FakeModel([]), path, resume=True,
                                  compare=fake_docker)["completed_tasks"], 1)
+
+    def test_duplicate_invalid_response_stops_early_and_is_audited(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "queue.json"
+            model = FakeModel(["incorrect", "incorrect", "unused"])
+            state = run(ROOT, COMMIT, model, path, compare=fake_docker)
+            self.assertEqual(state["state"], "blocked")
+            self.assertEqual(state["completed_tasks"], 0)
+            self.assertEqual(len(model.prompts), 2)
+            self.assertEqual(state["attempts"][-1]["status"], "duplicate_response_blocked")
+            self.assertIn("incorrect", state["attempts"][-1]["response_preview"])
+            self.assertFalse(state["merge_authorized"])
 
     def test_tampered_checkpoint_and_wrong_sha_cannot_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
