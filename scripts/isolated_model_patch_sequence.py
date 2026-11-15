@@ -120,6 +120,7 @@ def stage_patch(root, patch, record, destination):
 def run_phase(root, handoff_dir, commit, phase, previous=None):
     if type(phase) is not int or phase not in (1, 2):
         raise ValueError("unbounded/unknown task")
+    root = Path(root).resolve(strict=True)
     patch, record = _strict_patch(root, handoff_dir, commit)
     with tempfile.TemporaryDirectory(prefix="ouroboros-isolated-phase-") as tmp:
         # Docker uses an unprivileged UID; grant traverse permission only on
