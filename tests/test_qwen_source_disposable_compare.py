@@ -9,14 +9,15 @@ from unittest.mock import patch
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from qwen_source_guard import EXPECTED, TARGET, TASK, inspect_line
-from qwen_source_trial import MODEL, evaluate_response
+from qwen_source_trial import MODEL, evaluate_response, normalize_model_line
 from qwen_source_disposable_compare import verify_and_stage, compare
 
 def artifacts(workspace):
     source = (ROOT / TARGET).read_text(encoding="utf-8")
     proposal = inspect_line(EXPECTED, source)
     candidate = {"provider": "qwen", "status": "proposal",
-                 "task_id": TASK["task_id"], "line": EXPECTED,
+                 "task_id": TASK["task_id"], "raw_response": EXPECTED,
+                 "line": EXPECTED,
                  "source_patch": proposal["patch"],
                  "source_sha256": proposal["source_sha256"],
                  "model_line_sha256": proposal["model_line_sha256"]}
@@ -40,6 +41,18 @@ class RealSourceRepairTests(unittest.TestCase):
         result = evaluate_response(EXPECTED, source)
         self.assertEqual(result["status"], "accepted_for_disposable_review")
         self.assertFalse(result["patch_applied_to_checkout"])
+
+    def test_fenced_single_source_line_normalized_without_changing_semantics(self):
+        raw = chr(96) * 3 + "python\\n" + EXPECTED.lstrip() + "\\n" + chr(96) * 3
+        self.assertEqual(normalize_model_line(raw), EXPECTED)
+        source = (ROOT / TARGET).read_text(encoding="utf-8")
+        self.assertEqual(evaluate_response(raw, source)["status"],
+                         "accepted_for_disposable_review")
+
+    def test_fenced_multiple_lines_still_rejected(self):
+        raw = chr(96) * 3 + "python\\n" + EXPECTED.lstrip() + "\\nimport os\\n" + chr(96) * 3
+        with self.assertRaises(ValueError):
+            normalize_model_line(raw)
 
     def test_source_guard_trial_rejects_irrelevant_model_code(self):
         source = (ROOT / TARGET).read_text(encoding="utf-8")
