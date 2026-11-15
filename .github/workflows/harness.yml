@@ -10,9 +10,13 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Run dependency-free policy checks
+      - name: Python regression tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Read-only secret scan
         run: python3 scripts/harness_check.py
