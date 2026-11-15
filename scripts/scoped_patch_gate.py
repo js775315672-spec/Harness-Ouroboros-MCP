@@ -3,8 +3,12 @@
 
 Never applies, imports, executes, or commits generated code.
 """
-from coding_task_contract import validate_task
-from patch_gate import inspect_patch
+try:
+    from .coding_task_contract import validate_task
+    from .patch_gate import inspect_patch
+except ImportError:
+    from coding_task_contract import validate_task
+    from patch_gate import inspect_patch
 
 def inspect_scoped_patch(task,model_response):
     contract=validate_task(task)
