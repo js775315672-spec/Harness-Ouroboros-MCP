@@ -59,7 +59,7 @@ FEEDBACK = {
     "candidate_negative_failed":
         "Disposable tests rejected the candidate: absent cycle, None, boolean "
         "True/False, text, float, zero, and negatives must all raise ValueError. "
-        "Positive integers remain valid. In Python, isinstance(True, int) is True, "
+        "Valid positive integers remain accepted. In Python, isinstance(True, int) is True, "
         "so a plain isinstance integer check is insufficient. Use an exact-type "
         "identity check OR explicitly exclude booleans before numerical comparisons. "
         "Avoid membership lists of bad examples: they cannot cover every invalid "
