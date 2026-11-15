@@ -131,7 +131,9 @@ def main():
         reason=None
         repair_prompt=None
         for attempt in range(task["contract"]["max_attempts"]):
-            prompt=repair_prompt or prompt_for_attempt(task["prompt"],source,reason)
+            prompt=prompt_for_attempt(task["prompt"],source,reason)
+            if repair_prompt:
+                prompt+="\n"+repair_prompt
             tokens=tokenizer(tokenizer.apply_chat_template(
                 [{"role":"user","content":prompt}],tokenize=False,
                 add_generation_prompt=True),return_tensors="pt")
