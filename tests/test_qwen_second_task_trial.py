@@ -122,6 +122,18 @@ class SecondTaskTests(unittest.TestCase):
         self.assertFalse(result["merge_authorized"])
         self.assertNotIn("completed_tasks", result)
 
+    def test_docker_executor_error_keeps_attempt_audit(self):
+        model = FixedResponse([EXPR])
+        with patch("qwen_second_task_trial.evaluate",
+                   side_effect=ValueError("isolated test diagnostic")):
+            result = trial(ROOT, model)
+        self.assertEqual(result["outcome"], "docker_execution_blocked")
+        self.assertEqual(result["model_calls"], 1)
+        self.assertEqual(result["attempts"][0]["error_type"], "ValueError")
+        self.assertIn("isolated test diagnostic", result["attempts"][0]["error_description"])
+        self.assertFalse(result["model_generated_second_task"])
+        self.assertIsNone(result["candidate_line"])
+
     def test_bad_model_output_stays_failure(self):
         model = FixedResponse(["garbage", "still garbage", "invalid"])
         result = trial(ROOT, model)
