@@ -8,6 +8,7 @@ on:
       - 'scripts/gguf_*.py'
       - 'scripts/qwen_semantic_repair_loop.py'
       - 'tests/test_gguf_cpu_runtime.py'
+      - 'tests/test_gguf_output_boundary.py'
 permissions:
   contents: read
 concurrency:
@@ -36,6 +37,7 @@ jobs:
       - name: Offline adapter and governance tests (no downloaded model)
         run: |
           python -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
+          python -m unittest discover -s tests -p test_gguf_output_boundary.py -v
           python scripts/harness_check.py
       - name: Compile pinned llama-completion CPU runner (no CUDA or CURL)
         run: |
@@ -115,6 +117,7 @@ jobs:
       - name: Offline adapter and governance tests (no downloaded model)
         run: |
           python -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
+          python -m unittest discover -s tests -p test_gguf_output_boundary.py -v
           python scripts/harness_check.py
       - name: Compile pinned llama-completion CPU runner (no CUDA or CURL)
         run: |
