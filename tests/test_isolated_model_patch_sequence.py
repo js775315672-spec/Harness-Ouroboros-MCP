@@ -51,7 +51,7 @@ class IsolatedPatchSequenceTests(unittest.TestCase):
         with patch("isolated_model_patch_sequence._strict_patch",
                    return_value=(patch_bytes, record)):
             with patch("isolated_model_patch_sequence._test", side_effect=stub_test) as tester:
-                phase1 = run_phase(ROOT, ROOT / "does-not-matter", SHA, 1)
+                phase1 = run_phase(Path("."), ROOT / "does-not-matter", SHA, 1)
                 self.assertEqual(phase1["docker_tests"],
                                  {"test_feedback_controller.py": 8,
                                   "test_semantic_cycle_guard.py": 3})
