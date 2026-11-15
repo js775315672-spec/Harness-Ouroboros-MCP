@@ -1,0 +1,3 @@
+Retry scoped Qwen coding proposal as ONE Python answer assignment line instead of a full Git diff. Builder accepts only harmless whitespace around equals, constructs a single anchored diff, validates AST and scope, preserves evidence, and never executes/applies/merges. Skip redundant add() model smoke to conserve CI runtime. No paid API or secrets.
+
+Review decision gate iteration: rerun one-shot Qwen inference and disposable regression comparison, then fail closed unless model output replay, source provenance, both regression suites and negative-control mutation evidence justify human review. No automatic source application or merge.

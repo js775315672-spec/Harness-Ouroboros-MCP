@@ -1,0 +1,49 @@
+{
+  "boundaries": {
+    "forbidden_paths": [
+      "secrets",
+      "private"
+    ]
+  },
+  "layers": {
+    "forbidden_imports": [
+      {
+        "from": "scripts/",
+        "import": "production_trading"
+      }
+    ]
+  },
+  "secrets": {
+    "require_scanner": true
+  },
+  "security": {
+    "forbidden_patterns": [
+      "(?m)^\\s*(?:from\\s+subprocess\\s+import\\s+Popen|os\\.system\\s*\\()"
+    ]
+  },
+  "structure": {
+    "required_files": [
+      "HARNESS_POLICY.md",
+      "scripts/harness_check.py",
+      "scripts/governance.py",
+      "scripts/ouroboros.py"
+    ]
+  },
+  "spec": {
+    "required_files": [
+      "HARNESS_POLICY.md",
+      "harness-policy.json"
+    ]
+  },
+  "deps": {
+    "forbidden_files": [
+      ".env",
+      ".env.local"
+    ]
+  },
+  "mutation": {
+    "forbidden_paths": [
+      "production-secrets"
+    ]
+  }
+}

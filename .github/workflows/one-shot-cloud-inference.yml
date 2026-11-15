@@ -1,0 +1,127 @@
+name: One-shot PR cloud Qwen CPU inference
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [synchronize]
+    paths:
+      - 'cloud-inference-trigger.txt'
+permissions:
+  contents: read
+jobs:
+  qwen-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Install CPU-only inference dependencies with bounded network retries
+        run: |
+          for attempt in 1 2 3; do
+            if python -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu "torch==2.6.0"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep 5
+          done
+          for attempt in 1 2 3; do
+            if python -m pip install --disable-pip-version-check "transformers==4.51.3" "safetensors==0.5.3"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep 5
+          done
+      - name: Propose real repository line with Qwen (review only)
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+          HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+          CUDA_VISIBLE_DEVICES: ""
+        run: python scripts/cloud_real_repo_proposal.py
+      - name: Bind real Qwen patch to strict file allowlist and source AST
+        run: |
+          python scripts/qwen_scope_bridge.py \
+            --source . \
+            --inference artifacts/real-repo-qwen-proposal.json \
+            --candidate artifacts/qwen-review-candidate.json \
+            --output artifacts/qwen-scope-bridge.json
+      - name: Experimental real-source Qwen guard repair (read-only proposal)
+        id: real_source_trial
+        continue-on-error: true
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+          HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+          CUDA_VISIBLE_DEVICES: ""
+        run: python scripts/qwen_source_trial.py
+      - name: Fetch disposable no-network Python test image
+        run: docker pull python:3.11-slim
+      - name: Compare experimental Qwen source-code repair in isolated Docker
+        if: steps.real_source_trial.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python scripts/qwen_source_disposable_compare.py \
+            --source . \
+            --inference artifacts/source-guard-qwen-report.json \
+            --candidate artifacts/source-guard-qwen-candidate.json \
+            --output artifacts/source-guard-disposable-results.json
+      - name: Experimental unhinted Qwen repair with Docker feedback (review only)
+        id: semantic_source_trial
+        continue-on-error: true
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+          HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+          CUDA_VISIBLE_DEVICES: ""
+        run: python scripts/qwen_semantic_trial.py
+      - name: Compare original and scoped Qwen patch in disposable Docker
+        run: |
+          python scripts/disposable_regression_compare.py \
+            --source . \
+            --candidate artifacts/qwen-review-candidate.json \
+            --inference-report artifacts/real-repo-qwen-proposal.json \
+            --output artifacts/disposable-regression-compare.json
+      - name: Classify disposable regression failure for next-run bounded repair
+        if: always()
+        run: |
+          if [ -f artifacts/real-repo-qwen-proposal.json ] && [ -f artifacts/disposable-regression-compare.json ]; then
+            python scripts/disposable_failure_feedback.py \
+              --inference artifacts/real-repo-qwen-proposal.json \
+              --regression artifacts/disposable-regression-compare.json \
+              --output artifacts/disposable-failure-feedback.json
+          fi
+      - name: Decide human-review readiness from complete evidence (no merge)
+        run: |
+          python scripts/review_decision_gate.py \
+            --inference artifacts/real-repo-qwen-proposal.json \
+            --regression artifacts/disposable-regression-compare.json \
+            --output artifacts/review-decision.json
+      - name: Bridge verified Qwen review evidence into bounded loop controller
+        run: |
+          python scripts/qwen_loop_evidence_bridge.py \
+            --inference artifacts/real-repo-qwen-proposal.json \
+            --regression artifacts/disposable-regression-compare.json \
+            --review artifacts/review-decision.json \
+            --output artifacts/loop-bridge-decision.json
+      - name: Publish evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: one-shot-qwen-inference-evidence
+          path: |
+            artifacts/real-repo-qwen-proposal.json
+            artifacts/qwen-review-candidate.json
+            artifacts/qwen-scope-bridge.json
+            artifacts/disposable-regression-compare.json
+            artifacts/review-decision.json
+            artifacts/loop-bridge-decision.json
+            artifacts/disposable-failure-feedback.json
+            artifacts/source-guard-qwen-report.json
+            artifacts/source-guard-qwen-candidate.json
+            artifacts/source-guard-disposable-results.json
+            artifacts/semantic-qwen-report.json
+            artifacts/semantic-qwen-candidate.json
+          if-no-files-found: warn
+          retention-days: 7
