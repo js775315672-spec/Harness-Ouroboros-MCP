@@ -29,11 +29,19 @@ jobs:
           HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
           CUDA_VISIBLE_DEVICES: ""
         run: python scripts/cloud_model_smoke.py --inject-invalid-first --output artifacts/cloud-model-smoke.json
+      - name: Propose real repository test diff with Qwen (review only)
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+          HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+          CUDA_VISIBLE_DEVICES: ""
+        run: python scripts/cloud_real_repo_proposal.py
       - name: Publish evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: one-shot-qwen-inference-evidence
-          path: artifacts/cloud-model-smoke.json
+          path: |
+            artifacts/cloud-model-smoke.json
+            artifacts/real-repo-qwen-proposal.json
           if-no-files-found: warn
           retention-days: 7
