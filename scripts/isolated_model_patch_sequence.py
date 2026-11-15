@@ -151,8 +151,6 @@ def run_phase(root, handoff_dir, commit, phase, previous=None):
                     result.get("privileges_dropped") is not True):
                 raise ValueError("isolated Docker suite failed: " + pattern)
             checks[pattern] = result["tests_run"]
-        if _safe_file(root, TARGET).read_bytes() != _safe_file(root, TARGET).read_bytes():
-            raise ValueError("source mutated")
         if sha256(_safe_file(root, TARGET).read_bytes()) != source_hashes["source_sha256"]:
             raise ValueError("checkout changed during isolated tests")
         return {"status": "isolated_phase_passed", "phase": phase,
