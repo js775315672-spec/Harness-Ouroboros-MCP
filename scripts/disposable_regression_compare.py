@@ -21,9 +21,11 @@ import tempfile
 try:
     from .real_repo_task import TASK
     from .cloud_real_repo_proposal import assess, _target_line
+    from .replacement_proposal import build_single_line_diff
 except ImportError:
     from real_repo_task import TASK
     from cloud_real_repo_proposal import assess, _target_line
+    from replacement_proposal import build_single_line_diff
 
 TARGET = "tests/test_model_feedback_loop.py"
 MODULE = "scripts/model_feedback_loop.py"
@@ -197,12 +199,25 @@ def verify_inference_provenance(inference_path,candidate_path,source_root):
     if (not isinstance(patch,str) or
         last.get("synthesized_patch_sha256")!=_digest(patch.encode("utf-8"))):
         raise ValueError("candidate diff does not match model-derived patch hash")
+    # Rebuild the exact candidate from the recorded model response; hashes alone
+    # are not evidence that the model actually proposed this code.
+    raw=last.get("response_preview")
+    if (not isinstance(raw,str) or len(raw)>500 or
+        last.get("response_chars")!=len(raw) or
+        last.get("response_sha256")!=_digest(raw.encode("utf-8"))):
+        raise ValueError("complete model output not retained for replay")
+    source=_safe_file(Path(source_root),TARGET).read_text(encoding="utf-8")
+    line,old=_target_line(source)
+    rebuilt=build_single_line_diff(raw,old,line)
+    if rebuilt!=patch:
+        raise ValueError("candidate differs from replayed model response")
     return {"real_model_calls":calls,
             "inference_sha256":_digest(inference_bytes),
             "candidate_sha256":_digest(candidate_bytes),
             "source_sha256":source_digest,
             "patch_sha256":_digest(patch.encode("utf-8")),
-            "provenance_verified":True}
+            "provenance_verified":True,
+            "model_response_replayed":True}
 
 def docker_mutation_probe(workspace,image=DOCKER_IMAGE):
     """A deliberate false-acceptance mutant should be caught by improved test data."""
