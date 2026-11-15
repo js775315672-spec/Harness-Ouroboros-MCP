@@ -2,7 +2,7 @@
 """Validate evidence for distinct development cycles; fail closed on missing proof."""
 import argparse,json,pathlib,re,sys
 SHA=re.compile(r"^[0-9a-f]{40}$")
-CI=re.compile(r"^https://github\\.com/[^/\\s]+/[^/\\s]+/actions/runs/[1-9][0-9]*$")
+CI=re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/actions/runs/[1-9][0-9]*$")
 STEPS=("harness","ouroboros","regression","secrets")
 def validate(records):
     if not isinstance(records,list):raise ValueError("expected list")
