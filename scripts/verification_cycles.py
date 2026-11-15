@@ -20,7 +20,7 @@ def write_report(path,report):
     try:
         with os.fdopen(fd,'w',encoding='utf-8') as stream:
             json.dump(report,stream,sort_keys=True,indent=2)
-            stream.write('\\n')
+            stream.write('\n')
         os.replace(name,path)
     finally:
         if os.path.exists(name):os.unlink(name)
