@@ -26,7 +26,7 @@ FEEDBACK = {
     "candidate_negative_failed":
         "Disposable tests rejected the candidate: absent cycle, None, boolean "
         "True/False, text, float, zero, and negatives must all raise ValueError. "
-        "Positive integers must remain valid. Reconsider bool being a subclass "
+        "Valid positive integers must remain accepted. Reconsider bool being a subclass "
         "of int and avoid unsafe comparisons before type validation.",
     "candidate_regression_failed":
         "Existing feedback controller tests regressed. Your new invalid-cycle "
