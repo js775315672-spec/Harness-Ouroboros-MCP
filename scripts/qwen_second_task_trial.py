@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import resource
+import subprocess
 import tempfile
 import time
 
@@ -261,8 +262,16 @@ def trial(root, inference):
             attempts.append(row)
             result = row["status"]
             continue
-        compared = evaluate(root, record["candidate_line"], expression,
-                            record["source_sha256"])
+        try:
+            compared = evaluate(root, record["candidate_line"], expression,
+                                record["source_sha256"])
+        except (ValueError, OSError, subprocess.SubprocessError) as exc:
+            row["status"] = "docker_execution_blocked"
+            row["error_type"] = type(exc).__name__
+            row["error_description"] = str(exc)[:160]
+            attempts.append(row)
+            result = row["status"]
+            break
         final = compared
         row["status"] = compared["outcome"]
         attempts.append(row)
@@ -332,8 +341,9 @@ def main():
         report = benchmark(args.model, args.cli, args.gguf, args.download_metadata,
                            args.root, args.timeout)
     except (ValueError, OSError, TypeError, KeyError, SyntaxError,
-            json.JSONDecodeError) as exc:
+            subprocess.SubprocessError, json.JSONDecodeError) as exc:
         report["error_type"] = type(exc).__name__
+        report["error_description"] = str(exc)[:160]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n",
                            encoding="utf-8")
