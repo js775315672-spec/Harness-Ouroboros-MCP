@@ -1,0 +1,39 @@
+{
+  "boundaries": {
+    "forbidden_paths": [
+      "secrets",
+      "private"
+    ]
+  },
+  "layers": {
+    "forbidden_imports": []
+  },
+  "secrets": {
+    "require_scanner": true
+  },
+  "security": {
+    "forbidden_patterns": []
+  },
+  "structure": {
+    "required_files": [
+      "HARNESS_POLICY.md",
+      "scripts/harness_check.py"
+    ]
+  },
+  "spec": {
+    "required_files": [
+      "HARNESS_POLICY.md"
+    ]
+  },
+  "deps": {
+    "forbidden_files": [
+      ".env",
+      ".env.local"
+    ]
+  },
+  "mutation": {
+    "forbidden_paths": [
+      "production-secrets"
+    ]
+  }
+}
