@@ -24,17 +24,24 @@ def main():
         os.environ["TOKENIZERS_PARALLELISM"]="false"
         import torch
         from transformers import AutoModelForCausalLM,AutoTokenizer
+        from scripts.model_feedback_loop import run_loop,save_report
         tokenizer=AutoTokenizer.from_pretrained(args.model,trust_remote_code=False)
         model=AutoModelForCausalLM.from_pretrained(args.model,trust_remote_code=False,torch_dtype=torch.float32)
         model.eval()
-        prompt=tokenizer.apply_chat_template([{"role":"user","content":PROMPT}],tokenize=False,add_generation_prompt=True)
-        inputs=tokenizer(prompt,return_tensors="pt")
-        with torch.inference_mode():
-            generated=model.generate(**inputs,max_new_tokens=64,do_sample=False,pad_token_id=tokenizer.eos_token_id)
-        output=tokenizer.decode(generated[0][inputs["input_ids"].shape[1]:],skip_special_tokens=True)
-        report.update(model_called=True,generation_completed=bool(output.strip()),
-                      output_chars=len(output),output_preview=output[:500])
-        if not report["generation_completed"]:raise ValueError("empty generation")
+        def generate(task):
+            prompt=tokenizer.apply_chat_template([{"role":"user","content":task}],tokenize=False,add_generation_prompt=True)
+            inputs=tokenizer(prompt,return_tensors="pt")
+            with torch.inference_mode():
+                generated=model.generate(**inputs,max_new_tokens=96,do_sample=False,
+                                         pad_token_id=tokenizer.eos_token_id)
+            return tokenizer.decode(generated[0][inputs["input_ids"].shape[1]:],skip_special_tokens=True)
+        result=run_loop(generate,max_attempts=3)
+        report.update(model_called=True,generation_completed=True,
+                      output_chars=len(result["attempts"][-1]["output_preview"]),
+                      output_preview=result["attempts"][-1]["output_preview"],
+                      feedback_passed=result["passed"],feedback_attempts=result["attempts"],
+                      model_output_executed=False)
+        if not result["passed"]:raise ValueError("bounded static feedback validation failed")
         return_code=0
     except Exception as exc:
         report["error_type"]=type(exc).__name__
