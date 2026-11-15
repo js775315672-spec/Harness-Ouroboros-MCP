@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from qwen_second_task_trial import (
     TASK_ID, MAX_ATTEMPTS, LOG_ORIGINAL, normalize_expression, make_candidate,
-    stage, evaluate, trial, hash_data, BASE_TEST, NEGATIVE_TEST
+    stage, evaluate, trial, hash_data, BASE_TEST, NEGATIVE_TEST, PROMPT
 )
 from qwen_source_guard import TARGET
 from verified_model_patch_review import inspect_proposal
@@ -50,6 +50,13 @@ def fake_docker_ok(workspace, pattern):
 
 
 class SecondTaskTests(unittest.TestCase):
+    def test_prompt_identifies_escaped_literals_without_full_answer(self):
+        self.assertIn("NOT Python variable names", PROMPT)
+        self.assertIn(r"\x00", PROMPT)
+        self.assertIn(r"\x1b", PROMPT)
+        self.assertNotIn(EXPR, PROMPT)
+        self.assertNotIn("NUL in log or ESC in log", PROMPT)
+
     def test_only_safe_two_control_expression_accepted(self):
         self.assertEqual(normalize_expression(EXPR), EXPR)
         self.assertEqual(normalize_expression(EXPR.replace(" or ", " or ")), EXPR)
