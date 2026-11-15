@@ -10,6 +10,7 @@ on:
       - 'scripts/qwen_semantic_repair_loop.py'
       - 'scripts/qwen_chatml_prompt.py'
       - 'tests/test_qwen_chatml_prompt.py'
+      - 'tests/test_qwen_categorical_feedback.py'
       - 'tests/test_gguf_cpu_runtime.py'
   workflow_dispatch:
 permissions:
@@ -43,6 +44,7 @@ jobs:
           python -m unittest discover -s tests -p test_gguf_output_boundary.py -v
           python -m unittest discover -s tests -p test_qwen_semantic_repair.py -v
           python -m unittest discover -s tests -p test_qwen_chatml_prompt.py -v
+          python -m unittest discover -s tests -p test_qwen_categorical_feedback.py -v
           python scripts/harness_check.py
       - name: Compile pinned CPU llama-completion (no CUDA or CURL)
         run: |
