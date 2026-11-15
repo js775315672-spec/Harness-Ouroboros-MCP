@@ -47,6 +47,8 @@ def check(root,config):
         for rule in config["layers"]["forbidden_imports"]:
             if p.startswith(rule["from"]) and re.search(r"(?m)^\s*(?:from|import)\s+"+re.escape(rule["import"])+r"\b",data):
                 out["layers"].append("forbidden import: "+p)
+    from ast_policy import check_ast
+    out["layers"].extend(check_ast(root,config["layers"]["forbidden_imports"]))
     return out
 def main():
     a=argparse.ArgumentParser()
