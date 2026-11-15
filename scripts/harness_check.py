@@ -14,7 +14,8 @@ SIGNATURES = {
     "google api key": rb"\bAIza[0-9A-Za-z_-]{35}\b",
     "slack token": rb"\bxox[baprs]-[A-Za-z0-9-]{15,}\b",
     "stripe secret key": rb"\bsk_(?:live|test)_[A-Za-z0-9]{16,}\b",
-    "generic credential assignment": rb"(?i)(?:api[_-]?key|secret|access[_-]?token|password)\s*[:=]\s*['\"][^'\"\r\n]{12,}['\"]",
+    "generic credential assignment": rb"(?i)(?:api[_-]?key|secret|access[_-]?token|password)\s*[:=]\s*['\"][^'\"\r
+]{12,}['\"]",
 }
 PATTERNS = {name: re.compile(expr) for name, expr in SIGNATURES.items()}
 CHUNK = 1024 * 1024
@@ -32,7 +33,10 @@ def scan(root):
     for rel in tracked_files(root):
         if any(part in EXCLUDED for part in rel.parts):
             continue
-        if rel.as_posix() in {"scripts/harness_check.py", "tests/test_harness_check.py"}:\n            continue  # scanner signatures and synthetic test fixtures only\n        path = root / rel\n        try:
+        if rel.as_posix() in {"scripts/harness_check.py", "tests/test_harness_check.py"}:
+            continue  # scanner signatures and synthetic test fixtures only
+        path = root / rel
+        try:
             if path.is_symlink():
                 failures.append(f"{rel}: symbolic link requires review")
                 continue
