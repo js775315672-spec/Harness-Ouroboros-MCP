@@ -68,6 +68,14 @@ jobs:
             --inference artifacts/source-guard-qwen-report.json \
             --candidate artifacts/source-guard-qwen-candidate.json \
             --output artifacts/source-guard-disposable-results.json
+      - name: Experimental unhinted Qwen repair with Docker feedback (review only)
+        id: semantic_source_trial
+        continue-on-error: true
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+          HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+          CUDA_VISIBLE_DEVICES: ""
+        run: python scripts/qwen_semantic_trial.py
       - name: Compare original and scoped Qwen patch in disposable Docker
         run: |
           python scripts/disposable_regression_compare.py \
@@ -113,5 +121,7 @@ jobs:
             artifacts/source-guard-qwen-report.json
             artifacts/source-guard-qwen-candidate.json
             artifacts/source-guard-disposable-results.json
+            artifacts/semantic-qwen-report.json
+            artifacts/semantic-qwen-candidate.json
           if-no-files-found: warn
           retention-days: 7
