@@ -122,6 +122,10 @@ def run_phase(root, handoff_dir, commit, phase, previous=None):
         raise ValueError("unbounded/unknown task")
     patch, record = _strict_patch(root, handoff_dir, commit)
     with tempfile.TemporaryDirectory(prefix="ouroboros-isolated-phase-") as tmp:
+        # Docker uses an unprivileged UID; grant traverse permission only on
+        # this ephemeral parent, like the existing disposable verifier does.
+        # The container itself still mounts code read-only with --network none.
+        os.chmod(tmp, 0o755)
         staged = Path(tmp) / "workspace"
         source_hashes = stage_patch(root, patch, record, staged)
         if phase == 2:
@@ -187,6 +191,9 @@ def main():
     except (ValueError, TypeError, OSError, UnicodeError,
             subprocess.SubprocessError, json.JSONDecodeError) as exc:
         result["error_type"] = type(exc).__name__
+        # Fixed adapter diagnostics only; never include raw model/Docker output.
+        if isinstance(exc, ValueError):
+            result["error_code"] = str(exc)[:160]
     if args.report.exists() or args.report.is_symlink():
         raise SystemExit("refusing to overwrite prior receipt")
     args.report.parent.mkdir(parents=True, exist_ok=True)
