@@ -18,5 +18,7 @@ jobs:
           persist-credentials: false
       - name: Python regression tests
         run: python3 -m unittest discover -s tests -v
+      - name: Eight governance gates
+        run: python3 scripts/governance.py
       - name: Read-only secret scan
         run: python3 scripts/harness_check.py
