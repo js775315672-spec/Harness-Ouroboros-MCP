@@ -1,1 +1,1 @@
-One-shot cloud Qwen evidence experiment: record actual model inference calls separately from synthetic injected responses and SHA-256 of validated output. Static AST only, no code execution, no repository patch, no paid API, no secrets.
+Run one-shot Qwen CPU experiment for the real repository regression-test task. Record actual generated diff and static rejection or acceptance for review. No patch application, generated-code execution, secrets, paid APIs or merge.
