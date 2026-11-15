@@ -104,6 +104,7 @@ def run_loop(source, generate, evaluate, max_attempts=MAX_ATTEMPTS):
         raise ValueError("missing model or independent evaluator")
     attempts, category, final_candidate, final_comparison = [], None, None, None
     comparisons = 0
+    attempted_line_hashes = set()
     for attempt in range(1, max_attempts + 1):
         prompt = build_prompt(category, attempt)
         raw = generate(prompt)
@@ -124,6 +125,12 @@ def run_loop(source, generate, evaluate, max_attempts=MAX_ATTEMPTS):
             attempts.append(row)
             continue
         row["line_sha256"] = inspected["line_sha256"]
+        if inspected["line_sha256"] in attempted_line_hashes:
+            row["status"] = "stalled_duplicate_candidate"
+            row["reason_type"] = "identical_ast_scoped_line_repeated"
+            attempts.append(row)
+            break
+        attempted_line_hashes.add(inspected["line_sha256"])
         result = evaluate(normalized)
         comparisons += 1
         if not isinstance(result, dict):
