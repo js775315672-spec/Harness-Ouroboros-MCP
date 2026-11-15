@@ -26,7 +26,7 @@ def validate_task(task):
         raise ValueError("invalid task id")
     if not isinstance(goal, str) or not 1 <= len(goal) <= 400:
         raise ValueError("invalid goal")
-    if not isinstance(files, list) or not 1 <= len(files) <= MAX_FILES or len(files) != len(set(files)):
+    if not isinstance(files, list) or not 1 <= len(files) <= MAX_FILES or any(not isinstance(name, str) for name in files) or len(files) != len(set(files)):
         raise ValueError("invalid file list")
     for name in files:
         if not isinstance(name, str):
