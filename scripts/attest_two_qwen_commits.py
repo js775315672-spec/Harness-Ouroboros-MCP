@@ -25,7 +25,7 @@ COMMITS = (
     "817cbd679de72fae9bd02360af51213ac61176d1",
     "a0383fcd48e6214392519464cd099e0ef46e2667",
 )
-RUN_IDS = (43724306905, 43724502763)
+RUN_IDS = (43724941211, 43724948234)
 TASKS = (
     {"id": "feedback_cycle_guard",
      "description": "Commit Qwen-authored invalid-cycle guard in reviewed candidate module"},
