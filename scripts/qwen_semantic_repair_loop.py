@@ -20,37 +20,78 @@ MAX_ATTEMPTS = 3
 RECOVERABLE = {"candidate_negative_failed", "candidate_regression_failed"}
 FEEDBACK = {
     "ast_scope_rejected":
-        "The prior line failed the AST scope gate. Preserve the two original "
-        "reject checks in order, append only safe cycle-related OR predicates, "
-        "and output exactly one conditional line. Do not add statements.",
+        "The previous output could not be used as one guarded expression. "
+        "Do NOT output a complete function, if statement, raise, return, "
+        "Markdown or explanation. Output only a Python boolean expression.",
     "candidate_negative_failed":
-        "Disposable tests rejected the patch: invalid cycles include absent, "
-        "None, boolean True/False, text, float, zero and negatives. They must "
-        "raise ValueError; positive integers must remain accepted. Repair the "
-        "predicate while preserving the original checks.",
+        "Disposable tests rejected the candidate: absent cycle, None, boolean "
+        "True/False, text, float, zero, and negatives must all raise ValueError. "
+        "Positive integers must remain valid. Reconsider bool being a subclass "
+        "of int and avoid unsafe comparisons before type validation.",
     "candidate_regression_failed":
-        "The existing feedback controller tests failed for the candidate. "
-        "Preserve the original proposal and decision validation while "
-        "repairing the cycle checks. Return only one conditional line."
+        "Existing feedback controller tests regressed. Your new invalid-cycle "
+        "predicate should not reject positive integer cycles and should not "
+        "change the existing proposal/decision checks."
 }
 
 
-def build_prompt(previous_category=None):
+def build_prompt(previous_category=None, attempt=1):
+    if type(attempt) is not int or not 1 <= attempt <= MAX_ATTEMPTS:
+        raise ValueError("invalid prompt attempt")
     prompt = (
-        "Repair the FIRST if guard line in scripts/feedback_controller.py. "
-        "The function should reject a proposal with a missing cycle, a bool, "
-        "a non-integer cycle or an integer cycle <= 0 by raising ValueError. "
-        "Valid positive integer cycles should retain the existing behavior. "
-        "Do not weaken any existing rejection of invalid proposal/decision. "
-        "Output ONLY the full replacement Python if line, with its final colon. "
-        "No Markdown, code fence, explanation or extra statements.\n"
-        "Original guard line:\n" + ORIGINAL
+        "Write ONE Python boolean expression that evaluates True when the "
+        "proposal dictionary contains an INVALID 'cycle': missing, None, "
+        "boolean, non-integer, zero, or negative. Positive integers are valid. "
+        "The expression will be safely appended using OR to the existing "
+        "feedback_controller.py first if guard. The program already raises "
+        "ValueError when this condition is True. Do NOT write if, raise, "
+        "return, a function, Markdown, or an explanation. Output only the "
+        "boolean expression using the variable proposal. Keep it short. "
+        "Check invalid types before numeric comparisons."
     )
     if previous_category:
         if previous_category not in FEEDBACK:
             raise ValueError("untrusted feedback category")
-        prompt += "\nTrusted validation feedback: " + FEEDBACK[previous_category]
+        prompt += "\nTrusted test feedback: " + FEEDBACK[previous_category]
+    if attempt == 2:
+        prompt += (
+            "\nFormat retry: your entire response must be only an expression. "
+            "You may combine several checks with OR. Do not repeat any "
+            "existing proposal or decision checks."
+        )
+    elif attempt == 3:
+        prompt += (
+            "\nFinal format retry: output a single expression with checks "
+            "covering invalid integer type, boolean values, and nonpositive "
+            "numbers. Avoid comparing a non-number with a number. "
+            "No code block or statement."
+        )
     return prompt
+
+
+def normalize_candidate(raw, source):
+    """Accept one valid full guard or assemble a single AST-approved predicate."""
+    try:
+        full_line = normalize_model_line(raw)
+        inspected = inspect_semantic_line(full_line, source)
+        return full_line, inspected
+    except (ValueError, SyntaxError):
+        pass
+    if not isinstance(raw, str) or len(raw) > 350 or "\r" in raw or "\x00" in raw:
+        raise ValueError("invalid model predicate response")
+    expression = raw.strip()
+    fence = chr(96) * 3
+    if expression.startswith(fence):
+        parts = expression.split("\n")
+        if (len(parts) != 3 or parts[0] not in (fence, fence + "python") or
+                parts[2] != fence):
+            raise ValueError("invalid expression fence")
+        expression = parts[1].strip()
+    if (not expression or len(expression) > 250 or "\n" in expression or
+            expression.startswith("if ") or expression.endswith(":")):
+        raise ValueError("a single boolean expression is required")
+    line = ORIGINAL[:-1] + " or (" + expression + "):"
+    return line, inspect_semantic_line(line, source)
 
 
 def run_loop(source, generate, evaluate, max_attempts=MAX_ATTEMPTS):
@@ -64,7 +105,7 @@ def run_loop(source, generate, evaluate, max_attempts=MAX_ATTEMPTS):
     attempts, category, final_candidate, final_comparison = [], None, None, None
     comparisons = 0
     for attempt in range(1, max_attempts + 1):
-        prompt = build_prompt(category)
+        prompt = build_prompt(category, attempt)
         raw = generate(prompt)
         row = {"attempt": attempt, "prompt_sha256": hashlib.sha256(
             prompt.encode("utf-8")).hexdigest()}
@@ -76,8 +117,7 @@ def run_loop(source, generate, evaluate, max_attempts=MAX_ATTEMPTS):
             row["response_sha256"] = None
             row["response_length"] = None
         try:
-            normalized = normalize_model_line(raw)
-            inspected = inspect_semantic_line(normalized, source)
+            normalized, inspected = normalize_candidate(raw, source)
         except (ValueError, SyntaxError):
             row["status"] = "ast_scope_rejected"
             category = "ast_scope_rejected"
