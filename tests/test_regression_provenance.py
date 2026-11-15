@@ -35,9 +35,6 @@ def evidence_files(directory):
                          "response_preview":raw,
                          "response_chars":len(raw),
                          "response_sha256":hashlib.sha256(raw.encode()).hexdigest(),
-                         "response_preview":raw,
-                         "response_chars":len(raw),
-                         "response_sha256":hashlib.sha256(raw.encode()).hexdigest(),
                          "synthesized_patch_sha256":
                          hashlib.sha256(patch.encode()).hexdigest()}]}
     report_path=directory/"inference.json"
@@ -75,6 +72,41 @@ class RegressionProvenanceTests(unittest.TestCase):
                     a.write_text(json.dumps(dict(report,**change)),encoding="utf-8")
                     with self.assertRaises(ValueError):
                         verify_inference_provenance(a,b,ROOT)
+
+    def test_rejects_duplicate_json_keys_in_inference_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a,b,_=evidence_files(pathlib.Path(tmp))
+            original=a.read_text(encoding="utf-8")
+            self.assertIn('"real_model_calls": 1',original)
+            a.write_text(original.replace('"real_model_calls": 1',
+                                          '"real_model_calls": 1, "real_model_calls": 1'),
+                         encoding="utf-8")
+            with self.assertRaisesRegex(ValueError,"duplicate JSON evidence key"):
+                verify_inference_provenance(a,b,ROOT)
+
+    def test_rejects_duplicate_json_keys_in_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a,b,report=evidence_files(pathlib.Path(tmp))
+            original=b.read_text(encoding="utf-8")
+            self.assertIn('"provider": "qwen"',original)
+            changed=original.replace('"provider": "qwen"',
+                                     '"provider": "qwen", "provider": "qwen"')
+            b.write_text(changed,encoding="utf-8")
+            report["candidate_sha256"]=hashlib.sha256(changed.encode()).hexdigest()
+            a.write_text(json.dumps(report),encoding="utf-8")
+            with self.assertRaisesRegex(ValueError,"duplicate JSON evidence key"):
+                verify_inference_provenance(a,b,ROOT)
+
+    def test_rejects_forged_model_response_even_with_updated_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a,b,report=evidence_files(pathlib.Path(tmp))
+            report["attempts"][0]["response_preview"]="answer = 'forged'"
+            raw=report["attempts"][0]["response_preview"]
+            report["attempts"][0]["response_chars"]=len(raw)
+            report["attempts"][0]["response_sha256"]=hashlib.sha256(raw.encode()).hexdigest()
+            a.write_text(json.dumps(report),encoding="utf-8")
+            with self.assertRaises(ValueError):
+                verify_inference_provenance(a,b,ROOT)
 
     def test_rejects_patch_substitution_even_with_updated_candidate_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
