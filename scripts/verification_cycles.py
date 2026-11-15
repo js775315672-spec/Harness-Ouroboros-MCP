@@ -4,7 +4,7 @@
 These are 30 verification repetitions, not 30 independent feature implementations.
 No network, secrets, trading, merge or repository mutation.
 """
-import argparse,json,pathlib,subprocess,sys,time
+import argparse,json,os,pathlib,subprocess,sys,tempfile,time
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 STEPS=(
     ("harness",["scripts/governance.py"]),
@@ -12,7 +12,19 @@ STEPS=(
     ("regression",["-m","unittest","discover","-s","tests","-q"]),
     ("secrets",["scripts/harness_check.py"]),
 )
-def run(rounds=30,root=ROOT,runner=None):
+def write_report(path,report):
+    if path is None:return
+    path=pathlib.Path(path)
+    path.parent.mkdir(parents=True,exist_ok=True)
+    fd,name=tempfile.mkstemp(prefix='.verification-',suffix='.tmp',dir=path.parent)
+    try:
+        with os.fdopen(fd,'w',encoding='utf-8') as stream:
+            json.dump(report,stream,sort_keys=True,indent=2)
+            stream.write('\\n')
+        os.replace(name,path)
+    finally:
+        if os.path.exists(name):os.unlink(name)
+def run(rounds=30,root=ROOT,runner=None,report_path=None):
     if not 1<=rounds<=30:raise ValueError("rounds must be 1..30")
     runner=runner or subprocess.run
     completed=[]
@@ -32,17 +44,22 @@ def run(rounds=30,root=ROOT,runner=None):
             step_results[-1]["duration_seconds"]=round(time.monotonic()-step_started,3)
             if status!="pass":
                 report={"requested_rounds":rounds,"completed_rounds":len(completed),"failed_round":i,"steps":step_results,"outcome":"blocked","elapsed_seconds":round(time.monotonic()-started,3)}
+                report["cycles"]=completed
+                write_report(report_path,report)
                 print(json.dumps(report,sort_keys=True),flush=True)
                 return 1
         completed.append({"round":i,"steps":step_results,"duration_seconds":round(time.monotonic()-round_started,3)})
         print(json.dumps({"round":i,"status":"pass","duration_seconds":completed[-1]["duration_seconds"],"total_elapsed_seconds":round(time.monotonic()-started,3)}),flush=True)
-    print(json.dumps({"requested_rounds":rounds,"completed_rounds":len(completed),"outcome":"pass","elapsed_seconds":round(time.monotonic()-started,3),"note":"verification cycles only; no code changes performed"},sort_keys=True),flush=True)
+    report={"requested_rounds":rounds,"completed_rounds":len(completed),"outcome":"pass","elapsed_seconds":round(time.monotonic()-started,3),"cycles":completed,"note":"verification cycles only; no code changes performed"}
+    write_report(report_path,report)
+    print(json.dumps({key:value for key,value in report.items() if key!="cycles"},sort_keys=True),flush=True)
     return 0
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--rounds",type=int,default=30)
+    parser.add_argument("--report",type=pathlib.Path)
     args=parser.parse_args()
-    try:return run(args.rounds)
+    try:return run(args.rounds,report_path=args.report)
     except ValueError as exc:
         print("BLOCK:",str(exc),file=sys.stderr);return 2
 if __name__=="__main__":sys.exit(main())
