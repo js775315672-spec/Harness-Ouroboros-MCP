@@ -7,6 +7,7 @@ on:
       - 'scripts/gguf_cpu_runtime.py'
       - 'scripts/gguf_official_download.py'
       - 'scripts/gguf_cpu_benchmark.py'
+      - 'scripts/qwen_semantic_repair_loop.py'
       - 'tests/test_gguf_cpu_runtime.py'
   workflow_dispatch:
 permissions:
@@ -38,6 +39,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
           python -m unittest discover -s tests -p test_gguf_output_boundary.py -v
+          python -m unittest discover -s tests -p test_qwen_semantic_repair.py -v
           python scripts/harness_check.py
       - name: Compile pinned CPU llama-completion (no CUDA or CURL)
         run: |
