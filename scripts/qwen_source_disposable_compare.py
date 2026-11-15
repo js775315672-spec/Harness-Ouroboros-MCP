@@ -18,10 +18,12 @@ import tempfile
 try:
     from .qwen_source_guard import TARGET, TASK, inspect_line
     from .qwen_source_trial import MODEL, normalize_model_line
+    from .qwen_source_microtask import KINDS, MODE, MAX_ATTEMPTS_PER_KIND, build_candidate
     from .disposable_regression_compare import _docker_command, _unique_json_pairs
 except ImportError:
     from qwen_source_guard import TARGET, TASK, inspect_line
     from qwen_source_trial import MODEL, normalize_model_line
+    from qwen_source_microtask import KINDS, MODE, MAX_ATTEMPTS_PER_KIND, build_candidate
     from disposable_regression_compare import _docker_command, _unique_json_pairs
 
 FILES = (TARGET, "scripts/task_selector.py", "scripts/evolution_planner.py",
@@ -69,30 +71,74 @@ def verify_and_stage(root, inference_path, candidate_path, workspace):
         raise ValueError("checkout required")
     inference, _ = _json(inference_path)
     candidate, candidate_sha = _json(candidate_path)
+    micro_mode = candidate.get("generation_mode") == MODE
+    limit = len(KINDS) * MAX_ATTEMPTS_PER_KIND if micro_mode else 2
     if (inference.get("status") != "accepted_for_disposable_review" or
             inference.get("model") != MODEL or inference.get("task_id") != TASK["task_id"] or
-            type(inference.get("model_calls")) is not int or not 1 <= inference["model_calls"] <= 2 or
+            type(inference.get("model_calls")) is not int or not 1 <= inference["model_calls"] <= limit or
             inference.get("source_checkout_modified") is not False or
             inference.get("model_code_executed") is not False or
             inference.get("merge_authorized") is not False):
         raise ValueError("untrusted model provenance")
     if candidate_sha != inference.get("candidate_sha256"):
         raise ValueError("model candidate hash mismatch")
-    if set(candidate) != {"provider", "status", "task_id", "raw_response", "line", "source_patch",
-                          "source_sha256", "model_line_sha256"}:
+    common_fields = {"provider", "status", "task_id", "line", "source_patch",
+                     "source_sha256", "model_line_sha256"}
+    legacy_fields = common_fields | {"raw_response"}
+    micro_fields = common_fields | {"generation_mode", "microtask_responses"}
+    if set(candidate) != (micro_fields if micro_mode else legacy_fields):
         raise ValueError("unexpected candidate fields")
-    if candidate["provider"] != "qwen" or candidate["status"] != "proposal" or candidate["task_id"] != TASK["task_id"]:
+    if (candidate["provider"] != "qwen" or candidate["status"] != "proposal" or
+            candidate["task_id"] != TASK["task_id"]):
         raise ValueError("unexpected model task")
-    if (not isinstance(candidate["raw_response"], str) or
-            not isinstance(candidate["line"], str) or
-            normalize_model_line(candidate["raw_response"]) != candidate["line"]):
-        raise ValueError("model response cannot be replayed to the guarded line")
-    attempts = inference.get("attempts")
-    if (not isinstance(attempts, list) or len(attempts) != inference["model_calls"] or
-            not attempts or attempts[-1].get("status") != "accepted" or
-            attempts[-1].get("response_sha256") != _hash(candidate["raw_response"].encode("utf-8"))):
-        raise ValueError("model response does not match accepted attempt")
     original = _safe_file(root, TARGET).read_text(encoding="utf-8")
+    attempts = inference.get("attempts")
+    if not isinstance(attempts, list) or len(attempts) != inference["model_calls"]:
+        raise ValueError("model attempt trace is incomplete")
+    if micro_mode:
+        responses = candidate["microtask_responses"]
+        if (not isinstance(responses, list) or len(responses) != len(KINDS) or
+                any(not isinstance(item, dict) or
+                    set(item) != {"kind", "raw_response"} or
+                    item["kind"] != kind or
+                    not isinstance(item["raw_response"], str)
+                    for item, kind in zip(responses, KINDS))):
+            raise ValueError("unexpected model microtask response contract")
+        rebuilt = build_candidate({item["kind"]: item["raw_response"]
+                                   for item in responses}, original)
+        if candidate != rebuilt:
+            raise ValueError("model fragments do not reconstruct the source patch")
+        stage, count = 0, 0
+        for row in attempts:
+            if not isinstance(row, dict) or stage >= len(KINDS):
+                raise ValueError("unexpected microtask attempt")
+            kind = KINDS[stage]
+            count += 1
+            if (row.get("kind") != kind or
+                    type(row.get("attempt")) is not int or row["attempt"] != count or
+                    count > MAX_ATTEMPTS_PER_KIND or
+                    row.get("status") not in ("rejected", "accepted")):
+                raise ValueError("microtask attempt sequence is invalid")
+            if row["status"] == "accepted":
+                raw = responses[stage]["raw_response"]
+                if (row.get("response_sha256") != _hash(raw.encode("utf-8")) or
+                        row.get("response_length") != len(raw)):
+                    raise ValueError("accepted model fragment provenance mismatch")
+                stage += 1
+                count = 0
+            elif row.get("reason_type") != "expression_ast_rejected":
+                raise ValueError("missing bounded rejection category")
+        if stage != len(KINDS) or attempts[-1].get("status") != "accepted":
+            raise ValueError("model fragments not completed")
+    else:
+        if (not isinstance(candidate["raw_response"], str) or
+                not isinstance(candidate["line"], str) or
+                normalize_model_line(candidate["raw_response"]) != candidate["line"]):
+            raise ValueError("model response cannot be replayed to the guarded line")
+        if (not attempts or attempts[-1].get("status") != "accepted" or
+                attempts[-1].get("response_sha256") !=
+                _hash(candidate["raw_response"].encode("utf-8"))):
+            raise ValueError("model response does not match accepted attempt")
     inspection = inspect_line(candidate["line"], original)
     if (inspection["patch"] != candidate["source_patch"] or
             inspection["source_sha256"] != candidate["source_sha256"] or
