@@ -78,6 +78,11 @@ class GGUFAdapterTests(unittest.TestCase):
             self.assertTrue(run.call_args.kwargs["timeout"] == 30)
             self.assertIn("--jinja", run.call_args.args[0])
             self.assertIn("--offline", run.call_args.args[0])
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index("--seed")+1], "42")
+            self.assertEqual(command[command.index("--temp")+1], "0")
+            self.assertEqual(runtime.calls[0]["sampling_seed"], 42)
+            self.assertEqual(runtime.calls[0]["sampling_temperature"], 0)
             self.assertNotIn("--no-show-timings", run.call_args.args[0])
             self.assertEqual(run.call_args.args[0][0], str(cli.resolve()))
             self.assertEqual(len(runtime.calls), 1)
