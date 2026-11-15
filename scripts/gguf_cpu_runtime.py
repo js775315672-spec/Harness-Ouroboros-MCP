@@ -48,6 +48,7 @@ MODELS = {
 RESTRICTED = {"3b": "qwen-research: non-commercial evaluation only; not authorized here"}
 MAX_PROMPT_BYTES = 5000
 MAX_OUTPUT_BYTES = 6000
+FROZEN_CPU_SEED = 42  # fixed for the preregistered scoped smoke benchmark
 
 
 def approved_model(model):
@@ -117,7 +118,7 @@ class CPUInference:
             str(self.cli), "--model", str(self.gguf),
             "--prompt", formatted_prompt, "--n-predict", "140",
             "--ctx-size", "2048", "--threads", "4",
-            "--temp", "0", "--no-display-prompt",
+            "--temp", "0", "--seed", str(FROZEN_CPU_SEED), "--no-display-prompt",
             "--simple-io", "--single-turn", "--jinja",
             "--offline", "--log-verbosity", "1", "--color", "off",
         ]
@@ -146,6 +147,8 @@ class CPUInference:
         self.calls.append({
             "elapsed_seconds": elapsed,
             "prompt_template": "qwen2.5-chatml-v1",
+            "sampling_temperature": 0,
+            "sampling_seed": FROZEN_CPU_SEED,
             "stdout_sha256": hashlib.sha256(output.stdout.encode("utf-8")).hexdigest(),
             "terminal_marker_stripped": marker_stripped,
             "quoted_control_bytes_escaped": controls_escaped,

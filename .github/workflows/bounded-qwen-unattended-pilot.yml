@@ -1,0 +1,221 @@
+name: Bounded 30-minute Qwen unattended coding pilot
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/bounded-qwen-unattended-pilot.yml"
+      - "scripts/bounded_qwen_autonomous_worker.py"
+      - "tests/test_bounded_qwen_autonomous_worker.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bounded-qwen-pilot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh_two_task_model_worker:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 44
+    permissions:
+      contents: read
+    env:
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - name: Checkout with no persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Offline task controller, checkpoint and AST adversarial tests
+        run: |
+          python3 -m unittest discover -s tests -p test_frozen_qwen_benchmark_20.py -v
+          python3 -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
+          python3 -m unittest discover -s tests -p test_bounded_qwen_autonomous_worker.py -v
+          python3 -m unittest discover -s tests -p test_feedback_controller_verified.py -v
+          python3 scripts/harness_check.py
+      - name: Compile pinned llama.cpp CPU runner (no CUDA/network tool)
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin 4e5116f47619dac4180c3007ef02a383f347554c
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "4e5116f47619dac4180c3007ef02a383f347554c"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --config Release --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+      - name: Download official Apache-2.0 Qwen2.5 Coder 7B GGUF
+        run: |
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model 7b --destination models \
+            --report artifacts/gguf-7b-fresh-pilot-provenance.json
+      - name: Prefetch base image before isolated no-network Docker
+        run: docker pull python:3.11-slim
+      - name: Execute two sequential fresh model coding tasks within 30-minute cap
+        env:
+          REVIEW_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/bounded_qwen_autonomous_worker.py run \
+            --root . \
+            --head-sha "$REVIEW_SHA" \
+            --checkpoint artifacts/fresh-loop/checkpoint.json \
+            --report artifacts/fresh-loop/result.json \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --download-metadata artifacts/gguf-7b-fresh-pilot-provenance.json \
+            --budget-seconds 1800
+          test -z "$(git status --porcelain -- scripts/feedback_controller_verified.py scripts/feedback_controller.py)"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          c=json.loads(Path("artifacts/fresh-loop/checkpoint.json").read_text())
+          r=json.loads(Path("artifacts/fresh-loop/result.json").read_text())
+          assert c["completed_tasks"]==2 and c["state"]=="complete"
+          assert len(c["steps"])==2
+          assert r["status"]=="model_loop_complete"
+          assert r["queue_ci_attested"]==0
+          assert r["merge_authorized"] is False
+          print("PASS: two fresh Qwen edits, both AST and disposable Docker verified")
+          PY
+      - name: Preregistered 20-repeat fixed-task Qwen measurement (includes all failures)
+        if: always()
+        env:
+          REVIEW_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/frozen_qwen_benchmark_20.py run \
+            --root . --commit "$REVIEW_SHA" \
+            --directory artifacts/frozen-20 \
+            --summary artifacts/frozen-benchmark-command.json \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --metadata artifacts/gguf-7b-fresh-pilot-provenance.json \
+            --budget-seconds 1700
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("artifacts/frozen-20/report.json").read_text())
+          assert p["summary"]["planned_trials"] == 20
+          assert p["summary"]["ci_attested_source_tasks"] == 0
+          assert p["summary"]["general_autonomous_coding_proven"] is False
+          print("Pre-registered 20 attempts recorded, including all model/infra failures")
+          PY
+          # Python may generate __pycache__ bytecode; .gitignore excludes those
+          # cache files, but source/test edits and new test files remain fatal.
+          unexpected="$(git status --porcelain --untracked-files=all -- scripts/feedback_controller_verified.py scripts/feedback_controller.py tests)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::Source or evaluation tests changed during the benchmark"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+      - name: Truthful run summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          path=Path("artifacts/fresh-loop/result.json")
+          r=json.loads(path.read_text()) if path.exists() else {"status":"not_run"}
+          print("## Bounded two-task CPU coding pilot")
+          for k in ("status","sandbox_completed","model_calls","elapsed_seconds",
+                    "peak_child_rss_kib","queue_ci_attested","merge_authorized"):
+              print(f"- {k}: {r.get(k,'not_available')}")
+          print("- This is not proof of 30 minutes elapsed or general autonomous coding.")
+          print("- Model patches are never written to checkout or merged.")
+          PY
+      - name: Upload checkpoint and provenance on success or failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fresh-qwen-two-task-checkpoint
+          path: |
+            artifacts/fresh-loop/checkpoint.json
+            artifacts/fresh-loop/result.json
+            artifacts/gguf-7b-fresh-pilot-provenance.json
+            artifacts/frozen-20/
+            artifacts/frozen-benchmark-command.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_checkpoint_recovery:
+    needs: fresh_two_task_model_worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Restore checkpoint from previous runner
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: fresh-qwen-two-task-checkpoint
+          path: artifacts/recovered
+      - name: Check exact restored archive layout
+        run: |
+          test -f artifacts/recovered/fresh-loop/checkpoint.json
+          test -f artifacts/recovered/fresh-loop/result.json
+          test -f artifacts/recovered/gguf-7b-fresh-pilot-provenance.json
+      - name: Prefetch disposable Docker image
+        run: docker pull python:3.11-slim
+      - name: Reconstruct model patches and independently rerun Docker controls
+        env:
+          REVIEW_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/bounded_qwen_autonomous_worker.py verify \
+            --root . \
+            --head-sha "$REVIEW_SHA" \
+            --checkpoint artifacts/recovered/fresh-loop/checkpoint.json \
+            --report artifacts/recovered/fresh-loop/replay.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/recovered/fresh-loop/replay.json").read_text())
+          assert r["status"]=="fresh_two_model_patches_replayed"
+          assert r["sandbox_patches"]==2
+          assert r["queue_ci_attested"]==0
+          assert r["checkout_modified"] is False
+          assert r["merge_authorized"] is False
+          print("PASS: new-runner checkpoint recovery and fresh isolated Docker replay")
+          PY
+          test -z "$(git status --porcelain -- scripts/feedback_controller_verified.py scripts/feedback_controller.py)"
+      - name: Independently verify every completed measured trial
+        if: always()
+        env:
+          REVIEW_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/frozen_qwen_benchmark_20.py replay \
+            --root . --commit "$REVIEW_SHA" \
+            --directory artifacts/recovered/frozen-20 \
+            --summary artifacts/recovered/frozen-20/recovery-verification.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/recovered/frozen-20/recovery-verification.json").read_text())
+          assert r["status"] == "independent_recovery_batch_verified"
+          assert r["planned"] == 20
+          assert r["merge_authorized"] is False
+          print("PASS: independent Docker replay of all in-run pass candidates; failures retained")
+          PY
+      - name: Upload independent recovery result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fresh-qwen-two-task-recovery
+          path: |
+            artifacts/recovered/fresh-loop/replay.json
+            artifacts/recovered/frozen-20/recovery-verification.json
+          if-no-files-found: warn
+          retention-days: 7
