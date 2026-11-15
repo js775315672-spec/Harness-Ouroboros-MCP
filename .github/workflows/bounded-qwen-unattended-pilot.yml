@@ -110,7 +110,14 @@ jobs:
           assert p["summary"]["general_autonomous_coding_proven"] is False
           print("Pre-registered 20 attempts recorded, including all model/infra failures")
           PY
-          test -z "$(git status --porcelain -- scripts/feedback_controller_verified.py scripts/feedback_controller.py tests)"
+          # Python may generate __pycache__ bytecode; .gitignore excludes those
+          # cache files, but source/test edits and new test files remain fatal.
+          unexpected="$(git status --porcelain --untracked-files=all -- scripts/feedback_controller_verified.py scripts/feedback_controller.py tests)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::Source or evaluation tests changed during the benchmark"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
       - name: Truthful run summary
         if: always()
         run: |
