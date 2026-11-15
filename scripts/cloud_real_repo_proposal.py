@@ -63,6 +63,7 @@ def main():
         report["response_sha256"]=hashlib.sha256(raw.encode()).hexdigest()
         report["response_chars"]=len(raw)
         report["response_preview"]=raw[:1200]
+        report["response_ends_with_newline"]=raw.endswith("\n")
         report.update(assess(raw,task["task"]))
         report["task_id"]=task["task"]["task_id"]
         report["inspection_kind"]="static_scope_and_unified_diff_only"
@@ -75,7 +76,7 @@ def main():
         OUTPUT.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n",
                           encoding="utf-8")
         print(json.dumps(report,sort_keys=True))
-    return 0 if report["status"] in ("accepted_for_review","rejected") else 2
+    return 0 if report["status"]=="accepted_for_review" else 2
 
 if __name__=="__main__":
     raise SystemExit(main())
