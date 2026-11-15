@@ -37,8 +37,8 @@ class RealRepoQwenProposalTests(unittest.TestCase):
         self.assertTrue(result["inspection"]["source_context"]["python_ast_parsed"])
         self.assertTrue(result["inspection"]["source_context"]["test_fixture_real_newlines"])
         self.assertFalse(result["inspection"]["patch_approved_for_application"])
-        self.assertIn(f"Line {n}: {old}",prompt_for_attempt("Goal",source))
-        self.assertIn("rejected: test failure",prompt_for_attempt("Goal",source,"test failure"))
+        self.assertIn(f"Original source line {n}:\n{old}",prompt_for_attempt("Goal",source))
+        self.assertIn("failed validation: test failure",prompt_for_attempt("Goal",source,"test failure"))
 
     def test_real_source_rejects_wrong_context_and_noop(self):
         from cloud_real_repo_proposal import _target_line
