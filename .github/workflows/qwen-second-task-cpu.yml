@@ -5,7 +5,9 @@ on:
     paths:
       - ".github/workflows/qwen-second-task-cpu.yml"
       - "scripts/qwen_second_task_trial.py"
+      - "scripts/qwen_control_literal_boundary.py"
       - "tests/test_qwen_second_task_trial.py"
+      - "tests/test_qwen_control_literal_boundary.py"
       - "scripts/gguf_cpu_runtime.py"
       - "proposals/feedback_cycle_guard_7b.json"
   workflow_dispatch:
@@ -37,6 +39,8 @@ jobs:
       - name: Offline second-task tests and Harness guard
         run: |
           python -m unittest discover -s tests -p test_qwen_second_task_trial.py -v
+          python -m unittest discover -s tests -p test_qwen_control_literal_boundary.py -v
+          python -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
           python -m unittest discover -s tests -p test_verified_model_patch_review.py -v
           python scripts/harness_check.py
       - name: Compile pinned no-CUDA CPU llama-completion
