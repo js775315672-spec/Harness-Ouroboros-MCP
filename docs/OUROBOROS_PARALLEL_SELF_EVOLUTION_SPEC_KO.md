@@ -1,111 +1,144 @@
-# Ouroboros Parallel Self-Evolution Engine — Implementation Specification v1
+# Ouroboros Parallel Self-Evolution Engine — 개발 명세서 v1
 
-Status: **design + read-only eight-lane CI smoke pilot**; general-purpose autonomous coding, remote experiment branches, CI-attested promotion, and recurring execution are **NOT implemented** by this specification alone.
+**현재 단계:** 설계 명세 + 8개 독립 작업공간을 검증하는 읽기 전용 GitHub Actions 파일럿. **범용 AI 자동 코딩, 원격 실험 브랜치 푸시, 무인 50분 개발, 매시간 반복 예약은 아직 구현·입증되지 않았다.**
 
-## 1. Mission and exact target
+## 1. 개발 목표
 
-The Ouroboros/Harness/MCP repository develops **itself**, not AURA-OS or SteadyTrade. Eight independent development agents receive the **same high-level goal**, each with a deliberately different architecture hypothesis. Every proposal begins at the same pinned base commit, runs in its own Git branch/worktree and independent GitHub Actions runner, and is judged against the same frozen evaluation contract. The system may prepare Draft PR proposals, but must not merge them without the owner's separate, explicit approval.
+**Ouroboros Harness MCP가 Ouroboros Harness MCP 자신의 소스 코드를 개선**하는 자기개발형 병렬 에이전트 엔진을 구축한다. 대상은 아래 한 저장소로 제한한다.
 
-Repository: https://github.com/js775315672-spec/Harness-Ouroboros-MCP
+- 대상: https://github.com/js775315672-spec/Harness-Ouroboros-MCP
+- 작업 시작점: 동일한, 고정된 Git 커밋 SHA
+- 작업 분할: **동일한 상위 목표를 8가지 서로 다른 아키텍처로 해결**
+- 작업공간: GitHub Actions 러너별 독립 Git 브랜치 및 worktree
+- 판정: 공통 테스트셋 + 기존 Harness 보안·회귀 게이트 + 실행 증거
+- 결과: 코드 후보, 로그, 독립 검증 보고서, 성능 비교, 사용자 검토용 Draft PR
+- 절대 금지: 비밀키 제공, 유료 API, 자동 병합·승인, 실거래, 무단 배포
 
-Baseline before this design: an existing Qwen 7B bounded two-task worker, isolated AST/Docker checks, and checkpoint verification exist on the development PR chain. This is evidence for **two narrowly scoped tasks**, not an eight-agent generalized autonomous code author.
+기존 개발 흐름에는 Qwen 7B의 **두 개 제한된 코딩 과제**, AST/Docker 검증, 체크포인트 복구를 시도하는 Draft PR이 존재한다. 이는 **범용 자율 코딩 8개가 실제로 가동된 증거는 아니다.** 기존 기능을 확장하되 검증 기록을 과장해서는 안 된다.
 
-## 2. Operating cadence: hourly outside, five minutes inside
+## 2. 시간 운영: 바깥쪽은 1시간, 안쪽은 5분
 
-- **Hour H, minute 00**: read previous completed artifacts; pin source SHA, goal SHA and evaluation/test-set SHA; select **at most eight** approved candidate tasks. Use a durable checkpoint; if the prior round is incomplete, resume or block rather than duplicating it.
-- **Minute 00–50**: each selected agent gets **at most 3,000 seconds** of coding/repair budget. Use independent runners/worktrees; no shared writable checkout. An internal checkpoint or heartbeat may be attempted every **five minutes**, but must not be treated as an exact-time guarantee.
-- **Minute 50–55**: independent Harness, security, regression, reproducibility and performance checks; record timeouts and missing metrics as failures/unknown, never passes.
-- **Minute 55–60**: publish bounded artifacts, checkpoint the promotion queue, produce a ranking and up to eight next-step contracts. The **next** hour reviews the completed epoch; clock delays do not grant extra budget.
-- The **GitHub workflow timeout** should be greater than the **3,000-second worker cap** to allow setup and final verification. All limits are enforced independently. Run start latency is not controllable.
-- GitHub Actions schedules are only effective when the workflow is on the default branch, and can run late or be dropped. Initial delivery is **workflow_dispatch + PR validation only**. Do not enable a recurring self-writing cron before a separate approval and security review.
-
-## 3. Eight alternative architecture lanes — one goal
-
-All eight agents solve: “Build a safe, bounded, recoverable, auditable, end-to-end autonomous code-change cycle for this repository.” They are **competing architecture alternatives**, not permission to touch arbitrary subsystems.
-
-| Lane | Alternative approach | Main design distinction |
+| 구간 | 업무 | 검증 기준 |
 | --- | --- | --- |
-| 01 | Centralized controller | Single deterministic orchestration state machine |
-| 02 | Event-sourced controller | Append-only events and replay-based restoration |
-| 03 | Dependency DAG | Typed tasks, dependencies, and verified edge transitions |
-| 04 | Message/actor orchestration | Bounded mailboxes and explicit actor handoffs |
-| 05 | Immutable artifact pipeline | Content-addressed input/output stage chain |
-| 06 | Git-native checkpoints | Immutable commits/refs plus external run attestations |
-| 07 | Planner/executor/verifier separation | Three isolated trust domains and contracts |
-| 08 | Beam-search portfolio | Limited candidate frontier with novelty/diversity checks |
+| 매시 00분 전후 | 이전 세대 결과·체크포인트 읽기, 소스 SHA/동일 목표/동일 테스트셋 고정, 최대 8개 작업 선택 | 이전 실행 중이면 중복 실행 차단 |
+| 00~50분 | 최대 8개 독립 러너에서 AI 개발·수정·재시도 | 각 에이전트 작업 예산 **3,000초** |
+| 작업 중 매 5분 | 체크포인트 저장 시도·하트비트·자원 사용 점검 | 실패 시 재개 또는 중지, 정각 보장 아님 |
+| 50~55분 | 독립 Harness·보안·성능·회귀·재현성 테스트 | 증거 미확인 시 실패/미검증 |
+| 55~60분 | 결과 집계·순위·다음 세대 후보 큐 기록 | 병합 없음, 자원 예산 상한 유지 |
+| 다음 시간 | 검증된 부모별로 최대 8개 개선 방향 파생 및 다음 8개 실행 대상 선별 | 외부 승인 규칙 유지 |
 
-Exact machine-readable initial hypotheses and safe contracts: **configs/self-evolution-8lanes.json**.
+GitHub Actions의 스케줄은 **기본 브랜치에 워크플로가 있어야 작동**하고 실행이 지연되거나 생략될 수 있다. 따라서 처음부터 무인 정기 실행을 켜지 않는다. 최초 파일럿은 **Pull Request 검사 + 수동 트리거**만 사용한다. 이후 50분 모델 실행 예산과 GitHub Job 타임아웃을 별개로 관리하며, 다운로드·빌드·검증 시간까지 무제한 허용하지 않는다.
 
-## 4. Recursive branching without exponential execution
+ChatGPT 예약은 향후 매시간 **완료된 보고서를 분석하고 다음 작업의 방향을 정하는 상위 관리자**로 사용할 수 있다. 예약이 실행되지 않아도 GitHub 체크포인트와 이미 생성된 결과가 보존되어야 한다. 예약 작업이 외부 실행을 자동으로 트리거할 수 있는지는 연결된 도구 및 권한 검증 후에만 활성화한다.
 
-- Generation 0: eight alternatives (8 candidates).
-- Generation 1: **each independently verified parent may propose up to eight children**. This permits a **theoretical maximum of 64 proposed children**, not 64 simultaneously running workers.
-- Generation 2: those children may propose further descendants; **8^N is a proposal space, not an execution entitlement**.
-- Only a *verified* parent may spawn children. Failed, timed-out, unverified or forged candidates spawn zero.
-- Keep **max_active_workers = 8**; pending candidate growth is capped at **64 per epoch**, and the scheduler selects no more than eight per subsequent hour using frozen metrics plus diversity controls. Others are rejected/archived, not silently executed.
-- Preserve at least one architecture-diverse contender when verified evidence permits; don't optimize solely for code length or PR count. No automatic merging, no passing based on repeated identical tests, and no artificial “successful evolution” counters.
-- Bound total epochs, inference calls, retries, disk/artifact sizes, per-run wall time and concurrency. Stop when budgets are exhausted or no improvement over the frozen baseline can be verified.
+## 3. 8개 에이전트 — 같은 목적, 다른 아키텍처
 
-## 5. Isolation and safety trust boundary
+8개 에이전트는 각기 다른 기능을 분담하는 데 그치지 않고, **동일한 자율 개발 루프 전체를 대안적 구조로 구현·실험**한다.
 
-1. **Pinned base**: each job starts from the same source commit and immutable contract version. Branch name pattern: exp/ouroboros/<run-id>/<lane-id>/<generation>. A worktree branch is **local-only** unless a later authorized publishing step explicitly pushes a reviewed candidate. A local branch alone is not a GitHub remote branch.
-2. **Untrusted model**: local CPU GGUF/llama.cpp or an explicitly approved free, local inference adapter only. No external paid APIs, account secrets, personal access tokens, exchange keys or inherited credential environment. Model output is *data* until AST/diff/path and test gates pass.
-3. **Disposable execution**: test untrusted patches only in an independently configured no-network, non-root, read-only or tightly sandboxed runtime, with CPU/memory/process/time limits. No direct shell commands generated by the model. Prevent workspace escape, symlink tricks and forbidden paths.
-4. **Protected control plane**: model-generated edits to .github/workflows, harness-policy.json, Harness gate code, approval code, action permissions, and the test oracle cannot be allowed to relax the gate that judges themselves. Such proposals require separate maintainer review against a frozen baseline and must never be self-accepted.
-5. **No write permission for the worker**: GitHub Actions job has contents: read, checkout persist-credentials: false. The initial pilot does **not** push code, create remote branches, create PRs or call models. A future separate publisher may create **Draft PRs only**, under explicitly approved permissions; publishing is not merging. It must never approve/merge its own proposals.
-6. **No real-world side effects**: no trading, deployments, privileged Docker, service secrets, or repository administration.
+| ID | 아키텍처 | 검증할 대안 |
+| --- | --- | --- |
+| 01 | 중앙 상태머신형 | 하나의 결정적 컨트롤러가 작업·전이·복구를 통제 |
+| 02 | 이벤트 소싱형 | 불변 이벤트 로그를 재생하여 상태 복원 |
+| 03 | 의존성 DAG형 | 작업의 의존 관계와 증거를 연결한 그래프 실행 |
+| 04 | 액터·메시지형 | 플래너·실행기·검증기 사이의 제한된 메시지 전달 |
+| 05 | 불변 산출물형 | 콘텐츠 해시 기반의 단계별 입력·출력 파이프라인 |
+| 06 | Git 체크포인트형 | 격리된 Git ref와 독립 CI 증거를 상태 기준으로 활용 |
+| 07 | 3중 신뢰영역형 | 계획·코딩·검증을 별도 보안 도메인으로 분리 |
+| 08 | Beam Search형 | 다양성을 보존하면서 검증된 후보만 제한적으로 선별 |
 
-## 6. Checkpoint & idempotency contract
+세부 작업 계약: **configs/self-evolution-8lanes.json**. 각 에이전트는 같은 시작 커밋, 같은 목표, 같은 검증 데이터 및 성능 측정 기준을 사용한다.
 
-Minimum fields: schema version, repo, source SHA, goal SHA, frozen oracle/test digest, epoch, lane ID, parent candidate hash, generation, attempts, elapsed/CPU budgets, prompt/model version and license provenance, patch SHA, current phase, trial results, artifact URI, unique run/attempt ID, and human_approval_required=true.
+## 4. 결과의 8배 파생 — 계산 폭증 방지
 
-- Write JSON atomically with fsync and generation compare-and-swap in each workspace.
-- Publish digest-checked artifacts between jobs; SHA-256 detects accidental alteration but is **not a remote authenticity signature**.
-- Resume only when the frozen source SHA, task ID, oracle SHA and checkpoint lineage match; otherwise block.
-- Never count repeated CI verification on an unchanged commit as newly authored code.
-- Execution retries must be bounded and idempotent. Missing or ambiguous CI evidence is failure-to-attest.
+- 최초 세대: **8개 후보**를 병렬 실험.
+- 다음 세대: **독립적으로 검증된 부모** 한 개당 최대 8개 방향으로 파생. 8개 부모가 모두 검증되면 **최대 64개 제안**이 생길 수 있다.
+- 그다음 세대: 후보는 추가 파생할 수 있으나 8의 거듭제곱은 **후보 아이디어 수**이지 동시 CPU 실행 수가 아니다.
+- 모든 세대에서 **동시 실행 최대 8개**, 한 세대의 신규 대기 후보 최대 64개. 나머지는 비교·폐기·보류하며 몰래 실행하지 않는다.
+- 검증 실패, 원본 커밋 불명, 타임아웃, 정책 우회, 테스트 회귀, 중복 변경의 결과는 **자식 작업을 생성할 수 없다**.
+- 상위 우수 후보에 집중하되 아키텍처 다양성을 유지한다. 검증되지 않은 '코드 줄 수'나 PR 개수는 성공 지표가 아니다.
+- 최대 세대 수·총 추론 호출 수·재시도 수·총 CPU/메모리·저장 공간·사용 시간을 정책으로 제한하고 도달하면 정지한다.
 
-## 7. Frozen cross-lane evaluation
+## 5. 독립 실행·보안 요구사항
 
-Every candidate must face the **same independent tests**, measured on the same CPU runner type and frozen baseline commit. Passing alone is necessary, not proof of architectural superiority.
+**5.1 격리와 작업 영역**
 
-Blocking gates: existing Harness eight blocking checks, secret scanner, AST/scoped diff/path policy, actual source change, existing regression suite, adversarial negative tests, no regressions, source-specific test assertions, external CI attestation tied to the exact head SHA, and reproducible clean rerun.
+1. 작업별로 시작 SHA가 같은 독립적인 GitHub 러너 및 Git worktree를 부여한다.
+2. 로컬 실험 브랜치 형식은 exp/ouroboros/실행ID/에이전트ID/세대. **로컬 브랜치 생성은 GitHub 원격 브랜치 생성이 아니다.**
+3. 모델이 출력한 소스는 신뢰하지 않고 먼저 AST, 변경 경로, 크기, diff 범위 및 명세 일치를 검사한다.
+4. 실행이 필요한 패치는 네트워크 제한, 최소 권한, 실행시간·메모리 제한이 있는 폐기 가능한 격리 환경에서 테스트한다.
+5. 모델 생성 명령을 그대로 셸에서 실행하거나, 공유 작업공간/기본 브랜치에 직접 적용하면 안 된다.
 
-Measured/compared: success rate by *new* independently tested coding task, test coverage/change, reproducibility, wall-clock and CPU time, peak RSS, artifact size, number of model calls, distinct code-change evidence, code complexity, performance deviation versus baseline, and rollback ability.
+**5.2 자체 검증 게이트 보호**
 
-Rank **only attested candidates**. A candidate without performance data is **unknown**, not fastest. Rank is lexicographic: all mandatory gates pass → independently repeated test pass → no regressions → resource efficiency → architectural diversity. Report Pareto tradeoffs where metrics conflict. False evidence, leaked credentials, forbidden-path edits or post-budget work are blocked regardless of score.
+검증기가 자신의 제한을 무력화하도록 고쳐서는 안 된다. 다음 항목은 특별 보호 대상이다.
 
-Each lane publishes raw log digests, JSON metrics, trial patch/diff digest, failure categories and a readable report. The orchestrator publishes a ranked report and never labels a read-only smoke test as AI-authored development.
+- .github/workflows/
+- harness-policy.json
+- scripts/governance.py
+- scripts/harness_check.py
+- scripts/review_decision_gate.py
+- 승인·권한·비밀키·테스트 판정 기준 관련 소스
 
-## 8. Draft PR & human approval
+에이전트가 위 파일의 개선안을 제안하는 것은 가능하지만 **자신의 수정안으로 자신을 평가하거나 게이트를 완화해 자동 통과할 수 없다**. 변경 제안은 고정된 원본 검증기와 **별도 사람 심사**를 요구한다.
 
-- Phase 1 produces **review-only Draft PRs** for design and test infrastructure, based on the latest development branch, not main.
-- Phase 2 stages reviewed model patches in disposable workspaces and emits patch artifacts. Candidate source commits and CI attestations must be independently confirmed before creating any candidate Draft PR.
-- Each candidate Draft PR must contain: parent/base SHA, exact task, alternative architecture, model provenance/license, diff, test IDs, per-gate result, timing and memory, comparison baseline, checkpoint/artifact links, known limits, and **manual approval required**.
-- A failed or unverified candidate **cannot** become an implementation PR or a parent of further coding branches.
-- Never auto-merge, auto-approve, alter required review protections or treat Draft PR creation as merge consent.
+**5.3 권한과 비용**
 
-## 9. Implementation phases and verifiable exits
+- 파일럿 Actions: contents: read, checkout persist-credentials: false.
+- 사용자 제공 PAT·API 키·비밀키·유료 모델 API 사용 금지.
+- 로컬 GGUF/llama.cpp 등 무료 모델은 **별도의 P1 검증을 거쳐** 연결하며 추론 결과의 정확도·속도를 보장하지 않는다.
+- 코드 푸시와 Draft PR 발행은 추후 별도의 최소 권한 퍼블리셔와 명시적 승인으로 분리한다.
+- Draft PR을 만들 권한은 병합·승인 권한이 아니다. 자동 병합은 상시 금지한다.
 
-**P0 — self-development contract + eight-runner smoke (this PR).** Store this spec, the eight pinned task contracts, and a workflow that creates eight independent **local** Git worktree branches in a GitHub Actions matrix (max-parallel 8), runs the same baseline Harness/regression checks, uploads eight read-only reports and aggregates completeness. **No model calls or source edits.** Exit: eight distinct lane IDs, separate workspace branches, shared source SHA and oracle, valid evidence reports; no false coding claims.
+## 6. 중단·재개 체크포인트 명세
 
-**P1 — model-authoring adapter.** Generalize the existing narrowly scoped bounded-Qwen worker into a per-lane, tested task-contract executor. Offline fake-model negative tests first. Exit: eight genuinely distinct model requests, inspected outputs, no privileged execution, independent patch replay with security tests. Resource-failure remains reported failure, not success.
+최소 포함: 스키마 버전, 저장소, 고정 시작 SHA, 작업/목표 해시, 동일 테스트셋 해시, 세대, 에이전트 ID, 부모 후보/패치 해시, 모델·프롬프트·라이선스 정보, 실행 횟수, 사용 시간·CPU·메모리 예산, 이전 단계, 테스트 결과, 산출물 URI, 실행ID/시도ID, human_approval_required=true.
 
-**P2 — verified generation selection.** Create immutable candidate evidence, independently attest CI, score and select parents; propose up to eight children per accepted parent, enqueue at most 64, dispatch at most eight. Exit: forked lineage and wrong-commit/forged-evidence/replay/duplicate tests all block.
+- 원자적 JSON 저장, fsync, 세대 비교를 통해 중복 기록 차단.
+- GitHub Artifact로 작업 간 체크포인트 전달.
+- SHA-256 무결성값은 우발적 손상 탐지에 유용하지만 **원격 서명 증명은 아니다**.
+- 재개 시 소스 SHA·작업 ID·테스트셋 해시·부모 계보가 다르면 **중지**.
+- 같은 커밋에 동일 테스트를 반복하는 행위는 새로운 코딩 성과로 계산하지 않는다.
+- 누락되거나 불명확한 CI 결과는 성공 처리하지 않는다.
 
-**P3 — hourly bounded operation.** After security approval and main-branch availability, enable one-hour scheduler with 50-minute capped work and five-minute checkpoint events, stop/resume semantics, budget kill switch. Exit: at least two epochs with distinct new model outputs, exact source diff verification, independent CI attestations and successful crash recovery. Continuous coding is **not demonstrated** until this exit is met.
+## 7. 모든 후보의 공통 평가표
 
-**P4 — Draft PR publisher and ChatGPT reviewer.** Separate publisher under explicitly approved scoped permissions, never self-merge; hourly ChatGPT automation reviews artifacts and proposes eight new directions if available. Exit: created Draft PR evidence, permissions audit, manual acceptance gate, and no write action when permissions are unavailable.
+**필수 차단 게이트:** 기존 Harness 8개 Blocking 게이트, 비밀키 검사, 안전한 변경 범위, 실제 소스 diff, 동일 회귀 테스트, 부정·적대 테스트, 재현 테스트, 정확한 SHA에 대응하는 **독립 CI 증명**, 테스트 기준/승인 규칙의 불변성.
 
-## 10. Absolute acceptance criteria
+**비교 지표:** 새로운 작업 기준 코드 생성 성공률, 실제 적용된 변경, 테스트 수 및 품질, 동일 환경 재현율, 회귀 실패, 실행시간, CPU시간, 최대 RSS, 모델 호출량, 아티팩트 크기, 코드 복잡도 및 이전 기준 대비 성능.
 
-- Same repo self-development scope, eight distinct independent architectures, common frozen baseline/test set.
-- Maximum 8 simultaneous runners, hourly generation, 50-minute worker wall-clock cap, five-minute checkpoint *attempts*.
-- Verified-only 8-way spawning, at most 64 pending child proposals per epoch, bounded cost/resources.
-- Secret-free and paid-API-free; no agent-controlled merge, approvals, deployment or protected-gate weakening.
-- Clear **not-tested / smoke-only / attested model patch / accepted by human** status distinctions.
-- On any unknown evidence: **BLOCK / request human review**, not pass.
+**순위 규칙:** 필수 게이트 모두 통과 → 독립 재현 확인 → 회귀 없음 → 자원 효율 → 아키텍처 다양성. 여러 지표가 충돌하면 단일 숫자로 과장하지 않고 Pareto 비교를 제공한다. 성능값이 없으면 '미측정'으로 표기한다.
 
-## 11. Current user-visible success definition
+각 실행 결과는 로그, 로그 해시, 코드 변경 해시, 기준 커밋, 테스트 결과, 모델 정보, 자원 사용량, 체크포인트, 실패 이유 및 사용자 검토 링크를 기록한다. **읽기 전용 8개 테스트 성공과 실제 AI 코딩 8개 성공을 혼동하지 않는다.**
 
-This initial PR is complete only if the read-only eight-lane workflow and its evidence pass actual CI. Even then, it **does not mean** the 50-minute general self-coding loop works. The owner must review subsequent phases and give separate approval before enabling recurrent runs, any new GitHub write permission, or a candidate merge.
+## 8. Draft PR 및 사용자 승인
+
+1. 개발 제안과 코드를 독립 검증한 후 검토 대상으로 제시한다.
+2. 커밋·테스트·부모 계보·성능·비용·기존 대비 개선·미검증 부분을 Draft PR 본문에 포함한다.
+3. CI 증거 없는 후보는 구현 완료 PR이나 자식 생성의 부모로 승격하지 않는다.
+4. 테스트가 통과해도 자동 리뷰 승인이나 자동 병합을 실행하지 않는다.
+5. 정책·워크플로 변경은 별도의 사람 심사를 요구한다.
+
+## 9. 단계별 실제 구현과 종료 조건
+
+**P0 — 현재 작업: 설계 + 8개 독립 러너 검증.** 이 명세서, 8개 작업 계약 및 self-evolution-eight-lane-pilot.yml을 작성한다. 각 러너에서 독립 **로컬** 브랜치/worktree를 만들고 동일 unittest·governance·harness_check를 실행해 8개 로그를 모아 집계한다. **모델 호출·코드 수정·원격 브랜치 푸시는 하지 않는다.** 실제 CI에서 8개 레인이 모두 확인되면 P0 통과.
+
+**P1 — 범용 모델 실행기.** PR #16의 제한된 Qwen 실행기를 일반적인 8개 아키텍처 작업 계약에 맞게 확장. 가짜 모델로 공격적 테스트 → 실제 무료 CPU 모델 → AST/격리 Docker 검증. **8개의 별도 신규 모델 생성 코드 후보**가 검증되어야 통과.
+
+**P2 — 검증된 후보의 재귀 파생.** 정확한 SHA·독립 CI 증명이 있는 부모만 최대 8개 자식 생성, 대기열 64개 상한, 다음 8개 선발. 위조 증거·중복 커밋·잘못된 부모·파손 체크포인트는 모두 차단 테스트.
+
+**P3 — 시간당 자율 개발.** 별도 승인 후 기본 브랜치에서 1시간 스케줄, 50분 코딩 예산, 5분 체크포인트, 복구 및 예산 Kill Switch 구성. 적어도 **2세대의 실제 서로 다른 모델 출력과 커밋·독립 CI 검증·중단 후 복구**가 이루어져야 통과.
+
+**P4 — Draft PR + ChatGPT 감독.** 승인된 최소 권한 퍼블리셔로 Draft PR만 생성. ChatGPT 예약 작업은 완료된 보고서를 검토하고 차기 8개 작업을 제안·제출할 수 있는지 별도 검증한다. 연결 권한이 없으면 읽기 전용 평가로 멈춘다. 최종 병합은 항상 사용자 직접 승인.
+
+## 10. 전체 완료 판정
+
+- 자기 저장소만 대상으로 한 8개 독립 모델 코딩 경로
+- 공통 테스트셋과 동일 출발 SHA 기반 검증
+- 50분 작업·5분 체크포인트·1시간 평가 주기
+- 검증된 결과만 재분할하여 최대 8배 파생
+- 동시 러너 8개, 한 세대 64개 제안 상한
+- 모델 출력과 Harness 통제 영역의 엄격한 분리
+- 로그·성능 순위·재현 증거·Draft PR
+- 비밀키/유료 API/자동 병합 금지 및 사람의 승인
+
+**현재의 P0 파일럿이 통과하더라도 '8개 AI가 50분 동안 스스로 코드를 작성한다'는 뜻이 아니다. 실제 코딩·재귀 파생의 증명은 P1~P3에서 별도로 수행한다.**
