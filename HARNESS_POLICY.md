@@ -11,10 +11,10 @@
 - Current implementation: tracked-file secret signature scan and regression tests.
 - The scanner checks large files in chunks; unreadable, symlinked and binary files fail closed for review.
 - The scan is not comprehensive: pattern-based checks may miss secrets; git history and untracked files are not scanned.
-- Blocking gates PLANNED: boundaries, layers, secrets, security, structure, specification, dependencies, mutation.
+- Blocking gates BASELINE IMPLEMENTED: boundaries, layers, secrets, security, structure, specification, dependencies, mutation. Policies are validated; enforcement remains scoped to configured checks, not full static analysis.
 - Advisory gates PLANNED: complexity, performance, AI anti-patterns.
-- Ouroboros workflow PLANNED: interview -> seed -> TRD -> decompose -> run -> evaluate -> evolve, checkpoint and rollback.
-- No claim of 35+ patterns, full MCP implementation, or trading profitability validation.
+- Ouroboros stage transitions and atomic JSON checkpoints IMPLEMENTED; validated read-only recovery with commit match is available via `python3 scripts/ouroboros.py --recover --output <path>`. Autonomous execution, rollback and retries remain PLANNED.
+- No claim of 35+ patterns, full MCP implementation, or trading profitability validation. A successful check is not proof of comprehensive safety.
 
 ## Consumers
 - [AURA-OS](https://github.com/js775315672-spec/AURA-OS)
