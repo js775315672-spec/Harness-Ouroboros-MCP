@@ -8,6 +8,11 @@ import re
 from pathlib import Path
 
 try:
+    from .qwen_repair_request import repair_request
+except ImportError:
+    from qwen_repair_request import repair_request
+
+try:
     from .real_repo_task import prepare
     from .scoped_patch_gate import inspect_scoped_patch
     from .replacement_proposal import build_single_line_diff
@@ -153,6 +158,18 @@ def main():
             if assessment["status"]=="accepted_for_review":
                 break
             reason=assessment["reason"]
+            if attempt+1<task["contract"]["max_attempts"]:
+                repair=repair_request(
+                    {"task_id":task["task"]["task_id"],
+                     "allowed_files":task["task"]["allowed_files"],
+                     "goal":task["task"]["goal"]},
+                    {"kind":"static_scope","reason":reason or "invalid_proposal"},
+                    attempt+1)
+                report.setdefault("repair_requests",[]).append(
+                    {"decision":repair["decision"],
+                     "next_attempt":repair.get("next_attempt"),
+                     "prompt_sha256":hashlib.sha256(repair.get("prompt","").encode()).hexdigest(),
+                     "model_called_by_builder":False})
         report["attempts"]=attempts
         report["max_attempts"]=task["contract"]["max_attempts"]
         if report["status"]=="accepted_for_review":
