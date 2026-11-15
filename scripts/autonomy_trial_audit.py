@@ -62,7 +62,7 @@ def audit(events, window_start, window_end, max_gap_seconds=300):
     sustained = (len(passing_changes) >= 2 and
                  any(e["kind"] == "next_task" for _,e in actual) and
                  max_gap <= max_gap_seconds and independent and external_attestation_complete)
-    return {"decision": "verified_60_min_autonomous_development" if sustained else "not_proven",
+    return {"decision": "candidate_requires_independent_attestation" if sustained else "not_proven",
             "window_seconds": duration, "actual_code_change_count": len(commits),
             "passing_code_change_count": len(passing_changes),
             "verification_repetitions_excluded": sum(e["kind"] == "verification" for _,e in ordered),
