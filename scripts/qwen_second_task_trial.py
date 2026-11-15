@@ -62,6 +62,11 @@ PROMPT = (
     "(Unicode U+001B); otherwise False. Use only the name log, the 'in' operator, "
     "'or', and escaped Python string literals. A downstream safe patcher appends "
     "your expression to an existing validation condition. "
+    "IMPORTANT: NUL and ESC are character names, NOT Python variable names. "
+    "The Python string literal for NUL uses the escaped spelling '\\x00'; "
+    "the Python string literal for ESC uses '\\x1b'. The backslash must "
+    "appear in the Python source, with the literal string to the LEFT of "
+    "'in log' for each character. Never write bare names NUL or ESC. "
     "Write only the expression: no statement, no Markdown, no quotes around "
     "the entire expression, no explanation."
 )
@@ -69,8 +74,10 @@ FEEDBACK = {
     "ast_scope_rejected": (
         "Output was not one safe Python boolean expression. Use two string-"
         "membership comparisons joined with the logical or operator. "
-        "Use Python backslash escape notation for the control characters. "
-        "Do not write if, return, code fences, a function, or explanation."),
+        "Use the Python string literals spelled '\\x00' and '\\x1b' "
+        "rather than undefined NUL/ESC variable names. Each literal is "
+        "tested for membership in log. Do not write if, return, code fences, "
+        "a function, or explanation."),
     "second_patch_test_failed": (
         "Isolated tests show your expression did not reject both NUL and ESC "
         "while accepting normal multiline logs. The expression must cover "
