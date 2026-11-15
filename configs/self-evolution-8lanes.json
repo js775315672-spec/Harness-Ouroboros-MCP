@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "repository": "js775315672-spec/Harness-Ouroboros-MCP",
+  "target_scope": "self-repository-only",
+  "goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+  "execution_mode": "read-only-infrastructure-smoke",
+  "automatic_model_execution": false,
+  "automatic_remote_push": false,
+  "automatic_pr_creation": false,
+  "automatic_merge": false,
+  "human_approval_required": true,
+  "paid_api_allowed": false,
+  "user_provided_secrets_allowed": false,
+  "scheduler_enabled": false,
+  "epoch_minutes": 60,
+  "worker_budget_seconds": 3000,
+  "checkpoint_interval_minutes": 5,
+  "max_parallel": 8,
+  "max_children_per_attested_parent": 8,
+  "max_pending_children_per_epoch": 64,
+  "max_epochs_without_renewed_approval": 1,
+  "frozen_oracle_commands": [
+    "python3 -m unittest discover -s tests -q",
+    "python3 scripts/governance.py",
+    "python3 scripts/harness_check.py"
+  ],
+  "protected_paths": [
+    ".github/workflows/",
+    "harness-policy.json",
+    "scripts/governance.py",
+    "scripts/harness_check.py",
+    "scripts/review_decision_gate.py",
+    "production-secrets/"
+  ],
+  "lanes": [
+    {
+      "id": "01",
+      "architecture_key": "central-state-machine",
+      "title": "Central deterministic coordinator",
+      "high_level_goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+      "hypothesis": "Compare a single fail-closed state machine with explicit transition proofs and finite queues",
+      "candidate_source_paths": [
+        "scripts/",
+        "tests/",
+        "docs/"
+      ],
+      "accept_only_if": "new committed source diff plus identical frozen Harness/regression/security suite plus independent exact-SHA CI attestation",
+      "worktree_only": true
+    },
+    {
+      "id": "02",
+      "architecture_key": "event-sourced",
+      "title": "Append-only event log and replay",
+      "high_level_goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+      "hypothesis": "Recover exact state from independently checkable task and evidence events",
+      "candidate_source_paths": [
+        "scripts/",
+        "tests/",
+        "docs/"
+      ],
+      "accept_only_if": "new committed source diff plus identical frozen Harness/regression/security suite plus independent exact-SHA CI attestation",
+      "worktree_only": true
+    },
+    {
+      "id": "03",
+      "architecture_key": "dependency-dag",
+      "title": "Typed task dependency DAG",
+      "high_level_goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+      "hypothesis": "Gate every dependency transition on independent tests and attestations",
+      "candidate_source_paths": [
+        "scripts/",
+        "tests/",
+        "docs/"
+      ],
+      "accept_only_if": "new committed source diff plus identical frozen Harness/regression/security suite plus independent exact-SHA CI attestation",
+      "worktree_only": true
+    },
+    {
+      "id": "04",
+      "architecture_key": "actor-mailboxes",
+      "title": "Bounded actor/message architecture",
+      "high_level_goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+      "hypothesis": "Isolate planner, worker, verifier and reducer with capped mailboxes and idempotent messages",
+      "candidate_source_paths": [
+        "scripts/",
+        "tests/",
+        "docs/"
+      ],
+      "accept_only_if": "new committed source diff plus identical frozen Harness/regression/security suite plus independent exact-SHA CI attestation",
+      "worktree_only": true
+    },
+    {
+      "id": "05",
+      "architecture_key": "immutable-artifacts",
+      "title": "Content-addressed stage pipeline",
+      "high_level_goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+      "hypothesis": "Use immutable artifacts and hash-verified stage boundaries for candidate lineage",
+      "candidate_source_paths": [
+        "scripts/",
+        "tests/",
+        "docs/"
+      ],
+      "accept_only_if": "new committed source diff plus identical frozen Harness/regression/security suite plus independent exact-SHA CI attestation",
+      "worktree_only": true
+    },
+    {
+      "id": "06",
+      "architecture_key": "git-checkpoints",
+      "title": "Git-native local worktree checkpoints",
+      "high_level_goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+      "hypothesis": "Represent candidate lineage in isolated git refs with external CI receipts",
+      "candidate_source_paths": [
+        "scripts/",
+        "tests/",
+        "docs/"
+      ],
+      "accept_only_if": "new committed source diff plus identical frozen Harness/regression/security suite plus independent exact-SHA CI attestation",
+      "worktree_only": true
+    },
+    {
+      "id": "07",
+      "architecture_key": "three-trust-domains",
+      "title": "Planner/worker/verifier split",
+      "high_level_goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+      "hypothesis": "Enforce independent trust and capability boundaries between proposal, execution and review",
+      "candidate_source_paths": [
+        "scripts/",
+        "tests/",
+        "docs/"
+      ],
+      "accept_only_if": "new committed source diff plus identical frozen Harness/regression/security suite plus independent exact-SHA CI attestation",
+      "worktree_only": true
+    },
+    {
+      "id": "08",
+      "architecture_key": "beam-portfolio",
+      "title": "Diversity-aware bounded beam search",
+      "high_level_goal": "Develop a safe, bounded, recoverable, auditable end-to-end autonomous code-change cycle for this repository",
+      "hypothesis": "Select verified candidate frontier under measured resource budgets and architectural diversity",
+      "candidate_source_paths": [
+        "scripts/",
+        "tests/",
+        "docs/"
+      ],
+      "accept_only_if": "new committed source diff plus identical frozen Harness/regression/security suite plus independent exact-SHA CI attestation",
+      "worktree_only": true
+    }
+  ]
+}
