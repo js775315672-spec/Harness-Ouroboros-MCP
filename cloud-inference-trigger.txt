@@ -1,1 +1,1 @@
-Sixth one-shot experiment: fixed raw regex escaping after 170-test CI failure; retry real Qwen correction from synthetic x-y to x+y, accept one explanatory fenced code block only. Generated code not executed or applied.
+One-shot cloud Qwen evidence experiment: record actual model inference calls separately from synthetic injected responses and SHA-256 of validated output. Static AST only, no code execution, no repository patch, no paid API, no secrets.
