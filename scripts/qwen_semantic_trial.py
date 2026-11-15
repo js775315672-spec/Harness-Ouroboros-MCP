@@ -53,7 +53,7 @@ def main():
                 add_generation_prompt=True), return_tensors="pt")
             with torch.inference_mode():
                 output = model.generate(
-                    **inputs, max_new_tokens=196, do_sample=False,
+                    **inputs, max_new_tokens=120, do_sample=False,
                     pad_token_id=tokenizer.eos_token_id)
             return tokenizer.decode(
                 output[0][inputs["input_ids"].shape[1]:],
