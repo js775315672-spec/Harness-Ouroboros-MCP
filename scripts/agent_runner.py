@@ -4,7 +4,7 @@
 Only an explicitly supplied executable is run; default mode is dry-run.
 This is NOT an AI coding model. Never execute untrusted repository content.
 """
-import argparse,json,os,pathlib,subprocess,sys,time
+import argparse,json,pathlib,sys
 from agent_handoff import handoff
 from task_selector import select
 
