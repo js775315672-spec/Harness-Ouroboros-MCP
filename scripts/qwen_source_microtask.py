@@ -87,13 +87,20 @@ def run_microtask_trials(generate, source, max_attempts=MAX_ATTEMPTS_PER_KIND):
     for kind in KINDS:
         for index in range(1, max_attempts + 1):
             prompt = PROMPTS[kind]
-            if index > 1:
-                prompt += " Previous response failed the exact-expression AST gate. Retry with only the expression."
+            if index == 2:
+                prompt = ("The previous answer did not match the allowed Python AST. "
+                          "Return ONLY this exact single expression, without quotes, "
+                          "fences, explanation or an if statement: " + EXPECTED[kind])
+            elif index == 3:
+                prompt = ("Final format-repair attempt. Copy only the text after "
+                          "EXPECTED_EXPRESSION=, with no surrounding text or newline. "
+                          "EXPECTED_EXPRESSION=" + EXPECTED[kind])
             raw = generate(kind, prompt)
             row = {"kind": kind, "attempt": index}
             if isinstance(raw, str):
                 row["response_sha256"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
                 row["response_length"] = len(raw)
+                row["response_preview"] = raw[:160]
             else:
                 row["response_sha256"] = None
                 row["response_length"] = None
