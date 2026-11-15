@@ -2,7 +2,20 @@ import pathlib,sys,unittest
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/"scripts"))
 import development_coordinator
 
+SHA='a'*40
+RECORD={'cycle':1,'commit':SHA,'change':'implement feature','checks':{'harness':'pass','ouroboros':'pass','regression':'pass','secrets':'pass'},'fixes':[],'ci_url':'https://github.com/org/repo/actions/runs/123'}
+CI={'status':'completed','conclusion':'success','html_url':RECORD['ci_url'],'repository':{'full_name':'org/repo'},'event':'pull_request','pull_requests':[{'head':{'sha':SHA}}]}
 class CoordinatorTests(unittest.TestCase):
+    def test_valid_attested_cycle_advances(self):
+        result=development_coordinator.coordinate([RECORD],fetch=lambda _:dict(CI))
+        self.assertEqual(result['verified_development_cycles'],1)
+        self.assertEqual(result['next']['next_cycle'],2)
+    def test_failed_ci_does_not_advance(self):
+        with self.assertRaises(ValueError):
+            development_coordinator.coordinate([RECORD],fetch=lambda _:dict(CI,conclusion='failure'))
+    def test_commit_mismatch_does_not_advance(self):
+        with self.assertRaises(ValueError):
+            development_coordinator.coordinate([RECORD],fetch=lambda _:dict(CI,pull_requests=[{'head':{'sha':'b'*40}}]))
     def test_empty_ledger_proposes_first_real_change(self):
         result=development_coordinator.coordinate([])
         self.assertEqual(result["verified_development_cycles"],0)
