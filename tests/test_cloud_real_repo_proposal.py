@@ -28,7 +28,7 @@ class RealRepoQwenProposalTests(unittest.TestCase):
         from cloud_real_repo_proposal import _target_line, prompt_for_attempt
         source=(pathlib.Path(__file__).resolve().parents[1]/PATH).read_text(encoding="utf-8")
         n,old=_target_line(source)
-        new=old.replace("\\n","\n")
+        new=old.replace("\\\\n","\\n")
         self.assertNotEqual(old,new)
         patch=(f"diff --git a/{PATH} b/{PATH}\n--- a/{PATH}\n+++ b/{PATH}\n"
                f"@@ -{n} +{n} @@\n-{old}\n+{new}\n")
@@ -44,7 +44,7 @@ class RealRepoQwenProposalTests(unittest.TestCase):
         from cloud_real_repo_proposal import _target_line
         source=(pathlib.Path(__file__).resolve().parents[1]/PATH).read_text(encoding="utf-8")
         n,old=_target_line(source)
-        new=old.replace("\\n","\n")
+        new=old.replace("\\\\n","\\n")
         prefix=f"diff --git a/{PATH} b/{PATH}\n--- a/{PATH}\n+++ b/{PATH}\n"
         wrong=prefix+f"@@ -{n} +{n} @@\n-not the real file line\n+{new}\n"
         self.assertEqual(assess(wrong,TASK,source)["status"],"rejected")
