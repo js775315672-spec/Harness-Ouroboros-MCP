@@ -60,13 +60,15 @@ def prove_data_only_change(original,updated):
         raise ValueError("fixture fence structure changed")
     if "\n" not in new.value.value or "\\n" in new.value.value:
         raise ValueError("candidate does not contain actual newline test data")
+    old_sha=_digest(old.value.value.encode("utf-8"))
+    new_sha=_digest(new.value.value.encode("utf-8"))
     old.value.value=new.value.value="__scoped_fixture_sentinel__"
     if ast.dump(before,include_attributes=False)!=ast.dump(after,include_attributes=False):
         raise ValueError("executable Python AST changed outside the allowed string value")
     return {"executable_ast_identical":True,
             "only_string_literal_data_changed":True,
-            "old_literal_sha256":_digest(old.value.value.encode()),
-            "new_literal_sha256":_digest(new.value.value.encode())}
+            "old_literal_sha256":old_sha,
+            "new_literal_sha256":new_sha}
 
 def _safe_file(root,relative):
     root=root.resolve(strict=True)
