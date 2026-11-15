@@ -17,8 +17,9 @@ def run_provenance(env=None):
     repo=env.get('GITHUB_REPOSITORY','')
     run_id=env.get('GITHUB_RUN_ID','')
     sha=env.get('GITHUB_SHA','')
-    if not (repo and run_id and sha):return {'source':'local','verified_externally':False}
-    if not (len(repo.split('/'))==2 and all(repo.split('/')) and run_id.isascii() and run_id.isdecimal() and len(sha)==40 and all(c in '0123456789abcdef' for c in sha)):
+    if not any((repo,run_id,sha)):return {'source':'local','verified_externally':False}
+    if not all((repo,run_id,sha)):raise ValueError('incomplete GitHub run provenance')
+    if not (len(repo.split('/'))==2 and all(part and all(c.isascii() and (c.isalnum() or c in '-_.') for c in part) for part in repo.split('/')) and run_id.isascii() and run_id.isdecimal() and int(run_id)>0 and len(sha)==40 and all(c in '0123456789abcdef' for c in sha)):
         raise ValueError('invalid GitHub run provenance')
     return {'source':'github_actions','repository':repo,'run_id':run_id,'workflow_sha':sha,'run_url':f'https://github.com/{repo}/actions/runs/{run_id}','verified_externally':False}
 def write_report(path,report):
