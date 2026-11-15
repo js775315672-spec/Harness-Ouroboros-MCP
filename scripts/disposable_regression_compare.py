@@ -27,6 +27,7 @@ except ImportError:
 
 TARGET = "tests/test_model_feedback_loop.py"
 MODULE = "scripts/model_feedback_loop.py"
+PROBE = "scripts/regression_mutation_probe.py"
 DOCKER_IMAGE = "python:3.11-slim"
 
 def _digest(data):
@@ -83,7 +84,8 @@ def prepare_candidate(source_root,patch,workspace):
         raise ValueError("unsafe repository root")
     original=_safe_file(root,TARGET).read_bytes()
     module=_safe_file(root,MODULE).read_bytes()
-    if len(original)>12000 or len(module)>12000:
+    probe=_safe_file(root,PROBE).read_bytes()
+    if len(original)>12000 or len(module)>12000 or len(probe)>12000:
         raise ValueError("source exceeds size budget")
     source=original.decode("utf-8")
     verdict=assess(patch,TASK,source)
@@ -101,7 +103,7 @@ def prepare_candidate(source_root,patch,workspace):
     original_dir=workspace/"baseline"
     candidate_dir=workspace/"candidate"
     for dest in (original_dir,candidate_dir):
-        for relative,payload in ((TARGET,original),(MODULE,module)):
+        for relative,payload in ((TARGET,original),(MODULE,module),(PROBE,probe)):
             target=dest/relative
             target.parent.mkdir(parents=True,exist_ok=True)
             target.write_bytes(payload)
@@ -124,7 +126,7 @@ def prepare_candidate(source_root,patch,workspace):
         os.chmod(dest,0o755)
         for sub in ("tests","scripts"):
             os.chmod(dest/sub,0o755)
-        for rel in (TARGET,MODULE):
+        for rel in (TARGET,MODULE,PROBE):
             os.chmod(dest/rel,0o644)
     return {"baseline_dir":str(original_dir),"candidate_dir":str(candidate_dir),
             "original_sha256":_digest(original),"candidate_sha256":_digest(actual.encode()),
@@ -132,16 +134,20 @@ def prepare_candidate(source_root,patch,workspace):
             "model_code_executed":False,"merge_authorized":False,
             "proof":data_proof}
 
-def docker_regression(workspace,image=DOCKER_IMAGE):
+def _docker_command(workspace,image,python_arguments):
     location=Path(workspace).resolve(strict=True)
-    cmd=["docker","run","--rm","--pull=never","--network=none",
-         "--read-only","--cap-drop=ALL","--security-opt=no-new-privileges",
-         "--pids-limit=64","--memory=256m","--cpus=1",
-         "--user=65534:65534","--tmpfs=/tmp:rw,nosuid,nodev,size=16m",
-         "-e","PYTHONDONTWRITEBYTECODE=1",
-         "--mount",f"type=bind,src={location},dst=/work,readonly",
-         "-w","/work",image,"python","-B","-m","unittest",
-         "discover","-s","tests","-p","test_model_feedback_loop.py","-v"]
+    return ["docker","run","--rm","--pull=never","--network=none",
+            "--read-only","--cap-drop=ALL","--security-opt=no-new-privileges",
+            "--pids-limit=64","--memory=256m","--cpus=1",
+            "--user=65534:65534","--tmpfs=/tmp:rw,nosuid,nodev,size=16m",
+            "-e","PYTHONDONTWRITEBYTECODE=1",
+            "--mount",f"type=bind,src={location},dst=/work,readonly",
+            "-w","/work",image,"python","-B",*python_arguments]
+
+def docker_regression(workspace,image=DOCKER_IMAGE):
+    cmd=_docker_command(workspace,image,
+                        ["-m","unittest","discover","-s","tests",
+                         "-p","test_model_feedback_loop.py","-v"])
     result=subprocess.run(cmd,capture_output=True,text=True,timeout=90)
     output=(result.stdout+"\n"+result.stderr)[-5000:]
     match=re.search(r"Ran (\d+) tests?",output)
@@ -198,16 +204,47 @@ def verify_inference_provenance(inference_path,candidate_path,source_root):
             "patch_sha256":_digest(patch.encode("utf-8")),
             "provenance_verified":True}
 
+def docker_mutation_probe(workspace,image=DOCKER_IMAGE):
+    """A deliberate false-acceptance mutant should be caught by improved test data."""
+    cmd=_docker_command(workspace,image,
+                        ["-m","scripts.regression_mutation_probe"])
+    result=subprocess.run(cmd,capture_output=True,text=True,timeout=90)
+    if result.returncode:
+        raise ValueError("trusted mutation probe failed inside Docker")
+    try:
+        payload=json.loads(result.stdout.strip())
+    except (ValueError,TypeError) as exc:
+        raise ValueError("invalid mutation probe evidence") from exc
+    if (not isinstance(payload,dict)
+            or type(payload.get("mutant_detected")) is not bool
+            or payload.get("target_tests_run")!=1
+            or payload.get("mutant_limited_to_trusted_probe") is not True
+            or payload.get("model_generated_code_executed") is not False):
+        raise ValueError("unexpected mutation probe result")
+    return {"mutant_detected":payload["mutant_detected"],
+            "target_tests_run":payload["target_tests_run"],
+            "probe_in_isolated_container":True,
+            "network_disabled":True,"filesystem_read_only":True}
+
 def compare(source_root,patch,image=DOCKER_IMAGE):
     with tempfile.TemporaryDirectory(prefix="harness-regression-") as temp:
         staged=prepare_candidate(source_root,patch,temp)
         baseline=docker_regression(staged["baseline_dir"],image)
         candidate=docker_regression(staged["candidate_dir"],image)
+        baseline_mutation=docker_mutation_probe(staged["baseline_dir"],image)
+        candidate_mutation=docker_mutation_probe(staged["candidate_dir"],image)
         passed=(baseline["tests_passed"] and candidate["tests_passed"]
-                and baseline["tests_run"]==candidate["tests_run"])
+                and baseline["tests_run"]==candidate["tests_run"]
+                and baseline_mutation["mutant_detected"] is False
+                and candidate_mutation["mutant_detected"] is True)
         return {"status":"isolated_regression_passed" if passed else "regression_failed",
                 "staging":{k:v for k,v in staged.items() if not k.endswith("_dir")},
                 "baseline":baseline,"candidate":candidate,
+                "baseline_negative_control":baseline_mutation,
+                "candidate_negative_control":candidate_mutation,
+                "candidate_detects_previously_missed_mutant":(
+                    not baseline_mutation["mutant_detected"]
+                    and candidate_mutation["mutant_detected"]),
                 "executed_only_string_literal_change":True,
                 "patch_applied_to_checkout":False,
                 "merge_authorized":False,"full_harness_passed":False}
