@@ -43,14 +43,14 @@ class RealSourceRepairTests(unittest.TestCase):
         self.assertFalse(result["patch_applied_to_checkout"])
 
     def test_fenced_single_source_line_normalized_without_changing_semantics(self):
-        raw = chr(96) * 3 + "python\\n" + EXPECTED.lstrip() + "\\n" + chr(96) * 3
+        raw = chr(96) * 3 + "python\n" + EXPECTED.lstrip() + "\n" + chr(96) * 3
         self.assertEqual(normalize_model_line(raw), EXPECTED)
         source = (ROOT / TARGET).read_text(encoding="utf-8")
         self.assertEqual(evaluate_response(raw, source)["status"],
                          "accepted_for_disposable_review")
 
     def test_fenced_multiple_lines_still_rejected(self):
-        raw = chr(96) * 3 + "python\\n" + EXPECTED.lstrip() + "\\nimport os\\n" + chr(96) * 3
+        raw = chr(96) * 3 + "python\n" + EXPECTED.lstrip() + "\\nimport os\\n" + chr(96) * 3
         with self.assertRaises(ValueError):
             normalize_model_line(raw)
 
