@@ -28,6 +28,8 @@ jobs:
         run: python3 scripts/evolution_planner.py --completed 0 --target 30 --ceiling 10000
       - name: Development coordinator safety check
         run: python3 -c 'import sys;sys.path.insert(0,"scripts");from development_coordinator import coordinate;result=coordinate([]);assert result["verified_development_cycles"]==0;assert result["next"]["next_cycle"]==1'
+      - name: Agent handoff contract safety check
+        run: python3 scripts/agent_handoff.py --completed 0 --branch agent/cycle-1-baseline
       - name: Thirty sequential Harness Ouroboros verification cycles
         run: python3 scripts/verification_cycles.py --rounds 30 --report artifacts/verification-timing.json
       - name: Upload verification evidence
