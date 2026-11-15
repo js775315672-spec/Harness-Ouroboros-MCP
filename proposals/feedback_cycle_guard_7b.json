@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "task_id": "feedback_cycle_guard",
+  "engine": "llama.cpp",
+  "model": "7b",
+  "model_repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+  "source_sha256": "975a9ca3c49e3264d333cf4426654510a90fbabf31b8c7891c6817a9177cd811",
+  "candidate_line_sha256": "e3898c153eb2366fbbea04b8dbc988306a861c129fad3335f618c09fef077149",
+  "candidate_line": "    if not isinstance(proposal,dict) or proposal.get(\"decision\")!=\"propose\" or (not ('cycle' in proposal) or proposal['cycle'] is None or type(proposal['cycle']) is bool or type(proposal['cycle']) is not int or proposal['cycle'] <= 0):",
+  "model_response_sha256": "8cd4cf9ceb6730dba2de1df495b783d62a875e730fdb4a691a8521b2da029c25",
+  "successful_run": "https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/43715859411",
+  "outcome": "isolated_source_repair_passed",
+  "model_calls": 1,
+  "docker_comparisons": 1,
+  "baseline_regression_tests": 8,
+  "candidate_regression_tests": 8,
+  "candidate_negative_tests": 3,
+  "source_checkout_modified": false,
+  "merge_authorized": false,
+  "human_review_required": true
+}
