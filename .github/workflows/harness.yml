@@ -20,5 +20,7 @@ jobs:
         run: python3 -m unittest discover -s tests -v
       - name: Eight governance gates
         run: python3 scripts/governance.py
+      - name: Ouroboros deterministic evaluation
+        run: python3 scripts/evaluation.py
       - name: Read-only secret scan
         run: python3 scripts/harness_check.py
