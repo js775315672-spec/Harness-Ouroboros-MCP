@@ -56,7 +56,7 @@ class GGUFAdapterTests(unittest.TestCase):
     def test_model_runtime_checks_local_file_and_no_shell_execution(self):
         with tempfile.TemporaryDirectory() as d:
             folder = Path(d)
-            cli = folder / "llama-cli"
+            cli = folder / "llama-completion"
             cli.write_text("binary stub")
             cli.chmod(0o755)
             gguf = folder / MODELS["0.5b"]["filename"]
@@ -74,6 +74,9 @@ class GGUFAdapterTests(unittest.TestCase):
             self.assertEqual(raw, "proposal.get('cycle') is None")
             self.assertTrue(run.call_args.kwargs["shell"] is False)
             self.assertTrue(run.call_args.kwargs["timeout"] == 30)
+            self.assertIn("--jinja", run.call_args.args[0])
+            self.assertIn("--offline", run.call_args.args[0])
+            self.assertNotIn("--no-show-timings", run.call_args.args[0])
             self.assertEqual(run.call_args.args[0][0], str(cli.resolve()))
             self.assertEqual(len(runtime.calls), 1)
             # Symlinks and mismatched quantizations are forbidden.
@@ -84,7 +87,7 @@ class GGUFAdapterTests(unittest.TestCase):
 
     def test_bounded_timeout_and_no_output_success_fabrication(self):
         with tempfile.TemporaryDirectory() as d:
-            cli = Path(d) / "llama-cli"
+            cli = Path(d) / "llama-completion"
             cli.write_text("stub")
             cli.chmod(0o755)
             weights = Path(d) / MODELS["0.5b"]["filename"]
@@ -93,7 +96,7 @@ class GGUFAdapterTests(unittest.TestCase):
                 stream.truncate(300_000_000)
             runtime = CPUInference("0.5b", cli, weights, timeout_seconds=30)
             with patch("gguf_cpu_runtime.subprocess.run",
-                       side_effect=subprocess.TimeoutExpired("llama-cli", 30)):
+                       side_effect=subprocess.TimeoutExpired("llama-completion", 30)):
                 with self.assertRaises(ValueError):
                     runtime.generate("input")
             self.assertEqual(runtime.calls, [])
