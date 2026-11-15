@@ -31,6 +31,21 @@ class ReplacementProposalTests(unittest.TestCase):
         patch=build_single_line_diff(new.lstrip(),old,n)
         self.assertEqual(assess(patch,TASK,source)["status"],"accepted_for_review")
 
+    def test_qwen_answer_equals_whitespace_normalized_only(self):
+        source,n,old,new=fixture()
+        value=new.split("answer=",1)[1]
+        for proposal in ("answer = "+value,"        answer = "+value,
+                         "answer="+value):
+            with self.subTest(proposal=proposal[:20]):
+                patch=build_single_line_diff(proposal,old,n)
+                self.assertEqual(assess(patch,TASK,source)["status"],
+                                 "accepted_for_review")
+        for invalid in (" answer = "+value,"answer == "+value,
+                        "result = "+value):
+            with self.subTest(invalid=invalid[:20]):
+                with self.assertRaises(ValueError):
+                    build_single_line_diff(invalid,old,n)
+
     def test_reject_multiline_extra_file_code_fence_and_no_change(self):
         _,n,old,new=fixture()
         for raw in (new+"\nother_line\n",new+"\n\n",
