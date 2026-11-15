@@ -1,1 +1,1 @@
-One-shot opt-in experiment: Qwen2.5-0.5B-Instruct CPU inference in GitHub Actions. No API key, no model output execution, no merge.
+Second one-shot experiment: Qwen2.5-0.5B-Instruct CPU inference with up to three model-feedback attempts. Static AST verification only; generated code never executed or applied.
