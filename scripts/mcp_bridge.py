@@ -3,6 +3,7 @@
 No command execution, network access, repository writes, or automatic merge.
 """
 import json
+import subprocess
 from evaluation import evaluate_gates
 from pathlib import Path
 
@@ -45,7 +46,7 @@ class Server:
             try:
                 evaluation=evaluate_gates(self.root,self.root/"harness-policy.json")
                 result={"content":[{"type":"text","text":json.dumps(evaluation,sort_keys=True)}],"isError":evaluation["outcome"]!="pass"}
-            except (OSError,ValueError,UnicodeError) as exc:
+            except (OSError,ValueError,UnicodeError,subprocess.CalledProcessError) as exc:
                 result={"content":[{"type":"text","text":"Policy evaluation blocked: "+type(exc).__name__}],"isError":True}
         else:return self.error(ident,-32601,"Method not found")
         return {"jsonrpc":"2.0","id":ident,"result":result}
