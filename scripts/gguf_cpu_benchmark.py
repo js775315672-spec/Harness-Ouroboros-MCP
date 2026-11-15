@@ -85,7 +85,7 @@ def benchmark(model, cli, gguf, metadata, root=Path("."), timeout=150):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True, choices=["0.5b", "1.5b"])
+    parser.add_argument("--model", required=True, choices=["0.5b", "1.5b", "7b"])
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--gguf", type=Path, required=True)
     parser.add_argument("--download-metadata", type=Path, required=True)

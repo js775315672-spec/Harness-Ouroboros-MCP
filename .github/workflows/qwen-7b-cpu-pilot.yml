@@ -1,0 +1,93 @@
+name: Experimental Qwen Coder 7B GGUF CPU repair
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/qwen-7b-cpu-pilot.yml'
+      - 'scripts/gguf_cpu_runtime.py'
+      - 'scripts/gguf_official_download.py'
+      - 'scripts/gguf_cpu_benchmark.py'
+      - 'tests/test_gguf_cpu_runtime.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: qwen-7b-pilot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  qwen_7b_cpu:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - name: Checkout unprivileged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Offline model, output, and governance tests
+        run: |
+          python -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
+          python -m unittest discover -s tests -p test_gguf_output_boundary.py -v
+          python scripts/harness_check.py
+      - name: Compile pinned CPU llama-completion (no CUDA or CURL)
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin 4e5116f47619dac4180c3007ef02a383f347554c
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "4e5116f47619dac4180c3007ef02a383f347554c"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --config Release --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+      - name: Download official Apache-2.0 7B Q4_K_M with pinned revision
+        run: |
+          python -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python scripts/gguf_official_download.py \
+            --model 7b --destination models --report artifacts/gguf-7b-provenance.json
+      - name: Prefetch disposable base image
+        run: docker pull python:3.11-slim
+      - name: Bounded 7B CPU source-repair trial with AST and disposable Docker
+        run: |
+          python scripts/gguf_cpu_benchmark.py \
+            --model 7b \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --download-metadata artifacts/gguf-7b-provenance.json \
+            --timeout-seconds 150 \
+            --output artifacts/gguf-7b-result.json
+      - name: Report actual trial outcome (a green CI is not coding success)
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json,pathlib
+          p=pathlib.Path("artifacts/gguf-7b-result.json")
+          r=json.loads(p.read_text()) if p.exists() else {"outcome":"benchmark_not_run"}
+          print("## Experimental 7B CPU trial")
+          for key in ("outcome","model_calls","docker_comparisons","first_attempt_passed","passed_after_retry","peak_child_rss_kib"):
+              print(f"- {key}: {r.get(key,'n/a')}")
+          print("- This experiment did not commit, merge, deploy, or authorize any patch.")
+          PY
+      - name: Save evidence only, never model weights
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gguf-cpu-7b-evidence
+          path: |
+            artifacts/gguf-7b-provenance.json
+            artifacts/gguf-7b-result.json
+          if-no-files-found: warn
+          retention-days: 7
