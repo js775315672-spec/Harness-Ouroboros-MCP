@@ -14,7 +14,7 @@ def extract_code(answer):
     if len(answer)>4000:
         raise ValueError("model response exceeds 4000 characters")
     answer=answer.strip()
-    fence=r"```(?:python|py)?[ \\t]*\\n([\\s\\S]*?)\\n```"
+    fence=r"```(?:python|py)?[ \t]*\n([\s\S]*?)\n```"
     matches=list(re.finditer(fence,answer,re.I))
     if not matches:
         if "```" in answer:
@@ -26,7 +26,7 @@ def extract_code(answer):
     after=answer[matches[0].end():]
     # Explanatory prose is permitted, but no un-fenced Python statements.
     for prose in (before,after):
-        if re.search(r"(?m)^\\s*(?:import |from |def |class |@|exec\\(|eval\\()",prose):
+        if re.search(r"(?m)^\s*(?:import |from |def |class |@|exec\(|eval\()",prose):
             raise ValueError("executable-looking text outside code fence")
     return matches[0].group(1)
 
