@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "task_ids": [
+    "feedback_cycle_guard",
+    "feedback_log_control_guard"
+  ],
+  "first_model_run": "https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/43715859411",
+  "second_model_run": "https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/43722803044",
+  "model": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+  "license": "apache-2.0",
+  "gguf_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+  "model_revision": "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+  "baseline_source_sha256": "975a9ca3c49e3264d333cf4426654510a90fbabf31b8c7891c6817a9177cd811",
+  "first_line_sha256": "e3898c153eb2366fbbea04b8dbc988306a861c129fad3335f618c09fef077149",
+  "second_model_response_sha256": "4cd050f7430d30328d7fcec613050daa63e4908d028e9f68282584b80e6f5090",
+  "second_line_sha256": "8a928c73d0bab2e90daf93ee852b362bff3af202204e43f1cc16344eae1542c6",
+  "second_line": "        if status not in (\"pass\",\"fail\") or not isinstance(log,str) or len(log)>MAX_LOG_CHARS or (chr(0) in log or chr(27) in log):",
+  "first_plus_second_source_sha256": "b66991866b8af08ad13e019406ade964cb4c0d0cd791dbd0afea877ced4fc894",
+  "model_calls_second": 1,
+  "docker_comparisons_second": 1,
+  "existing_regression_tests": 8,
+  "new_negative_test_methods": 3,
+  "isolated_source_patched": true,
+  "checkout_source_modified": false,
+  "queue_completed_tasks": 0,
+  "merge_authorized": false,
+  "requires_human_review": true
+}
