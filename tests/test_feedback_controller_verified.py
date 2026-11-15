@@ -48,6 +48,34 @@ class FirstModelCommittedRepair(unittest.TestCase):
                 self.assertEqual(
                     feedback(dict(select(), cycle=cycle), checks())["decision"], "review")
 
+    def test_second_model_line_and_combined_source_match_archived_hashes(self):
+        recorded = json.loads(
+            (ROOT / "proposals/two_qwen_7b_patches_v1.json").read_text(
+                encoding="utf-8"))
+        source = (ROOT / "scripts/feedback_controller_verified.py").read_bytes()
+        self.assertEqual(hashlib.sha256(source).hexdigest(),
+                         recorded["first_plus_second_source_sha256"])
+        self.assertEqual(source.decode("utf-8").count(recorded["second_line"] + "\n"), 1)
+        self.assertEqual(
+            hashlib.sha256(recorded["second_line"].encode("utf-8")).hexdigest(),
+            recorded["second_line_sha256"])
+
+    def test_second_model_rejects_untrusted_log_control_bytes(self):
+        for control in (chr(0), chr(27)):
+            with self.subTest(char=ord(control)):
+                with self.assertRaises(ValueError):
+                    feedback(select(), checks("prefix" + control + "suffix"))
+
+    def test_second_model_preserves_human_multiline_logs(self):
+        result = feedback(select(), checks("Korean 한국어\nordinary second line"))
+        self.assertEqual(result["decision"], "review")
+        self.assertFalse(result["model_call_performed"])
+
+    def test_empty_and_long_logs_preserve_existing_behavior(self):
+        self.assertEqual(feedback(select(), checks(""))["decision"], "review")
+        with self.assertRaises(ValueError):
+            feedback(select(), checks("x" * 4001))
+
     def test_existing_feedback_behavior(self):
         self.assertEqual(feedback(select(), checks())["decision"], "review")
         bad = checks()

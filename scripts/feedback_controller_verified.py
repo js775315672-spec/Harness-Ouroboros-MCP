@@ -25,7 +25,7 @@ def feedback(proposal,checks,attempt=1,max_attempts=MAX_ATTEMPTS):
             raise ValueError("malformed check evidence")
         status=evidence["status"]
         log=evidence["log"]
-        if status not in ("pass","fail") or not isinstance(log,str) or len(log)>MAX_LOG_CHARS:
+        if status not in ("pass","fail") or not isinstance(log,str) or len(log)>MAX_LOG_CHARS or (chr(0) in log or chr(27) in log):
             raise ValueError("invalid check status or oversized log")
         normalized[name]={"status":status,"log":log}
     failures=[name for name in REQUIRED_CHECKS if normalized[name]["status"]=="fail"]
