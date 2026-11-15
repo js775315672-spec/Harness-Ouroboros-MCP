@@ -57,32 +57,29 @@ class ModelLogControlNegative(unittest.TestCase):
 '''
 
 PROMPT = (
-    "A Python function validates a variable named log (which is already a string). "
-    "Write ONE Python boolean expression that evaluates True if log contains either "
-    "the NUL control character (Unicode U+0000) OR the ESC control character "
-    "(Unicode U+001B); otherwise False. Use only the name log, the 'in' operator, "
-    "'or', and escaped Python string literals. A downstream safe patcher appends "
-    "your expression to an existing validation condition. "
-    "IMPORTANT: NUL and ESC are character names, NOT Python variable names. "
-    "The Python string literal for NUL uses the escaped spelling '\\x00'; "
-    "the Python string literal for ESC uses '\\x1b'. The backslash must "
-    "appear in the Python source, with the literal string to the LEFT of "
-    "'in log' for each character. Never write bare names NUL or ESC. "
-    "Write only the expression: no statement, no Markdown, no quotes around "
-    "the entire expression, no explanation."
+    "You are writing ONE Python boolean expression for the variable log, "
+    "which is already a string. It must be True if log contains the Unicode "
+    "NUL control character (code point 0) or the ESC control character "
+    "(code point 27); normal newline text must stay valid. "
+    "DO NOT emit literal NUL/ESC control characters or empty string literals. "
+    "DO NOT use the undefined Python variable names NUL or ESC. "
+    "Instead, the safe Python built-in chr(n) produces a character by its "
+    "integer code point: chr(0) denotes NUL, chr(27) denotes ESC. "
+    "Use chr, the operator 'in', the name log, and 'or' to construct "
+    "two membership comparisons. Output ONLY the complete Python boolean "
+    "expression. No if, return, explanations, Markdown or examples."
 )
 FEEDBACK = {
     "ast_scope_rejected": (
-        "Output was not one safe Python boolean expression. Use two string-"
-        "membership comparisons joined with the logical or operator. "
-        "Use the Python string literals spelled '\\x00' and '\\x1b' "
-        "rather than undefined NUL/ESC variable names. Each literal is "
-        "tested for membership in log. Do not write if, return, code fences, "
-        "a function, or explanation."),
+        "The previous expression was AST-invalid. The Python character names "
+        "NUL and ESC are not variables, and an empty string is not NUL. "
+        "Use chr(0) and chr(27) as safe sources of the two distinct characters, "
+        "compare each against log using 'in', and join with logical 'or'. "
+        "Return only the expression, without code blocks or statements."),
     "second_patch_test_failed": (
-        "Isolated tests show your expression did not reject both NUL and ESC "
-        "while accepting normal multiline logs. The expression must cover "
-        "both distinct characters and must not reject ordinary newlines."),
+        "Disposable tests require rejection of both code point 0 (NUL) and "
+        "code point 27 (ESC), preserving normal newline logs. Use chr(n) "
+        "without emitting physical control bytes; no extra operations."),
 }
 
 
@@ -117,14 +114,25 @@ def normalize_expression(response):
     found = set()
     for part in node.values:
         if (not isinstance(part, ast.Compare) or
-                not isinstance(part.left, ast.Constant)
-                or type(part.left.value) is not str
-                or len(part.ops) != 1 or not isinstance(part.ops[0], ast.In)
+                len(part.ops) != 1 or not isinstance(part.ops[0], ast.In)
                 or len(part.comparators) != 1 or
                 not isinstance(part.comparators[0], ast.Name)
                 or part.comparators[0].id != "log"):
             raise ValueError("expression outside scoped AST allowlist")
-        found.add(part.left.value)
+        left = part.left
+        if isinstance(left, ast.Constant) and type(left.value) is str:
+            character = left.value
+        elif (isinstance(left, ast.Call)
+                and isinstance(left.func, ast.Name) and left.func.id == "chr"
+                and len(left.args) == 1 and not left.keywords
+                and isinstance(left.args[0], ast.Constant)
+                and type(left.args[0].value) is int
+                and left.args[0].value in (0, 27)):
+            # Allow precisely chr(0) or chr(27), never arbitrary model calls.
+            character = chr(left.args[0].value)
+        else:
+            raise ValueError("only exact literal or chr(0)/chr(27) allowed")
+        found.add(character)
     if found != CONTROLS:
         raise ValueError("both independently specified log controls required")
     return text
