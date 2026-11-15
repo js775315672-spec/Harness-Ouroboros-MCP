@@ -1,5 +1,8 @@
 import unittest
-from scripts.cloud_real_repo_proposal import assess
+import pathlib
+import sys
+sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/"scripts"))
+from cloud_real_repo_proposal import assess
 
 TASK={"task_id":"parser_regression",
       "goal":"Add a regression test for multiple Python fences.",
