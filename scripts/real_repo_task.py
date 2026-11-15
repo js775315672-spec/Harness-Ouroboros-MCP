@@ -3,7 +3,10 @@
 
 This prepares a task for Qwen; it does not invoke a model or apply its output.
 """
-from coding_task_contract import validate_task
+try:
+    from .coding_task_contract import validate_task
+except ImportError:
+    from coding_task_contract import validate_task
 
 TASK={
  "task_id":"feedback_parser_regression",
