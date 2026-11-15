@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed local GGUF CPU inference adapter for the existing Harness loop.
+"""Fail-closed local GGUF CPU completion adapter for the existing Harness loop.
 
 Only official Qwen2.5-Coder 0.5B/1.5B Apache-2.0 models are allowed.
 The restricted 3B research model is deliberately not executable here.
@@ -56,6 +56,8 @@ def _regular_file(path):
 def verify_paths(model, cli, gguf):
     spec = approved_model(model)
     executable = _regular_file(cli)
+    if executable.name != "llama-completion":
+        raise ValueError("only the pinned llama-completion binary is allowed")
     weights = _regular_file(gguf)
     if not os.access(executable, os.X_OK):
         raise ValueError("llama.cpp CLI is not executable")
@@ -95,8 +97,8 @@ class CPUInference:
             "--prompt", prompt, "--n-predict", "140",
             "--ctx-size", "2048", "--threads", "4",
             "--temp", "0", "--no-display-prompt",
-            "--no-show-timings", "--simple-io",
-            "--single-turn", "--color", "off",
+            "--simple-io", "--single-turn", "--jinja",
+            "--offline", "--log-verbosity", "1", "--color", "off",
         ]
         env = {
             "PATH": "/usr/local/bin:/usr/bin:/bin",
