@@ -62,6 +62,12 @@ FEEDBACK = {
         "Valid positive integers remain accepted. In Python, isinstance(True, int) is True, "
         "so a plain isinstance integer check is insufficient. Use an exact-type "
         "identity check OR explicitly exclude booleans before numerical comparisons. "
+        "A rejected candidate used isinstance(value, int): that alone wrongly "
+        "accepts True and False. Compare type(value) to int itself if needed. "
+        "The expression needs THREE distinct protections in short-circuit order: "
+        "(1) a key that is not present, (2) a value that is not exactly an integer, "
+        "and (3) an integer that is less than one. Never use direct dictionary "
+        "subscription before verifying the key or the value's type. "
         "Avoid membership lists of bad examples: they cannot cover every invalid "
         "type and negative number. Do not repeat a candidate rejected by tests.",
     "candidate_regression_failed":
@@ -86,7 +92,9 @@ def build_prompt(previous_category=None, attempt=1, ast_code=None):
         "Check invalid types before numeric comparisons. Do NOT assign a "
         "dictionary or show sample inputs. Do NOT enumerate a finite list "
         "of invalid values: a finite list misses many non-integers and "
-        "negative numbers. Use short-circuit boolean logic."
+        "negative numbers. Use short-circuit boolean logic. "
+        "Python exact-type example: type(True) is bool, while type(1) is int. "
+        "Do not rely on isinstance(x, int) alone for boolean rejection."
     )
     if previous_category:
         if previous_category not in FEEDBACK:
@@ -109,7 +117,10 @@ def build_prompt(previous_category=None, attempt=1, ast_code=None):
             "covering invalid integer type, boolean values, and nonpositive "
             "numbers. A plain isinstance integer check accepts bool and fails. "
             "Use exact-type reasoning or an explicit bool exclusion, and avoid "
-            "comparing a non-number with a number. No code block or statement."
+            "comparing a non-number with a number. Include the missing-key check "
+            "before any direct dictionary access. Your expression must reject "
+            "absent cycle, wrong exact type (including bool), and integers below "
+            "one while preserving positive integers. No code block or statement."
         )
     return prompt
 
@@ -132,6 +143,16 @@ def normalize_candidate(raw, source):
                 parts[2] != fence):
             raise ValueError("invalid expression fence")
         expression = parts[1].strip()
+    # Accept only one exact inline-code wrapper as a presentation artifact.
+    # Preserve every byte of the expression inside; AST and Docker gates remain unchanged.
+    if expression.startswith("`") or expression.endswith("`"):
+        if (len(expression) < 3 or "\n" in expression or
+                expression.count("`") != 2 or
+                not expression.startswith("`") or not expression.endswith("`")):
+            raise ValueError("ambiguous inline code formatting")
+        expression = expression[1:-1].strip()
+    if "`" in expression:
+        raise ValueError("stray inline code delimiter")
     if (not expression or len(expression) > 250 or "\n" in expression or
             expression.startswith("if ") or expression.endswith(":")):
         raise ValueError("a single boolean expression is required")
