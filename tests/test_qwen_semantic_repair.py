@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from qwen_source_guard import ORIGINAL, TARGET
 from qwen_semantic_source_guard import inspect_semantic_line
-from qwen_semantic_repair_loop import build_prompt, run_loop
+from qwen_semantic_repair_loop import build_prompt, normalize_candidate, run_loop
 from qwen_semantic_disposable_compare import compare_line
 
 VALID = (
@@ -70,6 +70,19 @@ class SemanticRepairTests(unittest.TestCase):
         bad = '    if proposal.get("decision") != "propose" or proposal["cycle"] <= 0:'
         with self.assertRaises(ValueError):
             inspect_semantic_line(bad, self.source)
+
+    def test_short_predicate_fragment_is_scoped_by_trusted_guard(self):
+        fragment = (
+            'not isinstance(proposal.get("cycle"), int) or '
+            'isinstance(proposal.get("cycle"), bool) or '
+            'proposal["cycle"] <= 0'
+        )
+        line, inspection = normalize_candidate(fragment, self.source)
+        self.assertEqual(inspection["status"], "ast_scoped_candidate")
+        self.assertTrue(line.startswith(ORIGINAL[:-1] + " or ("))
+        self.assertTrue(line.endswith("):"))
+        with self.assertRaises(ValueError):
+            normalize_candidate('__import__("os").system("id")', self.source)
 
     def test_multiline_response_cannot_run(self):
         with self.assertRaises(ValueError):
