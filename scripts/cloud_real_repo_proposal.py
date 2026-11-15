@@ -9,8 +9,12 @@ import json
 import os
 from pathlib import Path
 
-from real_repo_task import prepare
-from scoped_patch_gate import inspect_scoped_patch
+try:
+    from .real_repo_task import prepare
+    from .scoped_patch_gate import inspect_scoped_patch
+except ImportError:
+    from real_repo_task import prepare
+    from scoped_patch_gate import inspect_scoped_patch
 
 MODEL="Qwen/Qwen2.5-0.5B-Instruct"
 TARGET=Path("tests/test_model_feedback_loop.py")
