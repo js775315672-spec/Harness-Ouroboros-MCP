@@ -7,7 +7,8 @@ def plan(completed,target=30,ceiling=MAX_CYCLES,stagnation=0,stagnation_limit=20
     if type(completed) is not int or completed<0:raise ValueError("invalid completed count")
     if type(target) is not int or type(ceiling) is not int or not 1<=target<=ceiling<=MAX_CYCLES:raise ValueError("invalid limits")
     if type(stagnation) is not int or type(stagnation_limit) is not int or stagnation<0 or stagnation_limit<1:raise ValueError("invalid stagnation")
-    if completed>=ceiling:return {"decision":"stop","reason":"ceiling reached","completed":completed}
+    if completed>ceiling:raise ValueError("completed count exceeds ceiling")
+    if completed==ceiling:return {"decision":"stop","reason":"ceiling reached","completed":completed}
     if completed>=target and stagnation>=stagnation_limit:return {"decision":"stop","reason":"no measured improvement","completed":completed}
     return {"decision":"propose","next_cycle":completed+1,"phase":PHASES[completed%len(PHASES)],"requires_new_commit":True,"requires_full_ci":True,"requires_human_merge_approval":True,"note":"planning only: no autonomous code execution or claim of verification"}
 def main():
