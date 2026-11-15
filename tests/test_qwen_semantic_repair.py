@@ -53,6 +53,21 @@ class SemanticRepairTests(unittest.TestCase):
             inspect_semantic_line(INCOMPLETE, self.source)["status"],
             "ast_scoped_candidate")
 
+    def test_literal_membership_is_staticaly_safe_but_not_preapproved(self):
+        candidate = (
+            ORIGINAL[:-1] +
+            " or (not (proposal.get('cycle') in [None, False, 0, -1])):"
+        )
+        self.assertEqual(
+            inspect_semantic_line(candidate, self.source)["status"],
+            "ast_scoped_candidate")
+        for unsafe in (
+            ORIGINAL[:-1] + ' or proposal.get("cycle") in [__import__("os")]:',
+            ORIGINAL[:-1] + ' or proposal.get("cycle") in [x for x in range(5)]:',
+        ):
+            with self.assertRaises(ValueError):
+                inspect_semantic_line(unsafe, self.source)
+
     def test_disallowed_side_effects_are_blocked(self):
         unsafe = [
             ORIGINAL[:-1] + ' or __import__("os").system("id"):',
