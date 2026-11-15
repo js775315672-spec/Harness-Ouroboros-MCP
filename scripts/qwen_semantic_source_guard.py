@@ -18,8 +18,9 @@ ALLOWED_NAMES = {"proposal", "int", "bool", "isinstance", "type"}
 ALLOWED_CONSTANTS = {"cycle", None, False, True, -1, 0, 1, 2}
 ALLOWED_NODES = (ast.BoolOp, ast.UnaryOp, ast.Compare, ast.Call,
                  ast.Name, ast.Attribute, ast.Subscript, ast.Constant,
-                 ast.Load, ast.Or, ast.And, ast.Not, ast.Eq, ast.NotEq,
-                 ast.Is, ast.IsNot, ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+                 ast.List, ast.Tuple, ast.Load, ast.Or, ast.And, ast.Not,
+                 ast.USub, ast.Eq, ast.NotEq, ast.Is, ast.IsNot,
+                 ast.In, ast.NotIn, ast.Lt, ast.LtE, ast.Gt, ast.GtE)
 
 
 def _guard_test(line):
@@ -42,6 +43,24 @@ def _safe_extension(node):
     for part in ast.walk(node):
         if not isinstance(part, ALLOWED_NODES):
             raise ValueError("unsafe AST node in generated expression")
+        if isinstance(part, ast.UnaryOp) and isinstance(part.op, ast.USub):
+            if not (isinstance(part.operand, ast.Constant) and
+                    type(part.operand.value) is int and
+                    part.operand.value in (1, 2)):
+                raise ValueError("only small negative integer literals allowed")
+        if isinstance(part, (ast.List, ast.Tuple)):
+            if len(part.elts) > 8:
+                raise ValueError("oversized literal collection")
+            for item in part.elts:
+                if isinstance(item, ast.Constant):
+                    if type(item.value) not in (int, bool, str, type(None)):
+                        raise ValueError("nonliteral collection item")
+                elif not (isinstance(item, ast.UnaryOp) and
+                          isinstance(item.op, ast.USub) and
+                          isinstance(item.operand, ast.Constant) and
+                          type(item.operand.value) is int and
+                          item.operand.value in (1, 2)):
+                    raise ValueError("only simple literal collection items permitted")
         if isinstance(part, ast.Name) and part.id not in ALLOWED_NAMES:
             raise ValueError("unsafe name in generated expression")
         if isinstance(part, ast.Constant):
