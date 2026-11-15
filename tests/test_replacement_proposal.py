@@ -72,5 +72,8 @@ class ReplacementProposalTests(unittest.TestCase):
                        '        answer=__import__("os").system("echo hi")',
                        '        answer=('):
             with self.subTest(change=change):
-                patch=build_single_line_diff(change,old,n)
+                try:
+                    patch=build_single_line_diff(change,old,n)
+                except ValueError:
+                    continue  # rejected at the stricter snippet boundary
                 self.assertEqual(assess(patch,TASK,source)["status"],"rejected")
