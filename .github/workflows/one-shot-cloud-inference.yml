@@ -38,6 +38,12 @@ jobs:
             --candidate artifacts/qwen-review-candidate.json \
             --inference-report artifacts/real-repo-qwen-proposal.json \
             --output artifacts/disposable-regression-compare.json
+      - name: Decide human-review readiness from complete evidence (no merge)
+        run: |
+          python scripts/review_decision_gate.py \
+            --inference artifacts/real-repo-qwen-proposal.json \
+            --regression artifacts/disposable-regression-compare.json \
+            --output artifacts/review-decision.json
       - name: Publish evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -47,5 +53,6 @@ jobs:
             artifacts/real-repo-qwen-proposal.json
             artifacts/qwen-review-candidate.json
             artifacts/disposable-regression-compare.json
+            artifacts/review-decision.json
           if-no-files-found: warn
           retention-days: 7
