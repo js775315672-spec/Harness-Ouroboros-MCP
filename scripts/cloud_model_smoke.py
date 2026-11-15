@@ -4,7 +4,7 @@
 Run only in an explicitly dispatched cloud workflow. No secrets, paid API,
 source edits, patch application or trading. Outputs bounded metadata only.
 """
-import argparse,json,os,sys,time
+import argparse,hashlib,json,os,sys,time
 
 DEFAULT_MODEL="Qwen/Qwen2.5-0.5B-Instruct"
 PROMPT="Write one Python function named add that returns the sum of two integers. Return code only."
@@ -30,10 +30,12 @@ def main():
         model=AutoModelForCausalLM.from_pretrained(args.model,trust_remote_code=False,torch_dtype=torch.float32)
         model.eval()
         model_requests=[0]
+        real_model_calls=[0]
         def generate(task):
             model_requests[0]+=1
             if args.inject_invalid_first and model_requests[0]==1:
                 return "def add(x, y):\\n    return x - y".replace("\\n","\n")
+            real_model_calls[0]+=1
             prompt=tokenizer.apply_chat_template([{"role":"user","content":task}],tokenize=False,add_generation_prompt=True)
             inputs=tokenizer(prompt,return_tensors="pt")
             with torch.inference_mode():
@@ -46,7 +48,12 @@ def main():
                       output_preview=result["attempts"][-1]["output_preview"],
                       feedback_passed=result["passed"],feedback_attempts=result["attempts"],
                       model_output_executed=False,model_requests=model_requests[0],
-                      injected_invalid_first=args.inject_invalid_first)
+                      injected_invalid_first=args.inject_invalid_first,
+                      real_model_calls=real_model_calls[0],
+                      synthetic_responses=model_requests[0]-real_model_calls[0],
+                      final_response_sha256=hashlib.sha256(result["attempts"][-1]["output_preview"].encode("utf-8")).hexdigest(),
+                      evidence_kind="static_ast_addition_contract_only",
+                      repository_patch_proposed=False)
         if not result["passed"]:raise ValueError("bounded static feedback validation failed")
         if args.inject_invalid_first and (model_requests[0]<2 or not result["passed"]):
             raise ValueError("real model repair was not verified")
