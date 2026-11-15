@@ -11,8 +11,10 @@ from pathlib import Path
 
 try:
     from .qwen_source_guard import TARGET, ORIGINAL, TASK, inspect_line
+    from .qwen_source_microtask import run_microtask_trials
 except ImportError:
     from qwen_source_guard import TARGET, ORIGINAL, TASK, inspect_line
+    from qwen_source_microtask import run_microtask_trials
 
 MODEL = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
 REPORT = Path("artifacts/source-guard-qwen-report.json")
@@ -69,63 +71,26 @@ def main():
         model = AutoModelForCausalLM.from_pretrained(
             MODEL, trust_remote_code=False, torch_dtype=torch.float32)
         model.eval()
-        reason = None
-        for attempt in range(2):
-            prompt = (
-                "Repair this ONE Python source line for feedback_controller.feedback. "
-                "It must reject missing, boolean, non-integer or non-positive cycle. "
-                "Retain the original invalid proposal checks. "
-                "Use short-circuit OR, checking type(proposal.get(\"cycle\")) is not int "
-                "before comparing proposal[\"cycle\"] < 1. "
-                "Output exactly one full Python source line starting with 4 spaces and 'if '. "
-                "Do not output Markdown, explanatory text, or additional code.\n"
-                "Original line:\n" + ORIGINAL + "\n"
-            )
-            if reason:
-                prompt += (
-                    "Previous output was rejected by the source AST gate. "
-                    "Do not rewrite the old condition. Extend it with BOTH "
-                    "additional short-circuit OR checks: "
-                    "type(proposal.get(\"cycle\")) is not int AND "
-                    "proposal[\"cycle\"] < 1. "
-                    "Each must be a Python 'or' clause in one continued if line; "
-                    "finish with a single colon. No fences or explanatory text.\n"
-                )
+        def generate(kind, prompt):
             inputs = tokenizer(tokenizer.apply_chat_template(
                 [{"role": "user", "content": prompt}], tokenize=False,
                 add_generation_prompt=True), return_tensors="pt")
-            report["model_calls"] += 1
             with torch.inference_mode():
-                output = model.generate(**inputs, max_new_tokens=160, do_sample=False,
+                output = model.generate(**inputs, max_new_tokens=52, do_sample=False,
                                         pad_token_id=tokenizer.eos_token_id)
-            raw = tokenizer.decode(output[0][inputs["input_ids"].shape[1]:],
-                                   skip_special_tokens=True)
-            row = {"attempt": attempt + 1,
-                   "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
-                   "response_length": len(raw),
-                   "response_preview": raw[:350]}
-            try:
-                candidate = evaluate_response(raw, source)
-                row["status"] = "accepted"
-                report["attempts"].append(row)
-                payload = {"provider": "qwen", "status": "proposal",
-                           "task_id": TASK["task_id"], "raw_response": raw,
-                           "line": candidate["normalized_line"],
-                           "source_patch": candidate["source_patch"],
-                           "source_sha256": candidate["source_sha256"],
-                           "model_line_sha256": candidate["model_line_sha256"]}
-                CANDIDATE.parent.mkdir(parents=True, exist_ok=True)
-                encoded = json.dumps(payload, sort_keys=True, indent=2) + "\n"
-                CANDIDATE.write_text(encoded, encoding="utf-8")
-                report["candidate_sha256"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-                report["status"] = "accepted_for_disposable_review"
-                break
-            except (ValueError, SyntaxError) as exc:
-                reason = type(exc).__name__  # Never relay raw untrusted content as instructions.
-                row["status"] = "rejected"
-                row["reason_type"] = reason
-                report["attempts"].append(row)
-                report["status"] = "model_proposal_rejected"
+            return tokenizer.decode(output[0][inputs["input_ids"].shape[1]:],
+                                    skip_special_tokens=True)
+
+        trial = run_microtask_trials(generate, source)
+        report["status"] = trial["status"]
+        report["model_calls"] = trial["model_calls"]
+        report["attempts"] = trial["attempts"]
+        if trial["candidate"] is not None:
+            payload = trial["candidate"]
+            CANDIDATE.parent.mkdir(parents=True, exist_ok=True)
+            encoded = json.dumps(payload, sort_keys=True, indent=2) + "\n"
+            CANDIDATE.write_text(encoded, encoding="utf-8")
+            report["candidate_sha256"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
     except Exception as exc:
         report["status"] = "error"
         report["error_type"] = type(exc).__name__
