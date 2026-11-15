@@ -1,0 +1,57 @@
+name: Independent model-authored patch replay
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/verified-model-patch-replay.yml'
+      - 'scripts/verified_model_patch_review.py'
+      - 'tests/test_verified_model_patch_review.py'
+      - 'proposals/feedback_cycle_guard_7b.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replay:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Offline evidence and AST tests
+        run: |
+          python -m unittest discover -s tests -p test_verified_model_patch_review.py -v
+          python scripts/verified_model_patch_review.py --report artifacts/patch-static-review.json
+      - name: Prefetch disposable no-network Docker base image
+        run: docker pull python:3.11-slim
+      - name: Replay model proposal without changing checkout
+        run: |
+          python scripts/verified_model_patch_review.py --docker \
+            --report artifacts/patch-docker-replay.json
+          python - <<'PY'
+          import json
+          p=json.load(open("artifacts/patch-docker-replay.json"))
+          assert p["status"] == "isolated_replay_passed"
+          assert p["docker_replayed"] is True
+          assert p["merge_authorized"] is False
+          print("PASS: independent model-authored patch replay; human review mandatory")
+          PY
+          git diff --exit-code -- scripts/feedback_controller.py
+      - name: Upload independent review evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: model-patch-independent-replay
+          path: |
+            artifacts/patch-static-review.json
+            artifacts/patch-docker-replay.json
+          if-no-files-found: warn
+          retention-days: 7
