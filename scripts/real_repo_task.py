@@ -23,11 +23,10 @@ def prepare():
         "Return ONLY a unified git diff, no Markdown fences or explanation. "
         "Do not execute code or request secrets. "
         "Change exactly tests/test_model_feedback_loop.py, NOT scripts/model_feedback_loop.py. "
-        "Add a unittest that ensures two Python fenced code blocks are rejected. "
-        "Use genuine newline characters in the input string, not literal backslash-n. "
-        "Keep the rest of the file unchanged. "
-        "Use 'diff --git', '---', '+++', and accurate '@@' hunk line counts. "
-        "No other file changes. End with a newline. If unable to produce a valid diff, output REJECT."
+        "Fix the EXISTING test_reject_multiple_fences assignment so it produces actual newline characters at runtime instead of literal backslash-n. "
+        "Replace ONLY that one line, without changing the method name or other code. "
+        "Return precisely six lines: diff --git header, --- marker, +++ marker, @@ one-line hunk header, one original - line, one corrected + line. "
+        "No extra files, hunks, prose or code fences. End with newline. If unable, output REJECT."
     )
     return {"task":TASK,"contract":contract,"prompt":prompt,
             "model_called":False,"patch_applied":False,
