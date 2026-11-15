@@ -14,6 +14,10 @@ class EvolutionPlannerTests(unittest.TestCase):
         self.assertEqual(plan(10,stagnation=20)["decision"],"propose")
     def test_over_ceiling_rejected(self):
         with self.assertRaises(ValueError):plan(0,ceiling=10001)
+    def test_completed_count_over_ceiling_rejected(self):
+        with self.assertRaises(ValueError):plan(10001)
+    def test_completed_count_over_custom_ceiling_rejected(self):
+        with self.assertRaises(ValueError):plan(101,target=30,ceiling=100)
     def test_invalid_target_rejected(self):
         with self.assertRaises(ValueError):plan(0,target=0)
     def test_human_approval_required(self):
