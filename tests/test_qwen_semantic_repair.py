@@ -135,6 +135,19 @@ class SemanticRepairTests(unittest.TestCase):
         self.assertFalse(result["merge_authorized"])
         self.assertEqual(result["candidate"]["candidate_line"], VALID)
 
+    def test_duplicate_repair_candidate_stops_without_repeated_docker(self):
+        calls = []
+        def evaluate(line):
+            calls.append(line)
+            return evidence(line, self.source, "candidate_regression_failed")
+        result = run_loop(self.source, lambda prompt: INCOMPLETE, evaluate)
+        self.assertEqual(result["status"], "stalled_duplicate_candidate")
+        self.assertEqual(result["model_calls"], 2)
+        self.assertEqual(result["docker_comparisons"], 1)
+        self.assertEqual(calls, [INCOMPLETE])
+        self.assertIsNone(result["candidate"])
+        self.assertFalse(result["merge_authorized"])
+
     def test_exhausted_retry_never_claims_success(self):
         result = run_loop(self.source, lambda prompt: "invalid code",
                           lambda line: self.fail("docker should not run"))
