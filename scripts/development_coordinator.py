@@ -2,12 +2,14 @@
 """Read-only, restartable development cycle coordinator; never fabricates commits or CI."""
 import argparse,json,pathlib,sys
 from development_ledger import validate
+from ci_attestation import verify_ledger
 from evolution_planner import plan
 
-def coordinate(records,target=30,ceiling=10000):
+def coordinate(records,target=30,ceiling=10000,fetch=None):
     count=validate(records)
+    attestations=verify_ledger(records,fetch=fetch)
     decision=plan(count,target=target,ceiling=ceiling)
-    return {"verified_development_cycles":count,"next":decision,
+    return {"verified_development_cycles":len(attestations),"next":decision,
             "autonomous_coding_connected":False,
             "verification_repetitions_are_not_development_cycles":True}
 
