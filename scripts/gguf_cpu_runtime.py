@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed local GGUF CPU completion adapter for the existing Harness loop.
 
-Only official Qwen2.5-Coder 0.5B/1.5B Apache-2.0 models are allowed.
+Only allowlisted official Apache-2.0 Qwen2.5-Coder 0.5B/1.5B/7B weights are allowed.
 The restricted 3B research model is deliberately not executable here.
 No shell, credentials, patch writes, model-provided commands or network downloads.
 """
@@ -32,6 +32,13 @@ MODELS = {
         "license": "apache-2.0",
         "minimum_bytes": 800_000_000,
         "maximum_bytes": 1_500_000_000,
+    },
+    "7b": {
+        "repo": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+        "filename": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+        "license": "apache-2.0",
+        "minimum_bytes": 4_000_000_000,
+        "maximum_bytes": 6_000_000_000,
     },
 }
 RESTRICTED = {"3b": "qwen-research: non-commercial evaluation only; not authorized here"}
