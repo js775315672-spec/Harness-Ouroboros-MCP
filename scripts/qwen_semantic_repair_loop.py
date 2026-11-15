@@ -17,6 +17,39 @@ except ImportError:
     from qwen_semantic_source_guard import inspect_semantic_line
 
 MAX_ATTEMPTS = 3
+# Model responses and Docker logs are untrusted: never place them in retries.
+# These codes are derived only from errors raised by our trusted AST parser.
+AST_FEEDBACK = {
+    "unsafe_ast": "AST rejected an operation, name, or value outside the allowed cycle guard.",
+    "guard_preservation": "The candidate did not preserve the original guard checks.",
+    "invalid_format": "Output was not one valid, bounded Python expression.",
+    "invalid_syntax": "Python could not parse the proposed expression.",
+    "other_ast_rejection": "The candidate failed the guarded AST contract.",
+}
+
+
+def classify_ast_failure(exc):
+    """Map trusted AST gate exceptions to fixed retry messages."""
+    if not isinstance(exc, (ValueError, SyntaxError)):
+        raise ValueError("unexpected diagnostic origin")
+    msg = str(exc)
+    if any(needle in msg for needle in (
+        "unsafe AST", "unsafe name", "unsafe call", "unsafe attribute",
+        "unsafe subscript", "disallowed", "collection", "literal", "unsupported")):
+        return "unsafe_ast"
+    if any(needle in msg for needle in (
+        "original guard", "original reject", "feedback entry guard",
+        "source baseline", "proposal and decision", "original checks")):
+        return "guard_preservation"
+    if "syntax" in msg.lower():
+        return "invalid_syntax"
+    if any(needle in msg for needle in (
+        "single", "format", "fence", "required", "invalid model",
+        "newline", "bounded", "invalid expression")):
+        return "invalid_format"
+    return "other_ast_rejection"
+
+
 RECOVERABLE = {"candidate_negative_failed", "candidate_regression_failed"}
 FEEDBACK = {
     "ast_scope_rejected":
@@ -35,7 +68,7 @@ FEEDBACK = {
 }
 
 
-def build_prompt(previous_category=None, attempt=1):
+def build_prompt(previous_category=None, attempt=1, ast_code=None):
     if type(attempt) is not int or not 1 <= attempt <= MAX_ATTEMPTS:
         raise ValueError("invalid prompt attempt")
     prompt = (
@@ -53,6 +86,11 @@ def build_prompt(previous_category=None, attempt=1):
         if previous_category not in FEEDBACK:
             raise ValueError("untrusted feedback category")
         prompt += "\nTrusted test feedback: " + FEEDBACK[previous_category]
+        if previous_category == "ast_scope_rejected" and ast_code is not None:
+            if ast_code not in AST_FEEDBACK:
+                raise ValueError("untrusted AST diagnosis")
+            prompt += "\nAST feedback code: " + ast_code
+            prompt += "\nAST explanation: " + AST_FEEDBACK[ast_code]
     if attempt == 2:
         prompt += (
             "\nFormat retry: your entire response must be only an expression. "
@@ -103,10 +141,11 @@ def run_loop(source, generate, evaluate, max_attempts=MAX_ATTEMPTS):
     if not callable(generate) or not callable(evaluate):
         raise ValueError("missing model or independent evaluator")
     attempts, category, final_candidate, final_comparison = [], None, None, None
+    ast_code = None
     comparisons = 0
     attempted_line_hashes = set()
     for attempt in range(1, max_attempts + 1):
-        prompt = build_prompt(category, attempt)
+        prompt = build_prompt(category, attempt, ast_code)
         raw = generate(prompt)
         row = {"attempt": attempt, "prompt_sha256": hashlib.sha256(
             prompt.encode("utf-8")).hexdigest()}
@@ -119,8 +158,10 @@ def run_loop(source, generate, evaluate, max_attempts=MAX_ATTEMPTS):
             row["response_length"] = None
         try:
             normalized, inspected = normalize_candidate(raw, source)
-        except (ValueError, SyntaxError):
+        except (ValueError, SyntaxError) as exc:
             row["status"] = "ast_scope_rejected"
+            ast_code = classify_ast_failure(exc)
+            row["feedback_evidence"] = {"phase": "ast", "code": ast_code}
             category = "ast_scope_rejected"
             attempts.append(row)
             continue
@@ -142,6 +183,8 @@ def run_loop(source, generate, evaluate, max_attempts=MAX_ATTEMPTS):
                                       "docker_execution_failed"}:
             raise ValueError("unexpected Docker status")
         row["status"] = status
+        row["feedback_evidence"] = {"phase": "docker", "code": status}
+        ast_code = None
         row["docker_tests"] = {
             key: (value.get("passed") if isinstance(value, dict) else None)
             for key, value in (
