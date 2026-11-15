@@ -62,6 +62,12 @@ FEEDBACK = {
         "Valid positive integers remain accepted. In Python, isinstance(True, int) is True, "
         "so a plain isinstance integer check is insufficient. Use an exact-type "
         "identity check OR explicitly exclude booleans before numerical comparisons. "
+        "A rejected candidate used isinstance(value, int): that alone wrongly "
+        "accepts True and False. Compare type(value) to int itself if needed. "
+        "The expression needs THREE distinct protections in short-circuit order: "
+        "(1) a key that is not present, (2) a value that is not exactly an integer, "
+        "and (3) an integer that is less than one. Never use direct dictionary "
+        "subscription before verifying the key or the value's type. "
         "Avoid membership lists of bad examples: they cannot cover every invalid "
         "type and negative number. Do not repeat a candidate rejected by tests.",
     "candidate_regression_failed":
@@ -109,7 +115,10 @@ def build_prompt(previous_category=None, attempt=1, ast_code=None):
             "covering invalid integer type, boolean values, and nonpositive "
             "numbers. A plain isinstance integer check accepts bool and fails. "
             "Use exact-type reasoning or an explicit bool exclusion, and avoid "
-            "comparing a non-number with a number. No code block or statement."
+            "comparing a non-number with a number. Include the missing-key check "
+            "before any direct dictionary access. Your expression must reject "
+            "absent cycle, wrong exact type (including bool), and integers below "
+            "one while preserving positive integers. No code block or statement."
         )
     return prompt
 
