@@ -30,6 +30,13 @@ jobs:
           HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
           CUDA_VISIBLE_DEVICES: ""
         run: python scripts/cloud_real_repo_proposal.py
+      - name: Bind real Qwen patch to strict file allowlist and source AST
+        run: |
+          python scripts/qwen_scope_bridge.py \
+            --source . \
+            --inference artifacts/real-repo-qwen-proposal.json \
+            --candidate artifacts/qwen-review-candidate.json \
+            --output artifacts/qwen-scope-bridge.json
       - name: Fetch disposable no-network Python test image
         run: docker pull python:3.11-slim
       - name: Compare original and scoped Qwen patch in disposable Docker
@@ -69,6 +76,7 @@ jobs:
           path: |
             artifacts/real-repo-qwen-proposal.json
             artifacts/qwen-review-candidate.json
+            artifacts/qwen-scope-bridge.json
             artifacts/disposable-regression-compare.json
             artifacts/review-decision.json
             artifacts/loop-bridge-decision.json
