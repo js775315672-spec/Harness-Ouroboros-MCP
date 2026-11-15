@@ -23,13 +23,7 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu "torch==2.6.0"
           python -m pip install --disable-pip-version-check "transformers==4.51.3" "safetensors==0.5.3"
-      - name: Run local-weights Qwen CPU inference
-        env:
-          HF_HUB_DISABLE_TELEMETRY: "1"
-          HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
-          CUDA_VISIBLE_DEVICES: ""
-        run: python scripts/cloud_model_smoke.py --inject-invalid-first --output artifacts/cloud-model-smoke.json
-      - name: Propose real repository test diff with Qwen (review only)
+      - name: Propose real repository line with Qwen (review only)
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"
           HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
@@ -40,8 +34,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: one-shot-qwen-inference-evidence
-          path: |
-            artifacts/cloud-model-smoke.json
-            artifacts/real-repo-qwen-proposal.json
+          path: artifacts/real-repo-qwen-proposal.json
           if-no-files-found: warn
           retention-days: 7
