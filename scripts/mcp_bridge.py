@@ -5,6 +5,7 @@ No command execution, network access, repository writes, or automatic merge.
 import json
 import subprocess
 from evaluation import evaluate_gates
+from history import recover_latest
 from pathlib import Path
 
 VERSION="2025-06-18"
@@ -39,15 +40,20 @@ class Server:
             return self.error(ident,-32002,"Server not initialized")
         elif method=="tools/list":
             if params:return self.error(ident,-32602,"Unexpected params")
-            result={"tools":[{"name":"harness.evaluate","description":"Read-only eight-gate policy evaluation","inputSchema":{"type":"object","properties":{},"additionalProperties":False}}]}
+            result={"tools":[{"name":"harness.evaluate","description":"Read-only eight-gate policy evaluation","inputSchema":{"type":"object","properties":{},"additionalProperties":False}},{"name":"ouroboros.recover_latest","description":"Read-only verified local checkpoint recovery; no replay or rollback","inputSchema":{"type":"object","properties":{},"additionalProperties":False}}]}
         elif method=="tools/call":
-            if set(params)!={"name","arguments"} or params["name"]!="harness.evaluate" or params["arguments"]!={}:
+            if set(params)!={"name","arguments"} or params["name"] not in ("harness.evaluate","ouroboros.recover_latest") or params["arguments"]!={}:
                 return self.error(ident,-32602,"Unknown tool or invalid arguments")
             try:
-                evaluation=evaluate_gates(self.root,self.root/"harness-policy.json")
-                result={"content":[{"type":"text","text":json.dumps(evaluation,sort_keys=True)}],"isError":evaluation["outcome"]!="pass"}
-            except (OSError,ValueError,UnicodeError,subprocess.CalledProcessError) as exc:
-                result={"content":[{"type":"text","text":"Policy evaluation blocked: "+type(exc).__name__}],"isError":True}
+                if params["name"]=="harness.evaluate":
+                    evaluation=evaluate_gates(self.root,self.root/"harness-policy.json")
+                    result={"content":[{"type":"text","text":json.dumps(evaluation,sort_keys=True)}],"isError":evaluation["outcome"]!="pass"}
+                else:
+                    head=subprocess.run(["git","-C",str(self.root),"rev-parse","HEAD"],capture_output=True,text=True,check=True).stdout.strip()
+                    record=recover_latest(self.root/"artifacts/ouroboros-history.json",expected_commit=head)
+                    result={"content":[{"type":"text","text":json.dumps(record,sort_keys=True)}],"isError":False}
+            except (OSError,ValueError,UnicodeError,subprocess.CalledProcessError,RecursionError) as exc:
+                result={"content":[{"type":"text","text":"Read-only tool blocked: "+type(exc).__name__}],"isError":True}
         else:return self.error(ident,-32601,"Method not found")
         return {"jsonrpc":"2.0","id":ident,"result":result}
 def main():
