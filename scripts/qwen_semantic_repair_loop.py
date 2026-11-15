@@ -59,8 +59,11 @@ FEEDBACK = {
     "candidate_negative_failed":
         "Disposable tests rejected the candidate: absent cycle, None, boolean "
         "True/False, text, float, zero, and negatives must all raise ValueError. "
-        "Valid positive integers must remain accepted. Reconsider bool being a subclass "
-        "of int and avoid unsafe comparisons before type validation.",
+        "Valid positive integers remain accepted. In Python, isinstance(True, int) is True, "
+        "so a plain isinstance integer check is insufficient. Use an exact-type "
+        "identity check OR explicitly exclude booleans before numerical comparisons. "
+        "Avoid membership lists of bad examples: they cannot cover every invalid "
+        "type and negative number. Do not repeat a candidate rejected by tests.",
     "candidate_regression_failed":
         "Existing feedback controller tests regressed. Your new invalid-cycle "
         "predicate should not reject positive integer cycles and should not "
@@ -104,8 +107,9 @@ def build_prompt(previous_category=None, attempt=1, ast_code=None):
         prompt += (
             "\nFinal format retry: output a single expression with checks "
             "covering invalid integer type, boolean values, and nonpositive "
-            "numbers. Avoid comparing a non-number with a number. "
-            "No code block or statement."
+            "numbers. A plain isinstance integer check accepts bool and fails. "
+            "Use exact-type reasoning or an explicit bool exclusion, and avoid "
+            "comparing a non-number with a number. No code block or statement."
         )
     return prompt
 
