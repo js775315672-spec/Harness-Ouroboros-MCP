@@ -14,8 +14,7 @@ SIGNATURES = {
     "google api key": rb"\bAIza[0-9A-Za-z_-]{35}\b",
     "slack token": rb"\bxox[baprs]-[A-Za-z0-9-]{15,}\b",
     "stripe secret key": rb"\bsk_(?:live|test)_[A-Za-z0-9]{16,}\b",
-    "generic credential assignment": rb"(?i)(?:api[_-]?key|secret|access[_-]?token|password)\s*[:=]\s*['\"][^'\"\r
-]{12,}['\"]",
+    "generic credential assignment": rb"(?i)(?:api[_-]?key|secret|access[_-]?token|password)\s*[:=]\s*['\x22][^'\x22]{12,}['\x22]",
 }
 PATTERNS = {name: re.compile(expr) for name, expr in SIGNATURES.items()}
 CHUNK = 1024 * 1024
