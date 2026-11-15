@@ -1,0 +1,200 @@
+name: Ouroboros eight-lane self-evolution isolation pilot
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/self-evolution-eight-lane-pilot.yml"
+      - "configs/self-evolution-8lanes.json"
+      - "docs/OUROBOROS_PARALLEL_SELF_EVOLUTION_SPEC_KO.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ouroboros-eight-lane-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated_baseline_lane:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        lane: ["01", "02", "03", "04", "05", "06", "07", "08"]
+    env:
+      LANE_ID: ${{ matrix.lane }}
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact reviewed commit with no persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prepare local-only isolated Git worktree branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          config=json.load(open("configs/self-evolution-8lanes.json",encoding="utf-8"))
+          lane=os.environ["LANE_ID"]
+          assert config["schema"] == 1
+          assert config["repository"] == os.environ["GITHUB_REPOSITORY"]
+          assert config["execution_mode"] == "read-only-infrastructure-smoke"
+          assert config["automatic_model_execution"] is False
+          assert config["automatic_remote_push"] is False
+          assert config["automatic_merge"] is False
+          assert config["human_approval_required"] is True
+          assert config["max_parallel"] == 8
+          assert config["worker_budget_seconds"] == 3000
+          assert config["checkpoint_interval_minutes"] == 5
+          assert len(config["lanes"]) == 8
+          assert [row["id"] for row in config["lanes"]] == [f"{i:02d}" for i in range(1,9)]
+          assert len({row["architecture_key"] for row in config["lanes"]}) == 8
+          assert len({row["high_level_goal"] for row in config["lanes"]}) == 1
+          assert any(row["id"] == lane for row in config["lanes"])
+          print("PASS: immutable review-only eight-lane contract validated")
+          PY
+          WORKTREE="$RUNNER_TEMP/ouroboros-lane-$LANE_ID"
+          BRANCH="exp/ouroboros/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/lane-$LANE_ID"
+          git worktree add -b "$BRANCH" "$WORKTREE" "$REVIEW_SHA"
+          test "$(git -C "$WORKTREE" rev-parse HEAD)" = "$REVIEW_SHA"
+          test "$(git -C "$WORKTREE" branch --show-current)" = "$BRANCH"
+          mkdir -p "artifacts/lanes/lane-$LANE_ID"
+          printf "%s\n" "$WORKTREE" > "artifacts/lanes/lane-$LANE_ID/workspace-path.txt"
+          printf "%s\n" "$BRANCH" > "artifacts/lanes/lane-$LANE_ID/branch-name.txt"
+      - name: Run identical baseline regression, governance and secret checks
+        shell: bash
+        run: |
+          set -uo pipefail
+          WORKTREE="$RUNNER_TEMP/ouroboros-lane-$LANE_ID"
+          EVIDENCE="$GITHUB_WORKSPACE/artifacts/lanes/lane-$LANE_ID"
+          (cd "$WORKTREE" && python3 -m unittest discover -s tests -q) > "$EVIDENCE/regression.log" 2>&1
+          echo $? > "$EVIDENCE/regression.rc"
+          (cd "$WORKTREE" && python3 scripts/governance.py) > "$EVIDENCE/governance.log" 2>&1
+          echo $? > "$EVIDENCE/governance.rc"
+          (cd "$WORKTREE" && python3 scripts/harness_check.py) > "$EVIDENCE/secrets.log" 2>&1
+          echo $? > "$EVIDENCE/secrets.rc"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          lane=os.environ["LANE_ID"]
+          root=pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          evidence=root/"artifacts"/"lanes"/f"lane-{lane}"
+          workspace=pathlib.Path(os.environ["RUNNER_TEMP"])/f"ouroboros-lane-{lane}"
+          sha=subprocess.check_output(["git","-C",str(workspace),"rev-parse","HEAD"],text=True).strip()
+          assert sha == os.environ["REVIEW_SHA"]
+          config=json.loads((root/"configs"/"self-evolution-8lanes.json").read_text())
+          task=next(row for row in config["lanes"] if row["id"] == lane)
+          checks={}
+          for name in ("regression","governance","secrets"):
+              code=int((evidence/f"{name}.rc").read_text().strip())
+              log=(evidence/f"{name}.log").read_bytes()
+              checks[name]={"status":"pass" if code == 0 else "fail",
+                            "exit_code":code, "log_sha256":hashlib.sha256(log).hexdigest()}
+          passed=all(x["status"]=="pass" for x in checks.values())
+          record={"schema":1,"repository":config["repository"],"source_sha":sha,
+                  "lane":lane,"architecture":task["architecture_key"],
+                  "branch":(evidence/"branch-name.txt").read_text().strip(),
+                  "run_id":os.environ["GITHUB_RUN_ID"],
+                  "run_attempt":os.environ["GITHUB_RUN_ATTEMPT"],
+                  "checks":checks,"status":"baseline_smoke_passed" if passed else "baseline_smoke_failed",
+                  "model_called":False,"code_generated":False,
+                  "remote_branch_pushed":False,"pr_created":False,
+                  "merge_authorized":False,"human_review_required":True,
+                  "performance_rank":None,"candidate_commit":None}
+          (evidence/"report.json").write_text(json.dumps(record,indent=2,sort_keys=True)+"\n")
+          print(json.dumps({"lane":lane,"status":record["status"],"source_sha":sha}))
+          if not passed: raise SystemExit(1)
+          PY
+      - name: Publish per-lane log and checkpoint evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ouroboros-eight-lane-${{ matrix.lane }}
+          path: artifacts/lanes/
+          if-no-files-found: warn
+          retention-days: 7
+
+  independently_aggregate_eight_lanes:
+    if: always()
+    needs: [isolated_baseline_lane]
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout pinned review code without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Recover all eight runner artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.8
+        with:
+          pattern: ouroboros-eight-lane-*
+          path: artifacts/recovered
+          merge-multiple: true
+      - name: Reject incomplete, divergent or falsely claimed results
+        shell: bash
+        env:
+          REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          root=pathlib.Path("artifacts/recovered")
+          config=json.load(open("configs/self-evolution-8lanes.json",encoding="utf-8"))
+          seen_branches=set()
+          summary={"schema":1,"status":"blocked","baseline_smoke_only":True,
+                   "model_authored_patches_verified":0,"ranked_candidates":[],
+                   "merge_authorized":False,"lanes":[]}
+          expected={row["id"]:row["architecture_key"] for row in config["lanes"]}
+          for lane in expected:
+              file=root/f"lane-{lane}"/"report.json"
+              if not file.is_file(): raise SystemExit(f"BLOCK: missing lane {lane}")
+              item=json.loads(file.read_text())
+              if (item["repository"]!=config["repository"] or
+                  item["source_sha"]!=os.environ["REVIEW_SHA"] or
+                  item["lane"]!=lane or item["architecture"]!=expected[lane] or
+                  item["status"]!="baseline_smoke_passed" or
+                  set(item["checks"])!={"regression","governance","secrets"} or
+                  any(x["status"]!="pass" for x in item["checks"].values()) or
+                  item["model_called"] is not False or
+                  item["code_generated"] is not False or
+                  item["remote_branch_pushed"] is not False or
+                  item["pr_created"] is not False or
+                  item["merge_authorized"] is not False or
+                  item["human_review_required"] is not True or
+                  item["candidate_commit"] is not None or
+                  item["performance_rank"] is not None):
+                  raise SystemExit(f"BLOCK: invalid lane evidence {lane}")
+              if item["branch"] in seen_branches: raise SystemExit("BLOCK: reused branch")
+              seen_branches.add(item["branch"])
+              summary["lanes"].append({"id":lane,"architecture":item["architecture"],
+                                       "status":item["status"]})
+          if len(seen_branches)!=8: raise SystemExit("BLOCK: missing independent worktrees")
+          summary["status"]="eight_independent_baseline_smokes_passed"
+          output=pathlib.Path("artifacts/summary.json")
+          output.parent.mkdir(exist_ok=True)
+          output.write_text(json.dumps(summary,indent=2,sort_keys=True)+"\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as fh:
+              fh.write("## Ouroboros self-evolution: 8 isolated worktrees\n\n")
+              fh.write("**Eight baseline Harness/regression/safety suites: PASS**\n\n")
+              fh.write("**AI-authored code, measured performance rank, remote branches, Draft PRs: NOT RUN**\n\n")
+              fh.write("No merge or GitHub write permission was granted.\n")
+          print(json.dumps(summary,sort_keys=True))
+          PY
+      - name: Upload aggregated read-only result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ouroboros-eight-lane-aggregate
+          path: artifacts/summary.json
+          if-no-files-found: warn
+          retention-days: 7
