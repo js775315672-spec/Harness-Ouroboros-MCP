@@ -1,1 +1,1 @@
-Fifth cloud experiment: after Qwen's actual failed repair loop, accept exactly one fenced Python code block with explanatory prose, reject ambiguous or executable-looking surrounding content. Force initial invalid response and require real model repair.
+Sixth one-shot experiment: fixed raw regex escaping after 170-test CI failure; retry real Qwen correction from synthetic x-y to x+y, accept one explanatory fenced code block only. Generated code not executed or applied.
