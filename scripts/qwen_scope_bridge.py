@@ -28,6 +28,11 @@ def verify_scoped_model_candidate(task, candidate, source):
     """Cross-check independently maintained task and Qwen allowlist contracts."""
     if not isinstance(task, dict) or not isinstance(candidate, dict):
         raise ValueError("invalid task or candidate")
+    if (set(candidate) != {"provider", "status", "summary", "patch"} or
+            candidate["provider"] != "qwen" or candidate["status"] != "proposal" or
+            not isinstance(candidate["summary"], str) or
+            not isinstance(candidate["patch"], str)):
+        raise ValueError("model artifact must be a valid Qwen proposal")
     scope = validate_qwen_scope({
         "task_id": task["task_id"],
         "goal": task["goal"],
