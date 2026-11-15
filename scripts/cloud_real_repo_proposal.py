@@ -10,9 +10,11 @@ from pathlib import Path
 try:
     from .real_repo_task import prepare
     from .scoped_patch_gate import inspect_scoped_patch
+    from .replacement_proposal import build_single_line_diff
 except ImportError:
     from real_repo_task import prepare
     from scoped_patch_gate import inspect_scoped_patch
+    from replacement_proposal import build_single_line_diff
 
 MODEL="Qwen/Qwen2.5-0.5B-Instruct"
 TARGET=Path("tests/test_model_feedback_loop.py")
@@ -31,15 +33,18 @@ def _target_line(source):
 
 def prompt_for_attempt(goal,source,reason=None):
     number,line=_target_line(source)
-    prompt=(goal+"\n"
-            "Only replace the following exact source line, preserving its indentation.\n"
-            f"Line {number}: {line}\n"
-            f"Use ONE hunk: @@ -{number} +{number} @@\n"
-            "Make a '-' line matching the source exactly and a '+' line "
-            "with single-escaped newline sequences so Python evaluates real newlines. "
-            "Do not add any other diff headers, files or edits.\n")
+    prompt=(
+        "You are fixing one Python unittest string literal. "
+        "The current string contains literal backslash-n instead of actual "
+        "newlines after Python evaluates it. "
+        "Replace double backslashes with single backslashes before n. "
+        "Output EXACTLY ONE complete Python source line, starting with "
+        "eight spaces followed by answer=. "
+        "No diff, no Markdown, no commentary, no extra lines.\n"
+        f"Original source line {number}:\n{line}\n"
+    )
     if reason:
-        prompt+=f"Your previous answer was rejected: {reason[:160]}. Correct it; return diff only.\n"
+        prompt+=f"Your previous one-line proposal failed validation: {reason[:160]}. Fix and output one line only.\n"
     return prompt
 
 def _check_one_line_change(raw,source):
@@ -111,6 +116,8 @@ def main():
         report["source_sha256"]=hashlib.sha256(source.encode()).hexdigest()
         report["task_id"]=task["task"]["task_id"]
         report["inspection_kind"]="static_scope_structure_source_and_ast_only"
+        report["model_output_format"]="single_python_assignment_line"
+        report["patch_origin"]="deterministic_single_line_builder"
         tokenizer=AutoTokenizer.from_pretrained(MODEL,trust_remote_code=False)
         model=AutoModelForCausalLM.from_pretrained(
             MODEL,trust_remote_code=False,torch_dtype=torch.float32)
@@ -128,10 +135,18 @@ def main():
                                       pad_token_id=tokenizer.eos_token_id)
             raw=tokenizer.decode(output[0][tokens["input_ids"].shape[1]:],
                                  skip_special_tokens=True)
-            assessment=assess(raw,task["task"],source)
+            patch_hash=None
+            try:
+                number,old_line=_target_line(source)
+                proposed_diff=build_single_line_diff(raw,old_line,number)
+                patch_hash=hashlib.sha256(proposed_diff.encode("utf-8")).hexdigest()
+                assessment=assess(proposed_diff,task["task"],source)
+            except ValueError as exc:
+                assessment={"status":"rejected","reason":str(exc)[:300],"inspection":None}
             attempts.append({"attempt":attempt+1,
                              "response_sha256":hashlib.sha256(raw.encode()).hexdigest(),
                              "response_chars":len(raw),"response_preview":raw[:1600],
+                             "synthesized_patch_sha256":patch_hash,
                              "response_ends_with_newline":raw.endswith("\n"),
                              "status":assessment["status"],"reason":assessment["reason"]})
             report.update(assessment)
