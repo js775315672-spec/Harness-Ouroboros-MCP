@@ -15,7 +15,8 @@ def evidence_files(directory):
     source=(ROOT/TARGET).read_bytes()
     n,old=_target_line(source.decode("utf-8"))
     new=old.replace(chr(92)*2+"n",chr(92)+"n")
-    patch=build_single_line_diff(new,old,n)
+    raw=new
+    patch=build_single_line_diff(raw,old,n)
     raw=new.strip()
     candidate={"provider":"qwen","status":"proposal",
                "summary":"Scoped string-only test fix","patch":patch}
@@ -31,6 +32,9 @@ def evidence_files(directory):
             "source_sha256":hashlib.sha256(source).hexdigest(),
             "candidate_sha256":hashlib.sha256(candidate_bytes).hexdigest(),
             "attempts":[{"attempt":1,"status":"accepted_for_review",
+                         "response_preview":raw,
+                         "response_chars":len(raw),
+                         "response_sha256":hashlib.sha256(raw.encode()).hexdigest(),
                          "response_preview":raw,
                          "response_chars":len(raw),
                          "response_sha256":hashlib.sha256(raw.encode()).hexdigest(),
