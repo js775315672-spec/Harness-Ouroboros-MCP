@@ -9,7 +9,7 @@ class CloudModelSmokeTests(unittest.TestCase):
     def test_default_model_small(self):
         text=(ROOT/"scripts/cloud_model_smoke.py").read_text(encoding="utf-8")
         self.assertIn("Qwen/Qwen2.5-0.5B-Instruct",text)
-        self.assertIn("max_new_tokens=64",text)
+        self.assertIn("max_new_tokens=96",text)
         self.assertIn("patch_applied\":False",text)
     def test_workflow_requires_manual_dispatch(self):
         text=(ROOT/".github/workflows/cloud-model-smoke.yml").read_text(encoding="utf-8")
