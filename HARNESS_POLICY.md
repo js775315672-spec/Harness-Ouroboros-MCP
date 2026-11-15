@@ -19,3 +19,8 @@
 ## Consumers
 - [AURA-OS](https://github.com/js775315672-spec/AURA-OS)
 - [SteadyTrade](https://github.com/js775315672-spec/SteadyTrade)
+
+## Checkpoint journal
+- `scripts/history.py` provides local hash-linked checkpoint history, integrity verification and read-only latest-state recovery.
+- Hash chains detect accidental edits and unsophisticated tampering; they are not signed and cannot prevent an attacker from rewriting the entire journal.
+- This is not automatic task replay, rollback, or distributed recovery. Never merge without separate user approval.
