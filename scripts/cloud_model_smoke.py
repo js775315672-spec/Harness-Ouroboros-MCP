@@ -13,6 +13,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--model",default=DEFAULT_MODEL,choices=[DEFAULT_MODEL])
     parser.add_argument("--output",default="artifacts/cloud-model-smoke.json")
+    parser.add_argument("--inject-invalid-first",action="store_true",help="Force a synthetic invalid first answer; model must repair on subsequent call")
     args=parser.parse_args()
     start=time.monotonic()
     report={"model":args.model,"provider":"qwen","mode":"cpu_local_weights",
@@ -28,7 +29,11 @@ def main():
         tokenizer=AutoTokenizer.from_pretrained(args.model,trust_remote_code=False)
         model=AutoModelForCausalLM.from_pretrained(args.model,trust_remote_code=False,torch_dtype=torch.float32)
         model.eval()
+        model_requests=[0]
         def generate(task):
+            model_requests[0]+=1
+            if args.inject_invalid_first and model_requests[0]==1:
+                return "def add(x, y):\\n    return x - y".replace("\\n","\n")
             prompt=tokenizer.apply_chat_template([{"role":"user","content":task}],tokenize=False,add_generation_prompt=True)
             inputs=tokenizer(prompt,return_tensors="pt")
             with torch.inference_mode():
@@ -40,8 +45,11 @@ def main():
                       output_chars=len(result["attempts"][-1]["output_preview"]),
                       output_preview=result["attempts"][-1]["output_preview"],
                       feedback_passed=result["passed"],feedback_attempts=result["attempts"],
-                      model_output_executed=False)
+                      model_output_executed=False,model_requests=model_requests[0],
+                      injected_invalid_first=args.inject_invalid_first)
         if not result["passed"]:raise ValueError("bounded static feedback validation failed")
+        if args.inject_invalid_first and (model_requests[0]<2 or not result["passed"]):
+            raise ValueError("real model repair was not verified")
         return_code=0
     except Exception as exc:
         report["error_type"]=type(exc).__name__
