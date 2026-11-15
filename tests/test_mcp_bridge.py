@@ -25,6 +25,22 @@ class BridgeTests(unittest.TestCase):
         with patch('mcp_bridge.evaluate_gates',side_effect=subprocess.CalledProcessError(1,['git'])):
             response=self.request('tools/call',{'name':'harness.evaluate','arguments':{}})
         self.assertTrue(response['result']['isError'])
+    def test_recovery_missing_history_blocks(self):
+        self.initialize()
+        response=self.request("tools/call",{"name":"ouroboros.recover_latest","arguments":{}})
+        self.assertTrue(response["result"]["isError"])
+    def test_recovery_commit_bound(self):
+        self.initialize()
+        record={"schema_version":1,"stage":"evaluate","outcome":"pass","note":"","commit":"a"*40,"timestamp":"2026-11-15T00:00:00+00:00","next_stage":"evolve","requires_human_merge_approval":True}
+        with patch("mcp_bridge.subprocess.run") as git,patch("mcp_bridge.recover_latest",return_value=record) as recover:
+            git.return_value.stdout="a"*40+"\\n"
+            response=self.request("tools/call",{"name":"ouroboros.recover_latest","arguments":{}})
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(recover.call_args.kwargs["expected_commit"],"a"*40)
+    def test_recovery_rejects_arbitrary_path(self):
+        self.initialize()
+        response=self.request("tools/call",{"name":"ouroboros.recover_latest","arguments":{"path":"/tmp/other"}})
+        self.assertEqual(response["error"]["code"],-32602)
     def test_unknown_tool(self):
         self.initialize()
         self.assertEqual(self.request("tools/call",{"name":"run","arguments":{}})["error"]["code"],-32602)
