@@ -16,6 +16,7 @@ from verified_model_patch_review import inspect_proposal
 
 EVIDENCE = ROOT / "proposals/feedback_cycle_guard_7b.json"
 EXPR = r"'\x00' in log or '\x1b' in log"
+CHREXPR = "chr(0) in log or chr(27) in log"
 
 
 class FixedResponse:
@@ -50,15 +51,18 @@ def fake_docker_ok(workspace, pattern):
 
 
 class SecondTaskTests(unittest.TestCase):
-    def test_prompt_identifies_escaped_literals_without_full_answer(self):
-        self.assertIn("NOT Python variable names", PROMPT)
-        self.assertIn(r"\x00", PROMPT)
-        self.assertIn(r"\x1b", PROMPT)
-        self.assertNotIn(EXPR, PROMPT)
+    def test_prompt_provides_only_codepoint_building_blocks(self):
+        self.assertIn("undefined Python variable names", PROMPT)
+        self.assertIn("chr(0)", PROMPT)
+        self.assertIn("chr(27)", PROMPT)
+        self.assertNotIn(CHREXPR, PROMPT)
         self.assertNotIn("NUL in log or ESC in log", PROMPT)
 
     def test_only_safe_two_control_expression_accepted(self):
         self.assertEqual(normalize_expression(EXPR), EXPR)
+        self.assertEqual(normalize_expression(CHREXPR), CHREXPR)
+        self.assertEqual(normalize_expression("chr(27) in log or chr(0) in log"),
+                         "chr(27) in log or chr(0) in log")
         self.assertEqual(normalize_expression(EXPR.replace(" or ", " or ")), EXPR)
         self.assertEqual(normalize_expression("```python\n" + EXPR + "\n```"), EXPR)
         self.assertEqual(normalize_expression("`" + EXPR + "`"), EXPR)
@@ -66,7 +70,11 @@ class SecondTaskTests(unittest.TestCase):
                     r"'\n' in log or '\x1b' in log",
                     "import os", "__import__('os').system('id')",
                     "log.clear()", r"'\x00' in log or os.path.exists('x')",
-                    "log == None", EXPR + "\nprint(1)",
+                    "log == None", "chr(1) in log or chr(27) in log",
+                    "chr(True) in log or chr(27) in log",
+                    "chr(0 + 0) in log or chr(27) in log",
+                    "chr(0) in log or __import__('os').system('id')",
+                    EXPR + "\nprint(1)",
                     "`" + EXPR + "` trailing"):
             with self.subTest(value=bad[:40]):
                 with self.assertRaises(ValueError):
@@ -121,6 +129,17 @@ class SecondTaskTests(unittest.TestCase):
         self.assertTrue(result["model_generated_second_task"])
         self.assertFalse(result["merge_authorized"])
         self.assertNotIn("completed_tasks", result)
+
+    def test_fresh_chr_expression_is_independently_docker_attested(self):
+        model = FixedResponse([CHREXPR])
+        with patch("qwen_second_task_trial._test", side_effect=fake_docker_ok):
+            result = trial(ROOT, model)
+        self.assertEqual(result["outcome"], "second_patch_passed")
+        self.assertEqual(result["model_calls"], 1)
+        self.assertEqual(result["docker_comparisons"], 1)
+        self.assertIn(CHREXPR, result["candidate_line"])
+        self.assertTrue(result["model_generated_second_task"])
+        self.assertFalse(result["merge_authorized"])
 
     def test_docker_executor_error_keeps_attempt_audit(self):
         model = FixedResponse([EXPR])
