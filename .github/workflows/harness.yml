@@ -39,7 +39,7 @@ jobs:
       - name: Multi-model adapter offline contract check
         run: python3 scripts/model_adapter.py --provider qwen --completed 0 --output artifacts/model-request.json
       - name: Model patch gate safety check
-        run: python3 -c 'import sys;sys.path.insert(0,"scripts");from patch_gate import inspect_patch;r=inspect_patch({"provider":"qwen","status":"proposal","summary":"test","patch":"diff --git a/tests/x.py b/tests/x.py\\n--- a/tests/x.py\\n+++ b/tests/x.py\\n@@ -1 +1 @@\\n-a\\n+b\\n"});assert not r["patch_approved_for_application"]'
+        run: python3 -m unittest discover -s tests -p test_patch_gate.py -v
       - name: Record handoff preparation runtime
         run: python3 scripts/handoff_runtime.py --completed 0 --branch agent/cycle-1-baseline --output artifacts/handoff-runtime.json
       - name: Thirty sequential Harness Ouroboros verification cycles
