@@ -8,7 +8,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from bounded_qwen_autonomous_worker import (
-    TASKS, parse, apply, initial, load, run, verify, original, store,
+    TASKS, parse, apply, checkpoint_base, load, run, verify, original, store,
 )
 
 COMMIT = "a" * 40
@@ -98,7 +98,7 @@ class WorkerTests(unittest.TestCase):
     def test_tampered_checkpoint_and_wrong_sha_cannot_resume(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "queue.json"
-            state = initial(ROOT, COMMIT)
+            state = checkpoint_base(ROOT, COMMIT)
             store(path, state)
             with self.assertRaises(ValueError):
                 load(ROOT, path, "b" * 40)
@@ -111,7 +111,7 @@ class WorkerTests(unittest.TestCase):
     def test_forged_checkpoint_cannot_claim_success_by_resealing(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "queue.json"
-            state = initial(ROOT, COMMIT)
+            state = checkpoint_base(ROOT, COMMIT)
             state["state"] = "complete"
             state["completed_tasks"] = 2
             from bounded_qwen_autonomous_worker import seal
