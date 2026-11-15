@@ -129,8 +129,9 @@ def main():
         model.eval()
         attempts=[]
         reason=None
+        repair_prompt=None
         for attempt in range(task["contract"]["max_attempts"]):
-            prompt=prompt_for_attempt(task["prompt"],source,reason)
+            prompt=repair_prompt or prompt_for_attempt(task["prompt"],source,reason)
             tokens=tokenizer(tokenizer.apply_chat_template(
                 [{"role":"user","content":prompt}],tokenize=False,
                 add_generation_prompt=True),return_tensors="pt")
@@ -165,6 +166,7 @@ def main():
                      "goal":task["task"]["goal"]},
                     {"kind":"static_scope","reason":reason or "invalid_proposal"},
                     attempt+1)
+                repair_prompt=repair["prompt"]
                 report.setdefault("repair_requests",[]).append(
                     {"decision":repair["decision"],
                      "next_attempt":repair.get("next_attempt"),
