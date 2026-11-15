@@ -16,7 +16,7 @@ def _gbnf_literal(text):
 
 def build_in_log_grammar(allowed_hex=("00", "1b"), min_clauses=2, max_clauses=2,
                          variable="log"):
-    """Return GBNF text for: "\xHH" in <variable> (or "\xHH" in <variable>)*"""
+    """Return GBNF text for: "\\xHH" in <variable> (or "\\xHH" in <variable>)*"""
     hexes = tuple(allowed_hex)
     if not hexes or not all(isinstance(h, str) and _HEX.match(h) for h in hexes):
         raise ValueError("allowed_hex must be lowercase two-digit hex strings")
