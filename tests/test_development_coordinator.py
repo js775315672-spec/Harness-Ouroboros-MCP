@@ -21,6 +21,8 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(result["verified_development_cycles"],0)
         self.assertEqual(result["next"]["next_cycle"],1)
         self.assertFalse(result["autonomous_coding_connected"])
+        self.assertEqual(result["proposed_task"]["phase"],"baseline")
+        self.assertFalse(result["proposed_task"]["writes_allowed"])
     def test_no_fake_development_cycles_from_verification(self):
         result=development_coordinator.coordinate([])
         self.assertTrue(result["verification_repetitions_are_not_development_cycles"])
