@@ -36,6 +36,7 @@ jobs:
           python scripts/disposable_regression_compare.py \
             --source . \
             --candidate artifacts/qwen-review-candidate.json \
+            --inference-report artifacts/real-repo-qwen-proposal.json \
             --output artifacts/disposable-regression-compare.json
       - name: Publish evidence even on failure
         if: always()
