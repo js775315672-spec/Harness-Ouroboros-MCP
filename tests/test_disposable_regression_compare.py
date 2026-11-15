@@ -11,6 +11,7 @@ from scripts.replacement_proposal import build_single_line_diff
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 TARGET="tests/test_model_feedback_loop.py"
 MODULE="scripts/model_feedback_loop.py"
+PROBE="scripts/regression_mutation_probe.py"
 
 def replacement():
     original=(ROOT/TARGET).read_text(encoding="utf-8")
