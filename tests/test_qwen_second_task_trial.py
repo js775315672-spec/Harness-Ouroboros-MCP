@@ -123,6 +123,15 @@ class SecondTaskTests(unittest.TestCase):
         self.assertFalse(result["model_generated_second_task"])
         self.assertIsNone(result["candidate_line"])
 
+    def test_duplicate_wrong_answer_stops_without_wasting_cpu(self):
+        model = FixedResponse(["invalid", "invalid", "should-never-run"])
+        result = trial(ROOT, model)
+        self.assertEqual(result["model_calls"], 2)
+        self.assertEqual(result["outcome"], "duplicate_response_blocked")
+        self.assertEqual(result["docker_comparisons"], 0)
+        self.assertFalse(result["model_generated_second_task"])
+        self.assertEqual(len(model.calls), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
