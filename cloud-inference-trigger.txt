@@ -1,1 +1,1 @@
-Second one-shot experiment: Qwen2.5-0.5B-Instruct CPU inference with up to three model-feedback attempts. Static AST verification only; generated code never executed or applied.
+Third one-shot cloud experiment: fix direct script import path; run Qwen CPU inference and bounded static feedback loop. No generated code execution or merge.
