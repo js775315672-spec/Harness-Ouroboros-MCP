@@ -28,7 +28,7 @@ jobs:
           HF_HUB_DISABLE_TELEMETRY: "1"
           HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
           CUDA_VISIBLE_DEVICES: ""
-        run: python scripts/cloud_model_smoke.py --output artifacts/cloud-model-smoke.json
+        run: python scripts/cloud_model_smoke.py --inject-invalid-first --output artifacts/cloud-model-smoke.json
       - name: Publish evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
