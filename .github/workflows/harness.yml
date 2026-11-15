@@ -40,6 +40,8 @@ jobs:
         run: python3 scripts/model_adapter.py --provider qwen --completed 0 --output artifacts/model-request.json
       - name: Model patch gate safety check
         run: python3 -m unittest discover -s tests -p test_patch_gate.py -v
+      - name: Disposable AI patch staging regression tests
+        run: python3 -m unittest discover -s tests -p test_isolated_patch_stage.py -v
       - name: Record handoff preparation runtime
         run: python3 scripts/handoff_runtime.py --completed 0 --branch agent/cycle-1-baseline --output artifacts/handoff-runtime.json
       - name: Thirty sequential Harness Ouroboros verification cycles
