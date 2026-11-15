@@ -63,7 +63,15 @@ def main():
                 "Original line:\n" + ORIGINAL + "\n"
             )
             if reason:
-                prompt += "Prior candidate rejected. Reconsider the conditional guard.\n"
+                prompt += (
+                    "Previous output was rejected by the source AST gate. "
+                    "Do not rewrite the old condition. Extend it with BOTH "
+                    "additional short-circuit OR checks: "
+                    "type(proposal.get(\\\"cycle\\\")) is not int AND "
+                    "proposal[\\\"cycle\\\"] < 1. "
+                    "Each must be a Python 'or' clause in one continued if line; "
+                    "finish with a single colon. No fences or explanatory text.\\n"
+                )
             inputs = tokenizer(tokenizer.apply_chat_template(
                 [{"role": "user", "content": prompt}], tokenize=False,
                 add_generation_prompt=True), return_tensors="pt")
@@ -75,7 +83,8 @@ def main():
                                    skip_special_tokens=True)
             row = {"attempt": attempt + 1,
                    "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
-                   "response_length": len(raw)}
+                   "response_length": len(raw),
+                   "response_preview": raw[:350]}
             try:
                 candidate = evaluate_response(raw, source)
                 row["status"] = "accepted"
