@@ -20,7 +20,7 @@ class UnifiedDiffStructureTests(unittest.TestCase):
 
     def test_reject_count_mismatch(self):
         with self.assertRaises(ValueError):
-            validate_diff_structure(diff("-old\n+new\n","@@ -2 +1 @@"))
+            validate_diff_structure(diff("-old\n+new\n","@@ -1,2 +1 @@"))
 
     def test_reject_unexpected_metadata(self):
         with self.assertRaises(ValueError):
