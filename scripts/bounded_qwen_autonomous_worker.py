@@ -88,16 +88,26 @@ def parse(raw, point):
     except SyntaxError as exc:
         raise ValueError("invalid model expression") from exc
     if (not isinstance(expr, ast.Compare) or
-            not isinstance(expr.left, ast.Call) or
-            not isinstance(expr.left.func, ast.Name) or expr.left.func.id != "chr" or
-            len(expr.left.args) != 1 or expr.left.keywords or
-            not isinstance(expr.left.args[0], ast.Constant) or
-            type(expr.left.args[0].value) is not int or
-            expr.left.args[0].value != point or len(expr.ops) != 1 or
-            not isinstance(expr.ops[0], ast.In) or len(expr.comparators) != 1 or
+            len(expr.ops) != 1 or not isinstance(expr.ops[0], ast.In) or
+            len(expr.comparators) != 1 or
             not isinstance(expr.comparators[0], ast.Name) or
             expr.comparators[0].id != "log"):
-        raise ValueError("outside fixed AST membership allowlist")
+        raise ValueError("not one scoped membership comparison")
+    left = expr.left
+    if isinstance(left, ast.Constant) and type(left.value) is str:
+        # A Python-escaped literal is equivalent to chr(codepoint);
+        # physical CR/NUL/ESC source characters remain blocked above.
+        character = left.value
+    elif (isinstance(left, ast.Call) and
+            isinstance(left.func, ast.Name) and left.func.id == "chr" and
+            len(left.args) == 1 and not left.keywords and
+            isinstance(left.args[0], ast.Constant) and
+            type(left.args[0].value) is int):
+        character = chr(left.args[0].value) if 0 <= left.args[0].value <= 127 else None
+    else:
+        raise ValueError("only a literal or bounded chr(codepoint) is allowed")
+    if character != chr(point):
+        raise ValueError("expression does not match the trusted control codepoint")
     return value
 
 
@@ -171,12 +181,16 @@ def validate(root, document, commit):
         raise ValueError("false loop completion")
     for row in raw["attempts"]:
         if (not isinstance(row, dict) or
-                set(row) != {"task", "number", "response_sha256", "status"} or
+                set(row) != {"task", "number", "response_sha256", "status", "response_preview"} or
                 row["task"] not in [task[0] for task in TASKS] or
                 type(row["number"]) is not int or not 1 <= row["number"] <= 3 or
                 not isinstance(row["response_sha256"], str) or
                 not SHA64.fullmatch(row["response_sha256"]) or
-                row["status"] not in ("ast_rejected","docker_rejected","accepted")):
+                row["status"] not in ("ast_rejected","docker_rejected",
+                                      "duplicate_response_blocked","accepted") or
+                not isinstance(row["response_preview"], str) or
+                len(row["response_preview"]) > 160 or
+                any(x in row["response_preview"] for x in ("\x00","\x1b","\r"))):
             raise ValueError("invalid bounded attempt history")
     for i, (task, _) in enumerate(TASKS):
         rows = [x for x in raw["attempts"] if x["task"] == task]
@@ -255,8 +269,12 @@ def request_prompt(index, attempt):
               "expression that is true when the string named log contains the "
               "control character with Unicode code point " + str(point) + ". "
               "Use Python's chr(n) built-in, membership operator 'in', and log. "
-              "Do not write the actual control character, if, return, "
-              "Markdown, explanation, or any other names.")
+              "Use an exact Python expression with a character on the LEFT "
+              "of 'in log'. The safe spellings chr(" + str(point) + ") or a "
+              "Python escaped string literal denoting code point " + str(point) +
+              " are allowed. Do not use undefined names such as CR or DEL. "
+              "Do not write physical control bytes, if, return, Markdown, "
+              "explanations, functions besides chr, or other conditions.")
     if attempt > 1:
         prompt += (" Your prior candidate failed scoped AST/Docker checks. "
                    "Use precisely a single chr call with code point " + str(point) +
@@ -292,15 +310,21 @@ def run(root, commit, inference, path, budget_seconds=1800, resume=False,
             raw = inference.generate(request_prompt(index,number))
             if not isinstance(raw,str) or len(raw.encode())>6000:
                 raise ValueError("untrusted GGUF adapter output")
-            result="ast_rejected"
-            try:
-                expr = parse(raw,TASKS[index][1])
-                candidate=apply(source_text,expr,index)
-                result="accepted" if compare(root,source_text,candidate,index) else "docker_rejected"
-            except (ValueError,SyntaxError):
-                result="ast_rejected"
+            response_sha = sha(raw.encode())
+            prior_hashes = {row["response_sha256"] for row in state["attempts"]
+                            if row["task"] == task}
+            result = "duplicate_response_blocked" if response_sha in prior_hashes else "ast_rejected"
+            if result != "duplicate_response_blocked":
+                try:
+                    expr = parse(raw,TASKS[index][1])
+                    candidate = apply(source_text,expr,index)
+                    result = "accepted" if compare(root,source_text,candidate,index) else "docker_rejected"
+                except (ValueError,SyntaxError):
+                    result = "ast_rejected"
             state["attempts"].append({"task":task,"number":number,
-                                      "response_sha256":sha(raw.encode()),"status":result})
+                                      "response_sha256":response_sha,
+                                      "response_preview":repr(raw)[:140],
+                                      "status":result})
             if result=="accepted":
                 state["steps"].append({"task":task,"expression":expr,
                                        "model_response_sha256":sha(raw.encode()),
@@ -313,7 +337,7 @@ def run(root, commit, inference, path, budget_seconds=1800, resume=False,
             state=seal({k:v for k,v in state.items() if k!="integrity"})
             validate(root,state,commit)
             store(path,state)
-            if result=="accepted":
+            if result=="accepted" or result=="duplicate_response_blocked":
                 break
         if len(state["steps"])==index:
             state["state"]="blocked"
