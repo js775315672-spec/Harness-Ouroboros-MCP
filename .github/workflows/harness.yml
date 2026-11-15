@@ -24,5 +24,7 @@ jobs:
         run: python3 scripts/evaluation.py
       - name: Read-only secret scan
         run: python3 scripts/harness_check.py
+      - name: Evolution planner safety check
+        run: python3 scripts/evolution_planner.py --completed 0 --target 30 --ceiling 10000
       - name: Thirty sequential Harness Ouroboros verification cycles
         run: python3 scripts/verification_cycles.py --rounds 30
