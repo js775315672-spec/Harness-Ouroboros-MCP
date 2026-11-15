@@ -20,13 +20,15 @@ from qwen_semantic_repair_loop import (AST_FEEDBACK, classify_ast_failure,
 class GGUFAdapterTests(unittest.TestCase):
     def test_3b_research_license_is_blocked(self):
         for model in ("3b", "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-                      "../models/3b", "", "7b"):
+                      "../models/3b", "", "14b"):
             with self.subTest(model=model):
                 with self.assertRaises(ValueError):
                     approved_model(model)
 
     def test_approved_models_pin_official_repository_and_quantization(self):
-        self.assertEqual(set(MODELS), {"0.5b", "1.5b"})
+        self.assertEqual(set(MODELS), {"0.5b", "1.5b", "7b"})
+        self.assertEqual(MODELS["7b"]["repo"], "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF")
+        self.assertGreater(MODELS["7b"]["minimum_bytes"], 4_000_000_000 - 1)
         for size in MODELS:
             spec = approved_model(size)
             self.assertEqual(spec["license"], "apache-2.0")
