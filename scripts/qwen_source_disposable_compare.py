@@ -17,11 +17,11 @@ import tempfile
 
 try:
     from .qwen_source_guard import TARGET, TASK, inspect_line
-    from .qwen_source_trial import MODEL
+    from .qwen_source_trial import MODEL, normalize_model_line
     from .disposable_regression_compare import _docker_command, _unique_json_pairs
 except ImportError:
     from qwen_source_guard import TARGET, TASK, inspect_line
-    from qwen_source_trial import MODEL
+    from qwen_source_trial import MODEL, normalize_model_line
     from disposable_regression_compare import _docker_command, _unique_json_pairs
 
 FILES = (TARGET, "scripts/task_selector.py", "scripts/evolution_planner.py",
@@ -78,15 +78,19 @@ def verify_and_stage(root, inference_path, candidate_path, workspace):
         raise ValueError("untrusted model provenance")
     if candidate_sha != inference.get("candidate_sha256"):
         raise ValueError("model candidate hash mismatch")
-    if set(candidate) != {"provider", "status", "task_id", "line", "source_patch",
+    if set(candidate) != {"provider", "status", "task_id", "raw_response", "line", "source_patch",
                           "source_sha256", "model_line_sha256"}:
         raise ValueError("unexpected candidate fields")
     if candidate["provider"] != "qwen" or candidate["status"] != "proposal" or candidate["task_id"] != TASK["task_id"]:
         raise ValueError("unexpected model task")
+    if (not isinstance(candidate["raw_response"], str) or
+            not isinstance(candidate["line"], str) or
+            normalize_model_line(candidate["raw_response"]) != candidate["line"]):
+        raise ValueError("model response cannot be replayed to the guarded line")
     attempts = inference.get("attempts")
     if (not isinstance(attempts, list) or len(attempts) != inference["model_calls"] or
             not attempts or attempts[-1].get("status") != "accepted" or
-            attempts[-1].get("response_sha256") != candidate.get("model_line_sha256")):
+            attempts[-1].get("response_sha256") != _hash(candidate["raw_response"].encode("utf-8"))):
         raise ValueError("model response does not match accepted attempt")
     original = _safe_file(root, TARGET).read_text(encoding="utf-8")
     inspection = inspect_line(candidate["line"], original)
