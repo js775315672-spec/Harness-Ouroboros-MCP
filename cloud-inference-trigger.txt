@@ -1,1 +1,1 @@
-Third one-shot cloud experiment: fix direct script import path; run Qwen CPU inference and bounded static feedback loop. No generated code execution or merge.
+Fourth one-shot experiment: intentionally inject an invalid first answer, feed static AST failure evidence into real Qwen inference, require corrected second answer. Synthetic first response is clearly labeled in report.
