@@ -15,8 +15,10 @@ import time
 
 try:
     from .gguf_output_boundary import extract_completion
+    from .qwen_chatml_prompt import format_chatml
 except ImportError:
     from gguf_output_boundary import extract_completion
+    from qwen_chatml_prompt import format_chatml
 
 MODELS = {
     "0.5b": {
@@ -104,9 +106,10 @@ class CPUInference:
         if not isinstance(prompt, str) or not 1 <= len(prompt.encode("utf-8")) <= MAX_PROMPT_BYTES:
             raise ValueError("invalid prompt budget")
         # No optional command strings or arbitrary user-controlled CLI arguments.
+        formatted_prompt = format_chatml(prompt)
         command = [
             str(self.cli), "--model", str(self.gguf),
-            "--prompt", prompt, "--n-predict", "140",
+            "--prompt", formatted_prompt, "--n-predict", "140",
             "--ctx-size", "2048", "--threads", "4",
             "--temp", "0", "--no-display-prompt",
             "--simple-io", "--single-turn", "--jinja",
@@ -133,6 +136,7 @@ class CPUInference:
             output.stdout, max_output_bytes=MAX_OUTPUT_BYTES)
         self.calls.append({
             "elapsed_seconds": elapsed,
+            "prompt_template": "qwen2.5-chatml-v1",
             "stdout_sha256": hashlib.sha256(output.stdout.encode("utf-8")).hexdigest(),
             "terminal_marker_stripped": marker_stripped,
             "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
