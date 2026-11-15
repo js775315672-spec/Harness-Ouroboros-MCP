@@ -13,6 +13,11 @@ import stat
 import subprocess
 import time
 
+try:
+    from .gguf_output_boundary import extract_completion
+except ImportError:
+    from gguf_output_boundary import extract_completion
+
 MODELS = {
     "0.5b": {
         "repo": "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
@@ -117,11 +122,12 @@ class CPUInference:
         elapsed = round(time.perf_counter() - before, 3)
         if output.returncode != 0:
             raise ValueError("llama-cli returned nonzero status")
-        if len(output.stdout.encode("utf-8")) > MAX_OUTPUT_BYTES:
-            raise ValueError("model output exceeded capped response budget")
-        raw = output.stdout.strip()
+        raw, marker_stripped = extract_completion(
+            output.stdout, max_output_bytes=MAX_OUTPUT_BYTES)
         self.calls.append({
             "elapsed_seconds": elapsed,
+            "stdout_sha256": hashlib.sha256(output.stdout.encode("utf-8")).hexdigest(),
+            "terminal_marker_stripped": marker_stripped,
             "response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
             "response_chars": len(raw),
             "peak_child_rss_kib": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
