@@ -220,14 +220,22 @@ def trial(root, inference):
     source = _safe_file(root, TARGET).read_bytes()
     if hash_data(source) != record["source_sha256"]:
         raise ValueError("first task baseline changed")
-    attempts, seen = [], set()
+    attempts, seen, seen_responses = [], set(), set()
     final = None
     result = "ast_scope_rejected"
     for i in range(1, MAX_ATTEMPTS + 1):
         prompt = PROMPT if i == 1 else PROMPT + " " + FEEDBACK.get(result, FEEDBACK["ast_scope_rejected"])
         raw = inference.generate(prompt)
+        response_digest = hash_data(raw.encode())
         row = {"attempt": i, "prompt_sha256": hash_data(prompt.encode()),
-               "response_sha256": hash_data(raw.encode())}
+               "response_sha256": response_digest,
+               "response_preview": raw[:160]}
+        if response_digest in seen_responses:
+            row["status"] = "duplicate_response_blocked"
+            attempts.append(row)
+            result = row["status"]
+            break
+        seen_responses.add(response_digest)
         try:
             expression = normalize_expression(raw)
             first, candidate, line = make_candidate(source.decode("utf-8"),
