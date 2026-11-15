@@ -32,7 +32,7 @@ class ScannerTests(unittest.TestCase):
         self.assertTrue(scanner.scan(self.root)[0])
 
     def test_large_file_not_skipped(self):
-        self.put("large.txt", b"x" * (1024 * 1024 + 5) + b"AKIA" + b"A" * 16)
+        self.put("large.txt", b"x" * (1024 * 1024 + 5) + b"\nAKIA" + b"A" * 16)
         self.assertTrue(scanner.scan(self.root)[0])
 
     def test_same_name_is_scanned(self):
