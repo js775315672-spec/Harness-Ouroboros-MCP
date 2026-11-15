@@ -24,7 +24,7 @@ def main():
         os.environ["TOKENIZERS_PARALLELISM"]="false"
         import torch
         from transformers import AutoModelForCausalLM,AutoTokenizer
-        from scripts.model_feedback_loop import run_loop,save_report
+        from model_feedback_loop import run_loop
         tokenizer=AutoTokenizer.from_pretrained(args.model,trust_remote_code=False)
         model=AutoModelForCausalLM.from_pretrained(args.model,trust_remote_code=False,torch_dtype=torch.float32)
         model.eval()
