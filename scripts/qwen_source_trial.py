@@ -67,10 +67,10 @@ def main():
                     "Previous output was rejected by the source AST gate. "
                     "Do not rewrite the old condition. Extend it with BOTH "
                     "additional short-circuit OR checks: "
-                    "type(proposal.get(\\\"cycle\\\")) is not int AND "
-                    "proposal[\\\"cycle\\\"] < 1. "
+                    "type(proposal.get(\"cycle\")) is not int AND "
+                    "proposal[\"cycle\"] < 1. "
                     "Each must be a Python 'or' clause in one continued if line; "
-                    "finish with a single colon. No fences or explanatory text.\\n"
+                    "finish with a single colon. No fences or explanatory text.\n"
                 )
             inputs = tokenizer(tokenizer.apply_chat_template(
                 [{"role": "user", "content": prompt}], tokenize=False,
