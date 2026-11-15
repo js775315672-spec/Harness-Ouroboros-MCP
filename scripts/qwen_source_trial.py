@@ -14,15 +14,34 @@ try:
 except ImportError:
     from qwen_source_guard import TARGET, ORIGINAL, TASK, inspect_line
 
-MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+MODEL = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
 REPORT = Path("artifacts/source-guard-qwen-report.json")
 CANDIDATE = Path("artifacts/source-guard-qwen-candidate.json")
+
+def normalize_model_line(raw):
+    """Normalize cosmetic fences only; never weaken the AST guard."""
+    if not isinstance(raw, str) or len(raw) > 350 or "\r" in raw or "\x00" in raw:
+        raise ValueError("unsafe model response")
+    line = raw.removesuffix("\n")
+    fence = chr(96) * 3
+    for opening in (fence + "python\n", fence + "\n"):
+        if line.startswith(opening) and line.endswith("\n" + fence):
+            line = line[len(opening):-(len(fence) + 1)]
+            break
+    if "\n" in line:
+        raise ValueError("multiple model source lines")
+    if line.startswith("if "):
+        line = "    " + line
+    return line
 
 def evaluate_response(raw, source):
     if not isinstance(raw, str):
         raise ValueError("nontext model response")
-    result = inspect_line(raw, source)
+    normalized = normalize_model_line(raw)
+    result = inspect_line(normalized, source)
     return {"status": "accepted_for_disposable_review",
+            "normalized_line": normalized,
+            "raw_response_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
             "task_id": TASK["task_id"], "source_sha256": result["source_sha256"],
             "model_line_sha256": result["model_line_sha256"],
             "source_patch": result["patch"], "source_ast_guard_verified": True,
@@ -90,7 +109,8 @@ def main():
                 row["status"] = "accepted"
                 report["attempts"].append(row)
                 payload = {"provider": "qwen", "status": "proposal",
-                           "task_id": TASK["task_id"], "line": raw,
+                           "task_id": TASK["task_id"], "raw_response": raw,
+                           "line": candidate["normalized_line"],
                            "source_patch": candidate["source_patch"],
                            "source_sha256": candidate["source_sha256"],
                            "model_line_sha256": candidate["model_line_sha256"]}
