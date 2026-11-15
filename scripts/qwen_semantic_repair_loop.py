@@ -146,7 +146,8 @@ def normalize_candidate(raw, source):
     # Accept only one exact inline-code wrapper as a presentation artifact.
     # Preserve every byte of the expression inside; AST and Docker gates remain unchanged.
     if expression.startswith("`") or expression.endswith("`"):
-        if (len(expression) < 3 or expression.count("`") != 2 or
+        if (len(expression) < 3 or "\n" in expression or
+                expression.count("`") != 2 or
                 not expression.startswith("`") or not expression.endswith("`")):
             raise ValueError("ambiguous inline code formatting")
         expression = expression[1:-1].strip()
