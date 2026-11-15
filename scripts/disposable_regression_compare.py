@@ -160,14 +160,23 @@ def docker_regression(workspace,image=DOCKER_IMAGE):
             "privileges_dropped":True}
 
 
+def _unique_json_pairs(pairs):
+    """Reject ambiguous duplicate keys in model and candidate evidence."""
+    result={}
+    for key,value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON evidence key")
+        result[key]=value
+    return result
+
 def verify_inference_provenance(inference_path,candidate_path,source_root):
     """Bind the executable test candidate to one completed real Qwen inference."""
     inference_bytes=Path(inference_path).read_bytes()
     candidate_bytes=Path(candidate_path).read_bytes()
     if len(inference_bytes)>120000 or len(candidate_bytes)>120000:
         raise ValueError("oversized inference or candidate evidence")
-    report=json.loads(inference_bytes.decode("utf-8"))
-    candidate=json.loads(candidate_bytes.decode("utf-8"))
+    report=json.loads(inference_bytes.decode("utf-8"),object_pairs_hook=_unique_json_pairs)
+    candidate=json.loads(candidate_bytes.decode("utf-8"),object_pairs_hook=_unique_json_pairs)
     if not isinstance(report,dict) or not isinstance(candidate,dict):
         raise ValueError("evidence must be JSON objects")
     if (report.get("status")!="accepted_for_review" or
