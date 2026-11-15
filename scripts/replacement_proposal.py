@@ -21,8 +21,8 @@ def build_single_line_diff(raw,old_line,line_number):
     if "\n" in raw or not raw:
         raise ValueError("model must propose exactly one source line")
     match=re.fullmatch(r"(?: {8})?answer[ \t]*=[ \t]*(.+)",raw)
-    if not match:
-        raise ValueError("proposal must be one answer assignment")
+    if not match or len(match.group(1))<2 or not (match.group(1).startswith('"') and match.group(1).endswith('"')):
+        raise ValueError("proposal must be one quoted answer assignment")
     raw="        answer="+match.group(1)
     if raw==old_line:
         raise ValueError("proposal must change the existing answer assignment")
