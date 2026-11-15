@@ -66,7 +66,7 @@ def download(model, destination, get_info, get_file):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True, choices=["0.5b", "1.5b"])
+    parser.add_argument("--model", required=True, choices=["0.5b", "1.5b", "7b"])
     parser.add_argument("--destination", type=Path, default=Path("models"))
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
