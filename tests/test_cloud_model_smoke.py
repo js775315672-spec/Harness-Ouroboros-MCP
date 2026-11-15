@@ -11,6 +11,12 @@ class CloudModelSmokeTests(unittest.TestCase):
         self.assertIn("Qwen/Qwen2.5-0.5B-Instruct",text)
         self.assertIn("max_new_tokens=96",text)
         self.assertIn("patch_applied\":False",text)
+    def test_real_call_evidence_distinguished_from_synthetic(self):
+        text=(ROOT/"scripts/cloud_model_smoke.py").read_text(encoding="utf-8")
+        self.assertIn('real_model_calls=real_model_calls[0]',text)
+        self.assertIn('synthetic_responses=model_requests[0]-real_model_calls[0]',text)
+        self.assertIn('final_response_sha256=hashlib.sha256',text)
+        self.assertIn('repository_patch_proposed=False',text)
     def test_workflow_requires_manual_dispatch(self):
         text=(ROOT/".github/workflows/cloud-model-smoke.yml").read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:",text)
