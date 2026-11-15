@@ -14,6 +14,12 @@ class LedgerTests(unittest.TestCase):
     def test_missing_ci_rejected(self):
         r=record(1,"a"*40);r["ci_url"]=""
         with self.assertRaises(ValueError):validate([r])
+    def test_fake_github_url_rejected(self):
+        r=record(1,"a"*40);r["ci_url"]="https://github.com/not-a-run"
+        with self.assertRaises(ValueError):validate([r])
+    def test_external_github_lookalike_rejected(self):
+        r=record(1,"a"*40);r["ci_url"]="https://github.com.evil.example/org/repo/actions/runs/123"
+        with self.assertRaises(ValueError):validate([r])
     def test_cycle_number_gap_rejected(self):
         with self.assertRaises(ValueError):validate([record(2,"a"*40)])
     def test_empty_change_rejected(self):
