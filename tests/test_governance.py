@@ -43,9 +43,32 @@ class Gates(unittest.TestCase):
     def test_mutation(self):
         p=self.root/"production-secrets"/"a";p.parent.mkdir();p.write_text("x");self.add()
         self.assertTrue(G.check(self.root,self.cfg)["mutation"])
+    def valid_record(self):
+        return {"schema_version":1,"stage":"evaluate","outcome":"pass","note":"","commit":"a"*40,"timestamp":"2026-11-15T00:00:00+00:00","next_stage":"evolve","requires_human_merge_approval":True}
     def test_checkpoint(self):
-        p=self.root/"checkpoint.json";O.checkpoint(p,{"stage":"evaluate"})
-        self.assertEqual(json.loads(p.read_text())["stage"],"evaluate")
+        p=self.root/"checkpoint.json";O.checkpoint(p,self.valid_record())
+        self.assertEqual(O.recover(p)["next_stage"],"evolve")
+    def test_missing_policy_gate(self):
+        cfg=dict(self.cfg);cfg.pop("deps")
+        with self.assertRaises(ValueError):G.check(self.root,cfg)
+    def test_malformed_policy_pattern(self):
+        cfg=json.loads(json.dumps(self.cfg));cfg["security"]["forbidden_patterns"]=["["]
+        with self.assertRaises(Exception):G.check(self.root,cfg)
+    def test_disabled_secret_scanner_policy(self):
+        cfg=json.loads(json.dumps(self.cfg));cfg["secrets"]["require_scanner"]=False
+        with self.assertRaises(ValueError):G.check(self.root,cfg)
+    def test_corrupted_checkpoint(self):
+        p=self.root/"bad.json";p.write_text("{broken")
+        with self.assertRaises(ValueError):O.recover(p)
+    def test_checkpoint_invalid_transition(self):
+        r=self.valid_record();r["next_stage"]="run"
+        with self.assertRaises(ValueError):O.checkpoint(self.root/"bad.json",r)
+    def test_checkpoint_requires_approval(self):
+        r=self.valid_record();r["requires_human_merge_approval"]=False
+        with self.assertRaises(ValueError):O.checkpoint(self.root/"bad.json",r)
+    def test_checkpoint_commit_mismatch(self):
+        p=self.root/"checkpoint.json";O.checkpoint(p,self.valid_record())
+        with self.assertRaises(Exception):O.recover(p,self.root)
     def test_invalid_stage(self):
         with self.assertRaises(ValueError):O.evaluate(self.root,"merge","pass","")
 if __name__=="__main__":unittest.main()
