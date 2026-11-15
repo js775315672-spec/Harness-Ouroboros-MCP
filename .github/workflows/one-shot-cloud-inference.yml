@@ -39,6 +39,15 @@ jobs:
             --candidate artifacts/qwen-review-candidate.json \
             --inference-report artifacts/real-repo-qwen-proposal.json \
             --output artifacts/disposable-regression-compare.json
+      - name: Classify disposable regression failure for next-run bounded repair
+        if: always()
+        run: |
+          if [ -f artifacts/real-repo-qwen-proposal.json ] && [ -f artifacts/disposable-regression-compare.json ]; then
+            python scripts/disposable_failure_feedback.py \
+              --inference artifacts/real-repo-qwen-proposal.json \
+              --regression artifacts/disposable-regression-compare.json \
+              --output artifacts/disposable-failure-feedback.json
+          fi
       - name: Decide human-review readiness from complete evidence (no merge)
         run: |
           python scripts/review_decision_gate.py \
@@ -63,5 +72,6 @@ jobs:
             artifacts/disposable-regression-compare.json
             artifacts/review-decision.json
             artifacts/loop-bridge-decision.json
+            artifacts/disposable-failure-feedback.json
           if-no-files-found: warn
           retention-days: 7
