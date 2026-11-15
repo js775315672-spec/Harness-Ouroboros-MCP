@@ -2,6 +2,7 @@
 """Validate evidence for distinct development cycles; fail closed on missing proof."""
 import argparse,json,pathlib,re,sys
 SHA=re.compile(r"^[0-9a-f]{40}$")
+CI=re.compile(r"^https://github\\.com/[^/\\s]+/[^/\\s]+/actions/runs/[1-9][0-9]*$")
 STEPS=("harness","ouroboros","regression","secrets")
 def validate(records):
     if not isinstance(records,list):raise ValueError("expected list")
@@ -12,7 +13,7 @@ def validate(records):
         if not isinstance(record["commit"],str) or not SHA.fullmatch(record["commit"]) or record["commit"] in seen:raise ValueError("missing or repeated development commit")
         seen.add(record["commit"])
         if not isinstance(record["change"],str) or not record["change"].strip():raise ValueError("missing change description")
-        if not isinstance(record["ci_url"],str) or not record["ci_url"].startswith("https://github.com/"):raise ValueError("missing CI evidence")
+        if not isinstance(record["ci_url"],str) or not CI.fullmatch(record["ci_url"]):raise ValueError("invalid CI evidence URL")
         if not isinstance(record["checks"],dict) or set(record["checks"])!=set(STEPS) or any(record["checks"][step]!="pass" for step in STEPS):raise ValueError("unverified cycle")
         if not isinstance(record["fixes"],list) or any(not isinstance(x,str) for x in record["fixes"]):raise ValueError("invalid fixes")
     return len(records)
