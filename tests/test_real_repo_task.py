@@ -12,6 +12,8 @@ class RealRepoTaskTests(unittest.TestCase):
     def test_prompt_explicitly_requires_diff_not_executable_code(self):
         prepared=prepare()
         self.assertIn("unified git diff",prepared["prompt"])
+        self.assertIn("NOT scripts/model_feedback_loop.py",prepared["prompt"])
+        self.assertIn("End with a newline",prepared["prompt"])
         self.assertIn("accurate '@@' hunk line counts",prepared["prompt"])
         self.assertFalse(prepared["model_called"])
         self.assertFalse(prepared["patch_applied"])
