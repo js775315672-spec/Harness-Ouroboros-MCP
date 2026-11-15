@@ -35,6 +35,8 @@ jobs:
           python-version: "3.11"
       - name: Offline task controller, checkpoint and AST adversarial tests
         run: |
+          python3 -m unittest discover -s tests -p test_frozen_qwen_benchmark_20.py -v
+          python3 -m unittest discover -s tests -p test_gguf_cpu_runtime.py -v
           python3 -m unittest discover -s tests -p test_bounded_qwen_autonomous_worker.py -v
           python3 -m unittest discover -s tests -p test_feedback_controller_verified.py -v
           python3 scripts/harness_check.py
@@ -86,6 +88,29 @@ jobs:
           assert r["merge_authorized"] is False
           print("PASS: two fresh Qwen edits, both AST and disposable Docker verified")
           PY
+      - name: Preregistered 20-repeat fixed-task Qwen measurement (includes all failures)
+        if: always()
+        env:
+          REVIEW_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/frozen_qwen_benchmark_20.py run \
+            --root . --commit "$REVIEW_SHA" \
+            --directory artifacts/frozen-20 \
+            --summary artifacts/frozen-benchmark-command.json \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --metadata artifacts/gguf-7b-fresh-pilot-provenance.json \
+            --budget-seconds 1700
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("artifacts/frozen-20/report.json").read_text())
+          assert p["summary"]["planned_trials"] == 20
+          assert p["summary"]["ci_attested_source_tasks"] == 0
+          assert p["summary"]["general_autonomous_coding_proven"] is False
+          print("Pre-registered 20 attempts recorded, including all model/infra failures")
+          PY
+          test -z "$(git status --porcelain -- scripts/feedback_controller_verified.py scripts/feedback_controller.py tests)"
       - name: Truthful run summary
         if: always()
         run: |
@@ -110,13 +135,15 @@ jobs:
             artifacts/fresh-loop/checkpoint.json
             artifacts/fresh-loop/result.json
             artifacts/gguf-7b-fresh-pilot-provenance.json
+            artifacts/frozen-20/
+            artifacts/frozen-benchmark-command.json
           if-no-files-found: warn
           retention-days: 7
 
   independent_checkpoint_recovery:
     needs: fresh_two_task_model_worker
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 22
     permissions:
       contents: read
     steps:
@@ -157,11 +184,31 @@ jobs:
           print("PASS: new-runner checkpoint recovery and fresh isolated Docker replay")
           PY
           test -z "$(git status --porcelain -- scripts/feedback_controller_verified.py scripts/feedback_controller.py)"
+      - name: Independently verify every completed measured trial
+        if: always()
+        env:
+          REVIEW_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/frozen_qwen_benchmark_20.py replay \
+            --root . --commit "$REVIEW_SHA" \
+            --directory artifacts/recovered/frozen-20 \
+            --summary artifacts/recovered/frozen-20/recovery-verification.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/recovered/frozen-20/recovery-verification.json").read_text())
+          assert r["status"] == "independent_recovery_batch_verified"
+          assert r["planned"] == 20
+          assert r["merge_authorized"] is False
+          print("PASS: independent Docker replay of all in-run pass candidates; failures retained")
+          PY
       - name: Upload independent recovery result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: fresh-qwen-two-task-recovery
-          path: artifacts/recovered/fresh-loop/replay.json
+          path: |
+            artifacts/recovered/fresh-loop/replay.json
+            artifacts/recovered/frozen-20/recovery-verification.json
           if-no-files-found: warn
           retention-days: 7
