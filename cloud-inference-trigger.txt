@@ -1,1 +1,1 @@
-Fourth one-shot experiment: intentionally inject an invalid first answer, feed static AST failure evidence into real Qwen inference, require corrected second answer. Synthetic first response is clearly labeled in report.
+Fifth cloud experiment: after Qwen's actual failed repair loop, accept exactly one fenced Python code block with explanatory prose, reject ambiguous or executable-looking surrounding content. Force initial invalid response and require real model repair.
