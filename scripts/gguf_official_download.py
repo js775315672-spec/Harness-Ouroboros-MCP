@@ -54,7 +54,14 @@ def download(model, destination, get_info, get_file):
     with cache_path.open("rb") as stream:
         if stream.read(4) != b"GGUF":
             raise ValueError("download did not have GGUF file signature")
-    shutil.copyfile(cache_path, target)
+    # A 7B GGUF is several gigabytes. On the same ephemeral CI volume, a
+    # hardlink avoids retaining an unnecessary second full model copy.
+    # Fail closed if a safe hardlink cannot be created; no download fallback
+    # from untrusted hosts, partial model or unrestricted path is permitted.
+    if model == "7b":
+        os.link(cache_path, target)
+    else:
+        shutil.copyfile(cache_path, target)
     return {
         "model": model, "repository": spec["repo"], "revision": sha,
         "filename": filename, "license": license_id, "quantization": "Q4_K_M",
