@@ -92,7 +92,9 @@ def build_prompt(previous_category=None, attempt=1, ast_code=None):
         "Check invalid types before numeric comparisons. Do NOT assign a "
         "dictionary or show sample inputs. Do NOT enumerate a finite list "
         "of invalid values: a finite list misses many non-integers and "
-        "negative numbers. Use short-circuit boolean logic."
+        "negative numbers. Use short-circuit boolean logic. "
+        "Python exact-type example: type(True) is bool, while type(1) is int. "
+        "Do not rely on isinstance(x, int) alone for boolean rejection."
     )
     if previous_category:
         if previous_category not in FEEDBACK:
@@ -141,6 +143,15 @@ def normalize_candidate(raw, source):
                 parts[2] != fence):
             raise ValueError("invalid expression fence")
         expression = parts[1].strip()
+    # Accept only one exact inline-code wrapper as a presentation artifact.
+    # Preserve every byte of the expression inside; AST and Docker gates remain unchanged.
+    if expression.startswith("`") or expression.endswith("`"):
+        if (len(expression) < 3 or expression.count("`") != 2 or
+                not expression.startswith("`") or not expression.endswith("`")):
+            raise ValueError("ambiguous inline code formatting")
+        expression = expression[1:-1].strip()
+    if "`" in expression:
+        raise ValueError("stray inline code delimiter")
     if (not expression or len(expression) > 250 or "\n" in expression or
             expression.startswith("if ") or expression.endswith(":")):
         raise ValueError("a single boolean expression is required")
