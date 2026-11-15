@@ -27,7 +27,7 @@ def evaluate(root,stage,outcome,note):
       "requires_human_merge_approval":True})
 def checkpoint(path,record):
     validate(record)
-    path=path.resolve()
+    path=path.absolute()
     if path.is_symlink():raise ValueError("symlink checkpoint forbidden")
     path.parent.mkdir(parents=True,exist_ok=True)
     fd,tmp=tempfile.mkstemp(prefix=".checkpoint-",dir=path.parent)
