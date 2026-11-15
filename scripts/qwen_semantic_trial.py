@@ -11,15 +11,16 @@ from pathlib import Path
 
 try:
     from .qwen_source_guard import TARGET
-    from .qwen_source_trial import MODEL
+    from .qwen_source_trial import MODEL as LEGACY_MODEL
     from .qwen_semantic_repair_loop import run_loop
     from .qwen_semantic_disposable_compare import compare_line
 except ImportError:
     from qwen_source_guard import TARGET
-    from qwen_source_trial import MODEL
+    from qwen_source_trial import MODEL as LEGACY_MODEL
     from qwen_semantic_repair_loop import run_loop
     from qwen_semantic_disposable_compare import compare_line
 
+MODEL = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
 REPORT = Path("artifacts/semantic-qwen-report.json")
 CANDIDATE = Path("artifacts/semantic-qwen-candidate.json")
 
@@ -44,7 +45,7 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(
             MODEL, trust_remote_code=False)
         model = AutoModelForCausalLM.from_pretrained(
-            MODEL, trust_remote_code=False, torch_dtype=torch.float32)
+            MODEL, trust_remote_code=False, torch_dtype=torch.bfloat16)
         model.eval()
 
         def generate(prompt):
