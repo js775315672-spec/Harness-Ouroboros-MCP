@@ -27,4 +27,12 @@ jobs:
       - name: Evolution planner safety check
         run: python3 scripts/evolution_planner.py --completed 0 --target 30 --ceiling 10000
       - name: Thirty sequential Harness Ouroboros verification cycles
-        run: python3 scripts/verification_cycles.py --rounds 30
+        run: python3 scripts/verification_cycles.py --rounds 30 --report artifacts/verification-timing.json
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verification-timing
+          path: artifacts/verification-timing.json
+          if-no-files-found: ignore
+          retention-days: 7
