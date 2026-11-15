@@ -1,1 +1,1 @@
-Run one-shot Qwen CPU experiment for the real repository regression-test task. Record actual generated diff and static rejection or acceptance for review. No patch application, generated-code execution, secrets, paid APIs or merge.
+Retry real repository Qwen regression patch proposal with explicit tests-only path and complete diff requirement. Rejected patches now fail CI while uploading evidence. No code execution, patch application, paid APIs, secrets or merge.
