@@ -9,7 +9,7 @@ class Gates(unittest.TestCase):
     def setUp(self):
         self.t=tempfile.TemporaryDirectory();self.addCleanup(self.t.cleanup);self.root=Path(self.t.name)
         subprocess.run(["git","init","-q",str(self.root)],check=True)
-        for name in ("HARNESS_POLICY.md","scripts/harness_check.py"):
+        for name in ("HARNESS_POLICY.md","scripts/harness_check.py","scripts/governance.py","scripts/ouroboros.py","harness-policy.json"):
             p=self.root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text("safe")
         self.add()
         self.cfg=json.loads((ROOT/"harness-policy.json").read_text())
