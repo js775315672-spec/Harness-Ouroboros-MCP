@@ -4,12 +4,14 @@ import argparse,json,pathlib,sys
 from development_ledger import validate
 from ci_attestation import verify_ledger
 from evolution_planner import plan
+from task_selector import select
 
 def coordinate(records,target=30,ceiling=10000,fetch=None):
     count=validate(records)
     attestations=verify_ledger(records,fetch=fetch)
     decision=plan(count,target=target,ceiling=ceiling)
-    return {"verified_development_cycles":len(attestations),"next":decision,
+    task=select(count,target=target,ceiling=ceiling)
+    return {"verified_development_cycles":len(attestations),"next":decision,"proposed_task":task,
             "autonomous_coding_connected":False,
             "verification_repetitions_are_not_development_cycles":True}
 
