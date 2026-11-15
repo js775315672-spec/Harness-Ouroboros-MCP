@@ -32,8 +32,7 @@ def scan(root):
     for rel in tracked_files(root):
         if any(part in EXCLUDED for part in rel.parts):
             continue
-        path = root / rel
-        try:
+        if rel.as_posix() in {"scripts/harness_check.py", "tests/test_harness_check.py"}:\n            continue  # scanner signatures and synthetic test fixtures only\n        path = root / rel\n        try:
             if path.is_symlink():
                 failures.append(f"{rel}: symbolic link requires review")
                 continue
