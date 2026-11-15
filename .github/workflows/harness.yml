@@ -44,6 +44,12 @@ jobs:
         run: python3 -m unittest discover -s tests -p test_isolated_patch_stage.py -v
       - name: Record handoff preparation runtime
         run: python3 scripts/handoff_runtime.py --completed 0 --branch agent/cycle-1-baseline --output artifacts/handoff-runtime.json
+      - name: Autonomous loop controller state-machine regression tests
+        run: python3 -m unittest discover -s tests -p test_autonomous_loop_controller.py -v
+      - name: Autonomous loop controller dry-run contract
+        run: |
+          python3 scripts/autonomous_loop_controller.py > artifacts/autonomous-loop-dry-run.json
+          python3 -c 'import json; x=json.load(open("artifacts/autonomous-loop-dry-run.json")); assert x["decision"]=="await_external_executor" and x["model_connected"] is False and x["code_executed"] is False'
       - name: Thirty sequential Harness Ouroboros verification cycles
         run: python3 scripts/verification_cycles.py --rounds 30 --report artifacts/verification-timing.json
       - name: Upload verification evidence
@@ -56,5 +62,6 @@ jobs:
             artifacts/handoff-runtime.json
             artifacts/sandbox-policy.json
             artifacts/model-request.json
+            artifacts/autonomous-loop-dry-run.json
           if-no-files-found: ignore
           retention-days: 7
