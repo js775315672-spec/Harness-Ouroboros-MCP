@@ -29,11 +29,22 @@ jobs:
           HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
           CUDA_VISIBLE_DEVICES: ""
         run: python scripts/cloud_real_repo_proposal.py
+      - name: Fetch disposable no-network Python test image
+        run: docker pull python:3.11-slim
+      - name: Compare original and scoped Qwen patch in disposable Docker
+        run: |
+          python scripts/disposable_regression_compare.py \
+            --source . \
+            --candidate artifacts/qwen-review-candidate.json \
+            --output artifacts/disposable-regression-compare.json
       - name: Publish evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: one-shot-qwen-inference-evidence
-          path: artifacts/real-repo-qwen-proposal.json
+          path: |
+            artifacts/real-repo-qwen-proposal.json
+            artifacts/qwen-review-candidate.json
+            artifacts/disposable-regression-compare.json
           if-no-files-found: warn
           retention-days: 7
