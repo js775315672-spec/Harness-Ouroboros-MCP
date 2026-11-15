@@ -4,6 +4,8 @@
 This builder does not read or write any repository files, execute model code,
 approve patch application, or authorize merging.
 """
+import re
+
 TARGET_PATH="tests/test_model_feedback_loop.py"
 MAX_REPLACEMENT_CHARS=500
 
@@ -18,10 +20,12 @@ def build_single_line_diff(raw,old_line,line_number):
         raw=raw[:-1]
     if "\n" in raw or not raw:
         raise ValueError("model must propose exactly one source line")
-    if raw.startswith("answer="):
-        raw="        "+raw
-    if not raw.startswith("        answer=") or raw==old_line:
-        raise ValueError("proposal must replace the existing answer assignment")
+    match=re.fullmatch(r"(?: {8})?answer[ \t]*=[ \t]*(.+)",raw)
+    if not match:
+        raise ValueError("proposal must be one answer assignment")
+    raw="        answer="+match.group(1)
+    if raw==old_line:
+        raise ValueError("proposal must change the existing answer assignment")
     if "\n" in old_line or "\r" in old_line or not old_line.startswith("        answer="):
         raise ValueError("unsafe original source line")
     path=TARGET_PATH
