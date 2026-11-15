@@ -1,0 +1,97 @@
+name: Independent second Qwen 7B coding task
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/qwen-second-task-cpu.yml"
+      - "scripts/qwen_second_task_trial.py"
+      - "tests/test_qwen_second_task_trial.py"
+      - "scripts/gguf_cpu_runtime.py"
+      - "proposals/feedback_cycle_guard_7b.json"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: qwen-second-task-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  second_model_coding_trial:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - name: Checkout with no persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Offline second-task tests and Harness guard
+        run: |
+          python -m unittest discover -s tests -p test_qwen_second_task_trial.py -v
+          python -m unittest discover -s tests -p test_verified_model_patch_review.py -v
+          python scripts/harness_check.py
+      - name: Compile pinned no-CUDA CPU llama-completion
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin 4e5116f47619dac4180c3007ef02a383f347554c
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "4e5116f47619dac4180c3007ef02a383f347554c"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --config Release --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+      - name: Fetch official license-verified Qwen Coder 7B Q4_K_M
+        run: |
+          python -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python scripts/gguf_official_download.py \
+            --model 7b --destination models --report artifacts/gguf-7b-provenance.json
+      - name: Prefetch isolated read-only Docker base image
+        run: docker pull python:3.11-slim
+      - name: Second fresh model source edit and independent Docker negative controls
+        run: |
+          python scripts/qwen_second_task_trial.py \
+            --model 7b \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --download-metadata artifacts/gguf-7b-provenance.json \
+            --timeout 150 \
+            --output artifacts/qwen-second-task-result.json
+          test -z "$(git status --porcelain -- scripts/feedback_controller.py)"
+      - name: Summarize actual second model coding outcome
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json,pathlib
+          path=pathlib.Path("artifacts/qwen-second-task-result.json")
+          r=json.loads(path.read_text()) if path.exists() else {"outcome":"not_run"}
+          print("## Fresh Qwen 7B independent second-task repair")
+          for key in ("outcome","model_calls","docker_comparisons",
+                      "model_generated_second_task","total_elapsed_seconds",
+                      "peak_child_rss_kib"):
+              print(f"- {key}: {r.get(key, 'not_available')}")
+          print("- The first model-authored edit is archived; the second task calls Qwen afresh.")
+          print("- No source checkout changes, commits or merge approvals.")
+          PY
+      - name: Save model-run evidence (never the weights)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qwen-second-independent-task-evidence
+          path: |
+            artifacts/gguf-7b-provenance.json
+            artifacts/qwen-second-task-result.json
+          if-no-files-found: warn
+          retention-days: 7
