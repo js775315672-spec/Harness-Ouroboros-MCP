@@ -80,7 +80,10 @@ def build_prompt(previous_category=None, attempt=1, ast_code=None):
         "ValueError when this condition is True. Do NOT write if, raise, "
         "return, a function, Markdown, or an explanation. Output only the "
         "boolean expression using the variable proposal. Keep it short. "
-        "Check invalid types before numeric comparisons."
+        "Check invalid types before numeric comparisons. Do NOT assign a "
+        "dictionary or show sample inputs. Do NOT enumerate a finite list "
+        "of invalid values: a finite list misses many non-integers and "
+        "negative numbers. Use short-circuit boolean logic."
     )
     if previous_category:
         if previous_category not in FEEDBACK:
