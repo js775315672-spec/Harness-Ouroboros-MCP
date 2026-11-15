@@ -28,13 +28,16 @@ def verify_record(record,fetch=None):
     repository=data.get("repository")
     if not isinstance(repository,dict) or repository.get("full_name")!=f"{owner}/{repo}":
         raise ValueError("CI repository mismatch")
-    # GitHub pull_request workflows may report a synthetic merge SHA. A strict
-    # commit check must use head_commit SHA when present, or head_sha otherwise.
-    head_commit=data.get("head_commit")
-    observed=head_commit.get("id") if isinstance(head_commit,dict) else None
-    if observed is None:observed=data.get("head_sha")
-    if observed!=record["commit"]:
-        raise ValueError("CI commit mismatch")
+    # pull_request runs can use a synthetic merge SHA. Bind to the PR head
+    # only when GitHub explicitly exposes it; otherwise fail closed.
+    if data.get("event")=="pull_request":
+        prs=data.get("pull_requests")
+        if not isinstance(prs,list) or not prs:raise ValueError("missing PR head evidence")
+        observed=[p.get("head",{}).get("sha") for p in prs if isinstance(p,dict) and isinstance(p.get("head"),dict)]
+        if record["commit"] not in observed:raise ValueError("CI PR head mismatch")
+    elif data.get("event") in ("push","workflow_dispatch"):
+        if data.get("head_sha")!=record["commit"]:raise ValueError("CI commit mismatch")
+    else:raise ValueError("unsupported CI trigger")
     return {"cycle":record["cycle"],"commit":record["commit"],"run_id":int(run_id),"verified":True}
 
 def verify_ledger(records,fetch=None):
