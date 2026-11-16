@@ -161,8 +161,7 @@ def inspect_replacement(raw):
         if isinstance(node, ast.Name):
             if node.id in BLOCKED_NAME or "__" in node.id:
                 raise ValueError("unsafe global or dunder access")
-            if isinstance(node.ctx, ast.Store) and node.id in (
-                    "records"):
+            if isinstance(node.ctx, ast.Store) and node.id == "records":
                 raise ValueError("protected input rebound")
         if isinstance(node, ast.Attribute) and ("__" in node.attr
                                                 or node.attr not in SAFE_METHODS):
