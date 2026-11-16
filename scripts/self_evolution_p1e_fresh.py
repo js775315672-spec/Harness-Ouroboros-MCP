@@ -201,7 +201,7 @@ def docker_one(stage, lane):
     if (not all(x in cmd for x in ("--network=none","--read-only",
                                     "--user=65534:65534", "--cap-drop=ALL"))):
         raise ValueError("lost Docker isolation flag")
-    return {"passed": result.returncode == 0 and count == 9,
+    return {"passed": result.returncode == 0 and count == 10,
             "tests_run": count, "exit_code": result.returncode,
             "log_tail": output[-1200:]}
 
@@ -223,7 +223,7 @@ def grade(tests, source, lane):
                 os.chmod(p,0o644)
             outcomes.append(docker_one(target,lane))
     base, candidate = outcomes
-    if base["passed"] or base["tests_run"] != 9 or candidate["tests_run"] != 9:
+    if base["passed"] or base["tests_run"] != 10 or candidate["tests_run"] != 10:
         raise ValueError("negative controls or complete test discovery invalid")
     return {"status": "candidate_passed" if candidate["passed"]
             else "candidate_failed", "baseline": base, "candidate": candidate}
