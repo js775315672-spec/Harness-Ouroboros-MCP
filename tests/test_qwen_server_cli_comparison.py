@@ -1,5 +1,6 @@
 """Offline A/B protocol tests: parity, non-claims, safety, no model download."""
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -16,6 +17,13 @@ from qwen_server_cli_comparison import (
 
 
 class ServerVsCLITests(unittest.TestCase):
+    def test_direct_script_invocation_resolves_package_before_model_download(self):
+        proc = subprocess.run(
+            [sys.executable, "scripts/qwen_server_cli_comparison.py", "--help"],
+            cwd=ROOT, capture_output=True, text=True, timeout=15, check=False)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("--server", proc.stdout)
+
     def test_same_exact_four_prompts_and_two_fixed_tasks(self):
         tasks = fixed_tasks()
         self.assertEqual(len(tasks), REPEATS * len(TASKS))
