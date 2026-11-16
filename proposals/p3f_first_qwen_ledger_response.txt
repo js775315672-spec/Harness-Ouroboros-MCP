@@ -1,0 +1,13 @@
+def validate(records):
+    if not isinstance(records, list): raise ValueError("expected list")
+    seen = set()
+    for index, record in enumerate(records, 1):
+        if not isinstance(record, dict) or set(record) != {"cycle", "commit", "change", "checks", "fixes", "ci_url"}: raise ValueError("invalid record schema")
+        if type(record["cycle"]) is not int or record["cycle"] != index: raise ValueError("nonsequential cycle")
+        if not isinstance(record["commit"], str) or not SHA.fullmatch(record["commit"]) or record["commit"] in seen: raise ValueError("missing or repeated development commit")
+        seen.add(record["commit"])
+        if not isinstance(record["change"], str) or not record["change"].strip() or len(record["change"].encode('utf-8')) > 256 or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in record["change"]): raise ValueError("invalid change description")
+        if not isinstance(record["ci_url"], str) or not CI.fullmatch(record["ci_url"]): raise ValueError("invalid CI evidence URL")
+        if not isinstance(record["checks"], dict) or set(record["checks"]) != set(STEPS) or any(record["checks"][step] != "pass" for step in STEPS): raise ValueError("unverified cycle")
+        if not isinstance(record["fixes"], list) or len(record["fixes"]) > 12 or any(not isinstance(x, str) or len(x.encode('utf-8')) > 128 or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in x) for x in record["fixes"]): raise ValueError("invalid fixes")
+    return len(records)

@@ -1,0 +1,77 @@
+"""P3g offline provenance gates: old 24/25 model output remains immutable."""
+from pathlib import Path
+import ast
+import sys
+import unittest
+from unittest.mock import patch
+
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/"scripts"))
+import p3g_qwen_ledger_feedback_repair as s
+
+class P3gOriginalFeedbackContractTests(unittest.TestCase):
+    def test_exact_1487_byte_original_model_response(self):
+        original=s.file_bytes(ROOT,s.PREVIOUS)
+        self.assertEqual(len(original),1487)
+        self.assertEqual(s.digest(original),s.PREVIOUS_SHA256)
+
+    def test_prior_model_did_generate_real_source_change(self):
+        before=(ROOT/s.TARGET).read_text()
+        proposal=s.inspect_replacement(s.file_bytes(ROOT,s.PREVIOUS).decode())
+        after,diff=s.patch_original(before,proposal)
+        self.assertNotEqual(after,before)
+        self.assertIn("def validate(",diff)
+
+    def test_prior_output_missing_explicit_empty_fix_check(self):
+        src=s.inspect_replacement(s.file_bytes(ROOT,s.PREVIOUS).decode())
+        self.assertNotIn("not x.strip()",src)
+        self.assertNotIn("not x or ",src)
+
+    def test_second_prompt_binds_actual_failed_source_and_feedback(self):
+        p=s.source_prompt((ROOT/s.TARGET).read_text(),ROOT)
+        self.assertIn("FIRST QWEN SOURCE IMPLEMENTATION",p)
+        self.assertIn("24/25",p)
+        self.assertIn("NONEMPTY",p)
+        self.assertIn("empty string inside fixes",p)
+        self.assertLess(len(p.encode()),5000)
+
+    def test_second_prompt_never_exposes_hidden_test_case_source(self):
+        p=s.source_prompt((ROOT/s.TARGET).read_text(),ROOT)
+        self.assertNotIn("test_reject_empty_fix_entry",p)
+        self.assertNotIn("FrozenLedgerInputSecurity",p)
+
+    def test_unchanged_25_case_acceptance_contract(self):
+        self.assertEqual(s.HOLDOUT_COUNT,10)
+        self.assertEqual(s.REGRESSION_TESTS,
+                         {"test_development_ledger.py":8,
+                          "test_ci_attestation.py":7})
+
+    def test_nonempty_fix_rule_is_only_feedback_not_test_edit(self):
+        original=(ROOT/"tests/heldout_p3f_development_ledger.py").read_text()
+        self.assertEqual(original.count("    def test_"),10)
+        self.assertIn("test_reject_empty_fix_entry",original)
+
+    def test_old_original_sha_bound_to_new_prompt(self):
+        with patch.object(s,"git_identity",return_value=None):
+            _,prompt,receipt=s.context(ROOT,"a"*40)
+        self.assertEqual(receipt["prior_first_model_sha256"],s.PREVIOUS_SHA256)
+        self.assertEqual(receipt["prompt_sha256"],s.digest(prompt.encode()))
+        self.assertIn(s.PREVIOUS,receipt["trusted_inputs_sha256"])
+        self.assertFalse(receipt["merge_authorized"])
+
+    def test_previous_reply_cannot_be_appended_with_other_code(self):
+        reply=s.file_bytes(ROOT,s.PREVIOUS).decode()
+        with self.assertRaises(ValueError):
+            s.inspect_replacement(reply+"\nimport os\n")
+
+    def test_replay_forged_completion_does_not_authorize_merge(self):
+        with patch.object(s,"git_identity",return_value=None):
+            _,_,base=s.context(ROOT,"a"*40)
+            fake={**base,"model_calls":1,"raw_response":"def validate(records): pass",
+                  "response_sha256":s.digest(b"def validate(records): pass"),
+                  "outcome":"real_source_patch_passed","merge_authorized":True}
+            with self.assertRaises(ValueError):
+                s.replay(ROOT,"a"*40,fake)
+
+if __name__=="__main__":
+    unittest.main()
