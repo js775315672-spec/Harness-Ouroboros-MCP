@@ -53,7 +53,7 @@ def _record(row, attempt, task, model, baseline):
         raise ValueError("raw model response digest mismatch")
     if row["independent_replay"] is not True:
         raise ValueError("unreplayed model outcome is not reliable")
-    if row["outcome"] not in OUTCOMES or type(row["outcome"]) is not str:
+    if type(row["outcome"]) is not str or row["outcome"] not in OUTCOMES:
         raise ValueError("invalid model outcome")
     candidate = row["candidate_source_sha256"]
     reason = row["rejection_reason"]
