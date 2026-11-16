@@ -27,6 +27,12 @@ import time
 import urllib.error
 import urllib.request
 
+# Invoked as "python3 scripts/..." by GitHub Actions: sys.path[0] is scripts/,
+# so explicitly add the trusted checkout root for the opt-in qwen_evolve package.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from gguf_cpu_runtime import CPUInference, approved_model, sha256_file
 from gguf_output_boundary import extract_completion
 from qwen_chatml_prompt import format_chatml
