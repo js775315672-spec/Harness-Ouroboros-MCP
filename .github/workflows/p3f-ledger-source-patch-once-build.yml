@@ -1,0 +1,317 @@
+name: P3f fresh Qwen real development ledger source task with shared CPU build
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3f-ledger-source-patch-once-build.yml"
+      - "scripts/p3f_qwen_real_ledger_source_patch.py"
+      - "tests/heldout_p3f_development_ledger.py"
+      - "tests/test_p3f_qwen_real_ledger_source_patch.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+cache-mode: none
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+  NO_UNTRUSTED_BINARY_CACHE: "true"
+concurrency:
+  group: p3f-ledger-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline_contract_and_negative_control:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact reviewed commit without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Run offline adversarial and Harness regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_p3f_qwen_real_ledger_source_patch.py -v
+          python3 -m unittest discover -s tests -p test_agent_handoff.py -v
+          python3 -m unittest discover -s tests -p test_sandbox_policy.py -v
+          python3 scripts/harness_check.py
+          python3 scripts/p3f_qwen_real_ledger_source_patch.py preflight \
+            --root . --head-sha "$REVIEW_SHA" \
+            --output artifacts/p3f/preflight.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("artifacts/p3f/preflight.json").read_text())
+          assert p["status"]=="reviewed_real_repo_source_contract"
+          assert p["test_count"]==25 and p["model_calls"]==0
+          assert p["merge_authorized"] is False
+          print("Preflight: true repo source anchored, model not called")
+          PY
+      - name: Pull Docker once and establish baseline-negative proof
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          python3 - <<'PY'
+          import pathlib,sys
+          sys.path.insert(0,"scripts")
+          from p3f_qwen_real_ledger_source_patch import grade,TARGET
+          root=pathlib.Path(".").resolve()
+          original=(root/TARGET).read_text(encoding="utf-8")
+          report=grade(root,original)
+          assert report["status"]=="real_source_patch_failed"
+          assert report["baseline_legacy_green"] is True
+          assert report["baseline_security_red"] is True
+          assert report["candidate_security_green"] is False
+          print("Genuine security regression reproduced before model inference")
+          PY
+
+  pinned_cpu_build_once:
+    needs: offline_contract_and_negative_control
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR head without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify source contract and no external binary cache
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_p3e_shared_cpu_binary_contract.py -v
+          python3 scripts/harness_check.py
+          test "$NO_UNTRUSTED_BINARY_CACHE" = true
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+      - name: Fetch exactly pinned upstream llama.cpp source
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+      - name: Compile offline CPU llama-completion exactly once
+        run: |
+          set -euo pipefail
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+      - name: Package same-run immutable binary and source provenance
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/p3e-build
+          cp vendor/llama.cpp/build/bin/llama-completion artifacts/p3e-build/llama-completion
+          cd artifacts/p3e-build
+          sha256sum llama-completion > SHA256SUMS
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          path=pathlib.Path("llama-completion")
+          digest=hashlib.sha256(path.read_bytes()).hexdigest()
+          r={"schema":1,
+             "review_sha":os.environ["REVIEW_SHA"],
+             "upstream_sha":os.environ["PINNED_LLAMA_SHA"],
+             "binary_sha256":digest,
+             "binary_name":"llama-completion",
+             "model_calls":0,
+             "model_weights_included":False,
+             "cross_run_binary_cache_used":False,
+             "repo_writes_authorized":False,
+             "merge_authorized":False}
+          pathlib.Path("provenance.json").write_text(
+              json.dumps(r,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          print("Pinned once-build binary:",digest)
+          PY
+      - name: Upload binary only to this same workflow run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3e-pinned-llama-completion-same-run
+          path: artifacts/p3e-build/
+          if-no-files-found: error
+          retention-days: 3
+
+  actual_qwen_source_patch:
+    needs: [offline_contract_and_negative_control,pinned_cpu_build_once]
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact immutable source without token persistence
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify frozen source / holdout contract again
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_p3f_qwen_real_ledger_source_patch.py -q
+          python3 scripts/harness_check.py
+      - name: Download once-built pinned llama binary from THIS workflow run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3e-pinned-llama-completion-same-run
+          path: artifacts/p3f-executable
+      - name: Validate exact reviewed commit and upstream binary sha256
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path("artifacts/p3f-executable")
+          binary=root/"llama-completion"
+          record=json.loads((root/"provenance.json").read_text(encoding="utf-8"))
+          expected={"schema":1,
+             "review_sha":os.environ["REVIEW_SHA"],
+             "upstream_sha":os.environ["PINNED_LLAMA_SHA"],
+             "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
+             "binary_name":"llama-completion","model_calls":0,
+             "model_weights_included":False,"cross_run_binary_cache_used":False,
+             "repo_writes_authorized":False,"merge_authorized":False}
+          assert type(record) is dict and record==expected
+          assert (root/"SHA256SUMS").read_text()==record["binary_sha256"]+"  llama-completion\n"
+          assert 1_000_000<=binary.stat().st_size<=100_000_000
+          print("Pinned source and same-run binary SHA verified")
+          PY
+          mkdir -p vendor/llama.cpp/build/bin
+          cp artifacts/p3f-executable/llama-completion vendor/llama.cpp/build/bin/llama-completion
+          chmod 755 vendor/llama.cpp/build/bin/llama-completion
+      - name: Download official Apache-2.0 Qwen2.5 Coder 7B Q4_K_M
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model 7b --destination models \
+            --report artifacts/p3f/model-provenance.json
+          docker pull python:3.11-slim
+      - name: One fresh Qwen attempt patches actual development_ledger.py input validation
+        run: |
+          set -euo pipefail
+          python3 scripts/p3f_qwen_real_ledger_source_patch.py run \
+            --root . --head-sha "$REVIEW_SHA" \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --metadata artifacts/p3f/model-provenance.json \
+            --output artifacts/p3f/record.json
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("artifacts/p3f/record.json").read_text())
+          assert p["model_calls"]==1
+          assert p["outcome"] in ("static_rejected","real_source_patch_passed",
+                                  "real_source_patch_failed")
+          assert p["ci_attested_model_source_commits"]==0
+          assert p["merge_authorized"] is False
+          if p["unified_diff"] is not None:
+              Path("artifacts/p3f/candidate.patch").write_text(
+                  p["unified_diff"],encoding="utf-8")
+          print("Observed fresh development ledger source patch:",p["outcome"])
+          PY
+      - name: Save model output even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3f-actual-qwen-source-patch-and-negative-tests
+          path: |
+            artifacts/p3f/record.json
+            artifacts/p3f/candidate.patch
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_source_patch_replay:
+    if: always()
+    needs: [offline_contract_and_negative_control,actual_qwen_source_patch]
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout same exact original source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Download raw model response and source diff
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3f-actual-qwen-source-patch-and-negative-tests
+          path: artifacts/recovered
+      - name: Fresh standalone Docker checks of original and proposed source
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          test -f artifacts/recovered/record.json
+          python3 scripts/p3f_qwen_real_ledger_source_patch.py replay \
+            --root . --head-sha "$REVIEW_SHA" \
+            --input artifacts/recovered/record.json \
+            --output artifacts/p3f-replay/verdict.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/p3f-replay/verdict.json").read_text())
+          assert r["status"] in ("source_patch_replayed",
+                                  "source_patch_static_rejection_replayed")
+          assert r["merge_authorized"] is False
+          print("Independent source patch replay:",r["status"],
+                "candidate_passed:",r["candidate_passed"])
+          PY
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+      - name: Publish independent replay evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3f-independent-real-repo-patch-replay
+          path: artifacts/p3f-replay/verdict.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  candidate_acceptance_gate:
+    if: always()
+    needs: [offline_contract_and_negative_control, actual_qwen_source_patch, independent_source_patch_replay]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Get independent model-written source patch result
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3f-independent-real-repo-patch-replay
+          path: artifacts/final-evidence
+      - name: Real source patch success is mandatory, not merely infrastructure green
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("artifacts/final-evidence/verdict.json")
+          assert p.is_file(), "Missing independent evidence; fail closed"
+          record=json.loads(p.read_text(encoding="utf-8"))
+          print("Independently replayed REAL model patch:",record)
+          assert record.get("status")=="source_patch_replayed", "Model source rejected"
+          assert record.get("candidate_passed") is True, "Model patch failed locked-down Docker tests"
+          assert record.get("target")=="scripts/development_ledger.py"
+          assert record.get("model_calls_verified")==1
+          assert record.get("merge_authorized") is False
+          assert record.get("ci_attested_model_source_commits")==0
+          print("P3f model-only source patch PASSED 25/25 frozen tests; no commit or merge authority.")
+          PY
