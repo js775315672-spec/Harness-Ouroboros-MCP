@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from model_stagnation_gate import evaluate
 from feedback_controller import feedback
+from stagnation_aware_feedback import feedback_with_history
 from task_selector import select
 
 def sha(data):
@@ -161,14 +162,14 @@ class ModelStagnationGateTests(unittest.TestCase):
         self.assertEqual(h,original)
 
     def test_optional_feedback_integration_stops_duplication(self):
-        r=feedback(select(),checks(),attempt=2,
+        r=feedback_with_history(select(),checks(),attempt=2,
                    model_history=[row(1),row(2)],model_context=CTX)
         self.assertEqual(r["decision"],"stop")
         self.assertEqual(r["reason"],"duplicate_model_response")
         self.assertFalse(r["model_call_performed"])
 
     def test_optional_feedback_integration_requests_one_fix(self):
-        r=feedback(select(),checks(failed=()),attempt=1,
+        r=feedback_with_history(select(),checks(failed=()),attempt=1,
                    model_history=[row(1)],model_context=CTX)
         self.assertEqual(r["decision"],"request_fix")
         self.assertIn("model_candidate",r["failed_checks"])
@@ -177,7 +178,8 @@ class ModelStagnationGateTests(unittest.TestCase):
 
     def test_optional_context_without_history_fail_closed(self):
         with self.assertRaises(ValueError):
-            feedback(select(),checks(),model_context=CTX)
+            feedback_with_history(select(),checks(),model_history=None,
+                                      model_context=CTX)
 
     def test_no_new_context_preserves_existing_feedback_behavior(self):
         r=feedback(select(),checks(failed=()),attempt=1)
