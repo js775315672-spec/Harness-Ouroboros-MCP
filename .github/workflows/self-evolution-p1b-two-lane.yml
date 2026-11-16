@@ -1,4 +1,4 @@
-name: P1b bounded Qwen 7B two-lane full-function study
+name: P1b v2 strict-boolean and exact-fence study
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -6,8 +6,11 @@ on:
       - ".github/workflows/self-evolution-p1b-two-lane.yml"
       - "scripts/self_evolution_model_lane.py"
       - "tests/test_self_evolution_model_lane.py"
+      - "tests/test_self_evolution_v2_format.py"
       - "tests/heldout_self_evolution_action.py"
   workflow_dispatch:
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
 permissions:
   contents: read
 concurrency:
@@ -33,6 +36,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests -p test_self_evolution_task_contract.py -v
           python3 -m unittest discover -s tests -p test_self_evolution_model_lane.py -v
+          python3 -m unittest discover -s tests -p test_self_evolution_v2_format.py -v
           python3 scripts/harness_check.py
           python3 scripts/self_evolution_model_lane.py preflight \
             --head-sha "$REVIEW_SHA" --report artifacts/p1b/preflight.json
@@ -74,6 +78,7 @@ jobs:
           set -euo pipefail
           test "$LANE_ID" = 01 -o "$LANE_ID" = 02
           python3 -m unittest discover -s tests -p test_self_evolution_model_lane.py -q
+          python3 -m unittest discover -s tests -p test_self_evolution_v2_format.py -q
       - name: Compile pinned offline CPU llama.cpp
         run: |
           set -euo pipefail
@@ -102,7 +107,7 @@ jobs:
             --cli vendor/llama.cpp/build/bin/llama-completion \
             --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
             --metadata artifacts/p1b/model-provenance.json \
-            --report artifacts/p1b/record.json
+            --report artifacts/p1b/record.json --v2-exact-format
           test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
           python3 - <<'PY'
           import json
@@ -152,7 +157,7 @@ jobs:
             python3 scripts/self_evolution_model_lane.py verify \
               --root . --head-sha "$REVIEW_SHA" \
               --input "artifacts/recovered/p1b-model-$lane/record.json" \
-              --report "artifacts/replay/lane-$lane.json"
+              --report "artifacts/replay/lane-$lane.json" --v2-exact-format
           done
           python3 - <<'PY'
           import json
