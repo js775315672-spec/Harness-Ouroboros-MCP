@@ -1,4 +1,7 @@
-"""P1e fresh task specifications, not P1d test-specific repairs.\nFrozen once PR is opened; changing the tasks requires a new experiment ID.\n"""\nTASKS = {
+"""P1e fresh task specifications, not P1d test-specific repairs.
+Frozen at the opening of this PR; changes require new benchmark identity.
+"""
+TASKS = {
   "01": "Implement def solve(data): data must be a dict with genuine Python integers current, ceiling, step (type(x) is int; bool INVALID). Require 0<=current<=10000, 1<=ceiling<=10000, 1<=step<=5. Return current+step only if <=ceiling; otherwise None. Every malformed input returns None. Do not mutate input.",
   "02": "Implement def solve(data): data must be a list of at most 12 strings, each nonempty and length at most 12. Return a NEW lexicographically sorted unique list of all strings. If any item is not a string, empty, or too long, or the outer container is invalid return []. Do not mutate the input.",
   "03": "Implement def solve(data): input must be dict with items list of at most 12 dicts each with nonempty string id and deps list of strings, plus done list of strings. IDs must be unique. Return sorted IDs for items NOT in done which have at least one dependency NOT in done. Any invalid item, duplicate ID, or invalid input returns []. Do not mutate.",
