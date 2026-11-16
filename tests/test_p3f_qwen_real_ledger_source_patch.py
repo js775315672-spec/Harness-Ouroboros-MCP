@@ -56,6 +56,22 @@ class FreshLedgerPatchTests(unittest.TestCase):
     def test_second_function_rejected(self):
         self.reject(SAMPLE+'\ndef unsafe():\n    return 1\n')
 
+    def test_legitimate_record_loop_variable_is_not_protected_input(self):
+        source = '''def validate(records):
+    total = 0
+    for record in records:
+        total += 1
+    return total
+'''
+        self.assertEqual(s.inspect_replacement(source),source)
+
+    def test_exact_records_argument_rebinding_still_rejected(self):
+        source = '''def validate(records):
+    records = []
+    return 0
+'''
+        self.reject(source)
+
     def test_target_scoped_patch_preserves_other_functions(self):
         old=(ROOT/s.TARGET).read_text()
         after,diff=s.patch_original(old,SAMPLE)
