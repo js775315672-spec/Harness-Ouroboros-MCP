@@ -1,0 +1,17 @@
+{
+  "head_sha": "9ec86c8aedcfdd17de4ebaaacb9b3060d74ef206",
+  "raw_response": "def validate(records):\n    if not isinstance(records, list): raise ValueError(\"expected list\")\n    seen = set()\n    for index, record in enumerate(records, 1):\n        if not isinstance(record, dict) or set(record) != {\"cycle\", \"commit\", \"change\", \"checks\", \"fixes\", \"ci_url\"}: raise ValueError(\"invalid record schema\")\n        if type(record[\"cycle\"]) is not int or record[\"cycle\"] != index: raise ValueError(\"nonsequential cycle\")\n        if not isinstance(record[\"commit\"], str) or not SHA.fullmatch(record[\"commit\"]) or record[\"commit\"] in seen: raise ValueError(\"missing or repeated development commit\")\n        seen.add(record[\"commit\"])\n        if not isinstance(record[\"change\"], str) or not record[\"change\"].strip() or len(record[\"change\"].encode('utf-8')) > 256 or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in record[\"change\"]): raise ValueError(\"invalid change description\")\n        if not isinstance(record[\"ci_url\"], str) or not CI.fullmatch(record[\"ci_url\"]): raise ValueError(\"invalid CI evidence URL\")\n        if not isinstance(record[\"checks\"], dict) or set(record[\"checks\"]) != set(STEPS) or any(record[\"checks\"][step] != \"pass\" for step in STEPS): raise ValueError(\"unverified cycle\")\n        if not isinstance(record[\"fixes\"], list) or len(record[\"fixes\"]) > 12 or any(not isinstance(x, str) or len(x.encode('utf-8')) > 128 or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in x) for x in record[\"fixes\"] if x): raise ValueError(\"invalid fixes\")\n    return len(records)",
+  "record_sha256": "5d632060ed071c0157db096a1e7a2265a2b128fb20e32e47a745be437bb605c5",
+  "response_sha256": "f33285939e8fe55259a84aade8725ee6b2a9758cdd4ecd5d0b54fde0ddba67c9",
+  "run_id": 43891791328,
+  "source_sha256": "b6ebe1387a6f0cf14e3b490aa68bbb53d4dfc390b430107c00cc6ed86ed1721e",
+  "trusted_inputs_sha256": {
+    "proposals/p3f_first_qwen_ledger_response.txt": "d526bb30b6b5be5cb2baa88ed86977b8a6dcbc4d043e265595a9d3707bad6de7",
+    "scripts/ci_attestation.py": "dceabacb944aea56194d53f7f2f29722570722db061b803dcc47a5275a907b92",
+    "scripts/development_ledger.py": "67e8c49144ca0020373602b846911764770e377c16876677bc463ee78366927b",
+    "tests/heldout_p3f_development_ledger.py": "111f0aaaa05204d0c5b1c6b53b3ce5bcea32580c8f9f46900f6d947b07856773",
+    "tests/test_ci_attestation.py": "3657bf6e8b3cab97bb740138d8ea155ffa72e31d9e6adcbb489d08446d6b8a73",
+    "tests/test_development_ledger.py": "5e28e92ed75bdf7f8c22314a2f98684fc8037b611e2e3ea7a745d84b12804023"
+  },
+  "verdict_sha256": "4e340ec5f00c43328d3d54a1c32670fd508a982544549fad9b334619b74b99fc"
+}

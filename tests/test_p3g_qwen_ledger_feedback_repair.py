@@ -1,6 +1,8 @@
 """P3g offline provenance gates: old 24/25 model output remains immutable."""
 from pathlib import Path
 import ast
+from copy import deepcopy
+import json
 import sys
 import unittest
 from unittest.mock import patch
@@ -72,6 +74,77 @@ class P3gOriginalFeedbackContractTests(unittest.TestCase):
                   "outcome":"real_source_patch_passed","merge_authorized":True}
             with self.assertRaises(ValueError):
                 s.replay(ROOT,"a"*40,fake)
+
+    def test_replay_binds_each_suite_and_omits_test_logs(self):
+        commit = "a" * 40
+        raw = s.file_bytes(ROOT, s.PREVIOUS).decode()
+        suites = {name: {"tests_run": count, "passed": name in s.REGRESSION_TESTS,
+                         "log_tail": "private diagnostic"}
+                  for name, count in s.FROZEN_SUITES.items()}
+        outcome = {"status": "real_source_patch_failed", "baseline": suites,
+                   "candidate": deepcopy(suites)}
+        with patch.object(s, "git_identity"), patch.object(s, "check_model"), \
+             patch.object(s, "infer", return_value=(raw, 1)), \
+             patch.object(s, "grade", return_value=outcome):
+            record = s.run(ROOT, commit, None, None, None)
+            verdict = s.replay(ROOT, commit, record)
+            self.assertFalse(verdict["candidate_passed"])
+            self.assertEqual(verdict["suite_results"]["candidate"]["heldout_p3f_development_ledger.py"],
+                             {"passed": False, "tests_run": 10})
+            self.assertNotIn("private diagnostic", repr(verdict))
+
+            changed = deepcopy(record)
+            changed["grade"]["candidate"]["test_ci_attestation.py"]["passed"] = False
+            with self.assertRaisesRegex(ValueError, "independent frozen suite results disagreed"):
+                s.replay(ROOT, commit, changed)
+
+    def test_retry_prompt_uses_verified_feedback_without_hidden_test_source(self):
+        with patch.object(s, "git_identity"):
+            _, prompt, contract = s.context(ROOT, "a" * 40, retry_p3g=True)
+        self.assertEqual(contract["variant"], s.RETRY_VARIANT)
+        self.assertEqual(contract["prior_replay_run"], 43891791328)
+        self.assertEqual(contract["prompt_sha256"], s.digest(prompt.encode()))
+        self.assertEqual(len(set(contract["rejected_function_fingerprints"])), 2)
+        self.assertIn("discarded that value before its entry validation", prompt)
+        self.assertNotIn("test_reject_empty_fix_entry", prompt)
+
+    def test_retry_stops_either_repeated_candidate_before_docker(self):
+        latest = json.loads(s.file_bytes(ROOT, s.P3G_FAILURE))["raw_response"]
+        earlier = s.file_bytes(ROOT, s.PREVIOUS).decode("utf-8")
+        for raw in (latest, earlier):
+            with self.subTest(), patch.object(s, "git_identity"), patch.object(s, "check_model"), \
+                 patch.object(s, "infer", return_value=("\n" + raw + "\n", 1)), patch.object(s, "grade") as grade:
+                record = s.run(ROOT, "a" * 40, None, None, None, retry_p3g=True)
+                self.assertEqual(record["outcome"], "static_rejected")
+                self.assertIn("previously rejected ledger implementation", record["static_reject_reason"])
+                verdict = s.replay(ROOT, "a" * 40, record, retry_p3g=True)
+                self.assertFalse(verdict["candidate_passed"])
+                grade.assert_not_called()
+
+    def test_retry_refuses_modified_frozen_inputs(self):
+        originals = {name: s.file_bytes(ROOT, name) for name in (s.TARGET, *s.SUPPORT, s.PREVIOUS)}
+        originals[s.SUPPORT[-1]] += b"\n# changed"
+        with self.assertRaisesRegex(ValueError, "source, test or response digests changed"):
+            s.retry_context(ROOT, originals)
+        with patch.object(s, "file_bytes", return_value=b"{}"):
+            with self.assertRaisesRegex(ValueError, "pinned P3g replay evidence changed"):
+                s.retry_context(ROOT, originals)
+
+    def test_retry_new_candidate_reaches_grade_and_independent_replay(self):
+        previous = s.file_bytes(ROOT, s.PREVIOUS).decode("utf-8")
+        raw = previous.replace("return len(records)", "return len(seen)")
+        self.assertNotEqual(raw, previous)
+        suites = {name: {"tests_run": count, "passed": name in s.REGRESSION_TESTS}
+                  for name, count in s.FROZEN_SUITES.items()}
+        outcome = {"status": "real_source_patch_failed", "baseline": suites, "candidate": suites}
+        with patch.object(s, "git_identity"), patch.object(s, "check_model"), \
+             patch.object(s, "infer", return_value=(raw, 1)), patch.object(s, "grade", return_value=outcome) as grade:
+            record = s.run(ROOT, "a" * 40, None, None, None, retry_p3g=True)
+            self.assertEqual(record["outcome"], "real_source_patch_failed")
+            verdict = s.replay(ROOT, "a" * 40, record, retry_p3g=True)
+            self.assertEqual(verdict["variant"], s.RETRY_VARIANT)
+            self.assertFalse(verdict["candidate_passed"])
+            self.assertEqual(grade.call_count, 2)
 
 if __name__=="__main__":
     unittest.main()

@@ -1,0 +1,7 @@
+proposals/p3f_first_qwen_ledger_response.txt text eol=lf
+proposals/p3h_verified_p3g_failure.json text eol=lf
+scripts/ci_attestation.py text eol=lf
+scripts/development_ledger.py text eol=lf
+tests/heldout_p3f_development_ledger.py text eol=lf
+tests/test_ci_attestation.py text eol=lf
+tests/test_development_ledger.py text eol=lf

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """P3g: independent second Qwen ledger patch from frozen 24/25 security failure feedback in an isolated repository copy.
 
-Original real source: scripts/agent_handoff.py, function handoff. This is NOT
+Original real source: scripts/development_ledger.py, function validate. This is NOT
 a toy solve(data) benchmark. Model writes a complete implementation; the
 harness patches exactly one existing function into a disposable copy and
 tests existing integrations + a previously failing frozen security holdout.
@@ -35,6 +35,9 @@ SUPPORT = ("scripts/ci_attestation.py",
 VARIANT = "p3g-feedback-ledger-empty-fix-repair-v1"
 PREVIOUS = "proposals/p3f_first_qwen_ledger_response.txt"
 PREVIOUS_SHA256 = "d526bb30b6b5be5cb2baa88ed86977b8a6dcbc4d043e265595a9d3707bad6de7"
+P3G_FAILURE = "proposals/p3h_verified_p3g_failure.json"
+P3G_FAILURE_SHA256 = "8cb7203a0e38c8b3d7b61ed45a88a9749e046e81cb07cd7125a83c2a7e6d2264"
+RETRY_VARIANT = "p3h-verified-p3g-feedback-v1"
 SHA40 = re.compile(r"[a-f0-9]{40}\Z")
 MAX_RESPONSE = 6000
 MODEL = "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
@@ -42,6 +45,7 @@ SOURCE_FILE_LIMIT = 20000
 REGRESSION_TESTS = {"test_development_ledger.py": 8,
                     "test_ci_attestation.py": 7}
 HOLDOUT_COUNT = 10
+FROZEN_SUITES = {**REGRESSION_TESTS, "heldout_p3f_development_ledger.py": HOLDOUT_COUNT}
 SAFE_CALLS = {"isinstance", "type", "len", "ord", "any", "all",
               "ValueError", "str", "dict", "range", "bool", "set", "enumerate"}
 SAFE_METHODS = {"get", "strip", "startswith", "fullmatch", "encode", "add"}
@@ -305,8 +309,7 @@ def grade(root, replacement_source):
             stage = Path(temp) / label
             stage_one(stage, data, source)
             checks = {}
-            for test, expected in (*REGRESSION_TESTS.items(),
-                                   ("heldout_p3f_development_ledger.py", HOLDOUT_COUNT)):
+            for test, expected in FROZEN_SUITES.items():
                 result = docker_suite(stage, test)
                 if result["tests_run"] != expected:
                     raise ValueError("frozen regression/holdout test count changed")
@@ -329,11 +332,49 @@ def grade(root, replacement_source):
             "checkout_modified": False, "merge_authorized": False}
 
 
-def context(root, commit):
+def function_fingerprint(source):
+    return digest(ast.dump(ast.parse(source), include_attributes=False).encode())
+
+
+def retry_context(root, originals):
+    evidence_bytes = file_bytes(root, P3G_FAILURE)
+    if digest(evidence_bytes) != P3G_FAILURE_SHA256:
+        raise ValueError("pinned P3g replay evidence changed")
+    evidence = json.loads(evidence_bytes)
+    inputs = {path: digest(data) for path, data in originals.items()}
+    raw = evidence["raw_response"]
+    if inputs != evidence["trusted_inputs_sha256"] or digest(raw.encode()) != evidence["response_sha256"]:
+        raise ValueError("P3g source, test or response digests changed")
+    latest = inspect_replacement(raw)
+    earlier = inspect_replacement(originals[PREVIOUS].decode("utf-8"))
+    original = originals[TARGET].decode("utf-8")
+    candidate, _ = patch_original(original, latest)
+    if digest(candidate.encode()) != evidence["source_sha256"]:
+        raise ValueError("P3g patch cannot be reconstructed")
+    prompt = (
+        "Repair the actual development ledger validate(records) function. Return only one complete "
+        "replacement Python function. Preserve all existing schema, cycle, commit, CI URL and "
+        "check validation, list limits, UTF-8 byte limits and control-character restrictions. "
+        "The last two proposals passed 24 of 25 frozen tests. Independent replay rejected the "
+        "latest proposal. A fixes list containing an empty string was accepted because the latest "
+        "proposal discarded that value before its entry validation. Every supplied entry must "
+        "be validated, and an empty fixes list must still be accepted. Preserve valid Korean text. "
+        "Check the distinction between no entries and one invalid empty entry before replying. "
+        "The previous failed implementation follows:\n" + latest
+    )
+    return prompt, {
+        "variant": RETRY_VARIANT,
+        "prior_replay_run": evidence["run_id"],
+        "prior_replay_evidence_sha256": P3G_FAILURE_SHA256,
+        "rejected_function_fingerprints": [function_fingerprint(earlier), function_fingerprint(latest)],
+    }
+
+
+def context(root, commit, retry_p3g=False):
     git_identity(root, commit)
     originals = {rel: file_bytes(root, rel) for rel in (TARGET, *SUPPORT, PREVIOUS)}
     existing = originals[TARGET].decode("utf-8")
-    prompt = source_prompt(existing, root)
+    prompt, retry = retry_context(root, originals) if retry_p3g else (source_prompt(existing, root), {})
     return originals, prompt, {
         "schema": 1, "variant": VARIANT, "commit": commit, "target": TARGET,
         "target_before_sha256": digest(originals[TARGET]),
@@ -344,11 +385,21 @@ def context(root, commit):
         "ci_attested_model_source_commits": 0,
         "model_remote_push_authorized": False,
         "merge_authorized": False,
+        **retry,
     }
 
 
-def run(root, commit, cli, gguf, metadata):
-    originals, prompt, base = context(root, commit)
+def proposed_change(originals, raw, base):
+    replacement = inspect_replacement(raw)
+    rejected = base.get("rejected_function_fingerprints", ())
+    if rejected and function_fingerprint(replacement) in rejected:
+        raise ValueError("model repeated a previously rejected ledger implementation")
+    proposed, patch = patch_original(originals[TARGET].decode("utf-8"), replacement)
+    return replacement, proposed, patch
+
+
+def run(root, commit, cli, gguf, metadata, retry_p3g=False):
+    originals, prompt, base = context(root, commit, retry_p3g)
     check_model(gguf, metadata)
     raw, seconds = infer(cli, gguf, prompt)
     out = {**base, "model_calls": 1, "model_seconds": seconds,
@@ -357,9 +408,7 @@ def run(root, commit, cli, gguf, metadata):
            "unified_diff": None, "unified_diff_sha256": None,
            "outcome": "static_rejected", "grade": None}
     try:
-        replacement = inspect_replacement(raw)
-        proposed, patch = patch_original(
-            originals[TARGET].decode("utf-8"), replacement)
+        replacement, proposed, patch = proposed_change(originals, raw, base)
     except ValueError as exc:
         out["static_reject_reason"] = str(exc)[:160]
     else:
@@ -372,8 +421,25 @@ def run(root, commit, cli, gguf, metadata):
     return out
 
 
-def replay(root, commit, report):
-    originals, prompt, base = context(root, commit)
+def suite_results(grade_report):
+    """Extract comparable verdicts without including hidden test logs."""
+    results = {}
+    for label in ("baseline", "candidate"):
+        suites = grade_report.get(label)
+        if not isinstance(suites, dict) or suites.keys() != FROZEN_SUITES.keys():
+            raise ValueError("incomplete frozen suite evidence")
+        results[label] = {}
+        for name, expected in FROZEN_SUITES.items():
+            row = suites[name]
+            if (not isinstance(row, dict) or type(row.get("passed")) is not bool
+                    or type(row.get("tests_run")) is not int or row["tests_run"] != expected):
+                raise ValueError("invalid frozen suite evidence")
+            results[label][name] = {"passed": row["passed"], "tests_run": row["tests_run"]}
+    return results
+
+
+def replay(root, commit, report, retry_p3g=False):
+    originals, _, base = context(root, commit, retry_p3g)
     if not isinstance(report, dict):
         raise ValueError("report must be object")
     if any(type(report.get(k)) is not type(v) or report[k] != v
@@ -386,16 +452,15 @@ def replay(root, commit, report):
             digest(raw.encode()) != report.get("response_sha256")):
         raise ValueError("response bytes changed")
     try:
-        replacement = inspect_replacement(raw)
-        proposed, patch = patch_original(
-            originals[TARGET].decode("utf-8"), replacement)
+        replacement, proposed, patch = proposed_change(originals, raw, base)
     except ValueError:
         if (report.get("outcome") != "static_rejected"
                 or report.get("grade") is not None
                 or report.get("replacement_sha256") is not None):
             raise ValueError("static rejection falsely labeled")
         return {"status": "source_patch_static_rejection_replayed",
-                "candidate_passed": False, "merge_authorized": False}
+                "variant": base["variant"], "candidate_passed": False,
+                "merge_authorized": False}
     checks = {
         "replacement_sha256": digest(replacement.encode()),
         "proposed_source_sha256": digest(proposed.encode()),
@@ -408,10 +473,15 @@ def replay(root, commit, report):
             or not isinstance(report.get("grade"), dict)
             or report["grade"].get("status") != outcome["status"]):
         raise ValueError("independent Docker regression disagreed")
+    verified_suites = suite_results(outcome)
+    if suite_results(report["grade"]) != verified_suites:
+        raise ValueError("independent frozen suite results disagreed")
     return {"status": "source_patch_replayed",
+            "variant": base["variant"],
             "candidate_passed": outcome["status"] == "real_source_patch_passed",
             "target": TARGET, "source_sha256": checks["proposed_source_sha256"],
             "model_calls_verified": 1, "ci_attested_model_source_commits": 0,
+            "suite_results": verified_suites,
             "merge_authorized": False}
 
 
@@ -423,6 +493,7 @@ def main():
     p.add_argument("--cli", type=Path)
     p.add_argument("--gguf", type=Path)
     p.add_argument("--metadata", type=Path)
+    p.add_argument("--retry-p3g", action="store_true")
     p.add_argument("--input", type=Path)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
@@ -430,25 +501,26 @@ def main():
         raise SystemExit("refuse to overwrite evidence")
     try:
         if args.mode == "preflight":
-            original, prompt, contract = context(args.root, args.head_sha)
+            original, prompt, contract = context(args.root, args.head_sha, args.retry_p3g)
             if not all(len(v) > 0 for v in original.values()):
                 raise ValueError("missing existing modules or frozen tests")
             result = {"status": "reviewed_real_repo_source_contract",
                       "source_sha256": contract["target_before_sha256"],
+                      "variant": contract["variant"],
                       "test_count": 25,
                       "model_calls": 0, "merge_authorized": False}
         elif args.mode == "run":
             if args.cli is None or args.gguf is None or args.metadata is None:
                 raise ValueError("real model requires approved executable inputs")
             result = run(args.root, args.head_sha,
-                         args.cli, args.gguf, args.metadata)
+                         args.cli, args.gguf, args.metadata, args.retry_p3g)
         else:
             if (args.input is None or args.input.is_symlink()
                     or not args.input.is_file()
                     or args.input.stat().st_size > 60000):
                 raise ValueError("invalid raw evidence file")
             record = json.loads(args.input.read_text(encoding="utf-8"))
-            result = replay(args.root, args.head_sha, record)
+            result = replay(args.root, args.head_sha, record, args.retry_p3g)
     except (ValueError, OSError, TypeError, KeyError,
             json.JSONDecodeError, subprocess.SubprocessError) as exc:
         result = {"status": "blocked", "error_type": type(exc).__name__,
