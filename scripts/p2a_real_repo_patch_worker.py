@@ -297,16 +297,15 @@ def grade(root, replacement_source):
     baseline = report["baseline"]
     candidate = report["candidate"]
     if not (all(baseline[x]["passed"] for x in REGRESSION_TESTS)
-            and not baseline["heldout_p2a_agent_handoff.py"]["passed"]
-            and all(candidate[x]["passed"] for x in REGRESSION_TESTS)
-            ):
-        raise ValueError("existing baseline or candidate regression failed")
-    passed = candidate["heldout_p2a_agent_handoff.py"]["passed"]
+            and not baseline["heldout_p2a_agent_handoff.py"]["passed"]):
+        raise ValueError("trusted baseline did not reproduce genuine defect")
+    legacy_ok = all(candidate[x]["passed"] for x in REGRESSION_TESTS)
+    passed = legacy_ok and candidate["heldout_p2a_agent_handoff.py"]["passed"]
     return {"status": "real_source_patch_passed" if passed
             else "real_source_patch_failed",
             "baseline_legacy_green": True,
             "baseline_security_red": True,
-            "candidate_legacy_green": True,
+            "candidate_legacy_green": legacy_ok,
             "candidate_security_green": passed,
             "baseline": baseline, "candidate": candidate,
             "checkout_modified": False, "merge_authorized": False}
