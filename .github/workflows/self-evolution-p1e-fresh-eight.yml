@@ -3,12 +3,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - ".github/workflows/self-evolution-p1e-eight-tasks.yml"
-      - "scripts/self_evolution_eight_distinct.py"
+      - ".github/workflows/self-evolution-p1e-fresh-eight.yml"
+      - "scripts/self_evolution_p1e_fresh.py"
       - "scripts/self_evolution_p1e_aggregate.py"
       - "scripts/self_evolution_p1e_task_registry.py"
       - "tests/heldout_p1e.py"
-      - "tests/test_self_evolution_eight_distinct.py"
+      - "tests/test_self_evolution_p1e_fresh.py"
       - "tests/test_self_evolution_p1e_aggregate.py"
   workflow_dispatch:
 permissions:
@@ -39,12 +39,12 @@ jobs:
       - name: Eight distinct task specs, frozen oracle and adversarial gates
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tests -p test_self_evolution_eight_distinct.py -v
+          python3 -m unittest discover -s tests -p test_self_evolution_p1e_fresh.py -v
           python3 -m unittest discover -s tests -p test_self_evolution_p1e_aggregate.py -v
           python3 -m unittest discover -s tests -p test_self_evolution_task_contract.py -q
           python3 scripts/governance.py
           python3 scripts/harness_check.py
-          python3 scripts/self_evolution_eight_distinct.py preflight \
+          python3 scripts/self_evolution_p1e_fresh.py preflight \
             --head-sha "$REVIEW_SHA" --output artifacts/p1e/preflight.json
           python3 - <<'PY'
           import json
@@ -79,7 +79,7 @@ jobs:
       - name: Check pinned task contract and AST guard before downloading models
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tests -p test_self_evolution_eight_distinct.py -q
+          python3 -m unittest discover -s tests -p test_self_evolution_p1e_fresh.py -q
           python3 scripts/harness_check.py
       - name: Compile pinned no-network CPU inference executable
         run: |
@@ -105,7 +105,7 @@ jobs:
       - name: One REAL model call per new task, fresh frozen ten-case Docker check
         run: |
           set -euo pipefail
-          python3 scripts/self_evolution_eight_distinct.py run \
+          python3 scripts/self_evolution_p1e_fresh.py run \
             --root . --head-sha "$REVIEW_SHA" --lane "$LANE_ID" \
             --cli vendor/llama.cpp/build/bin/llama-completion \
             --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
@@ -157,7 +157,7 @@ jobs:
           docker pull python:3.11-slim
           for lane in 01 02 03 04 05 06 07 08; do
             test -f "artifacts/recovered/p1e-lane-$lane/record.json"
-            python3 scripts/self_evolution_eight_distinct.py replay \
+            python3 scripts/self_evolution_p1e_fresh.py replay \
               --root . --head-sha "$REVIEW_SHA" \
               --input "artifacts/recovered/p1e-lane-$lane/record.json" \
               --output "artifacts/p1e-replay/lane-$lane.json"
