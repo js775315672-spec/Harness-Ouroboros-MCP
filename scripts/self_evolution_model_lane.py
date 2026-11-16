@@ -200,11 +200,12 @@ def run(root, conf, lane, commit, cli, gguf, metadata):
               "inference_seconds": round(time.monotonic() - started, 3)}
     try:
         code = inspect_function(raw)
+    except ValueError as exc:
+        record["reason"] = str(exc)[:200]
+    else:
         record["candidate_sha256"] = sha(code.encode())
         record["evaluation"] = grade(tests, code)
         record["outcome"] = record["evaluation"]["status"]
-    except ValueError as exc:
-        record["reason"] = str(exc)[:200]
     return record
 
 def verify(root, conf, commit, record):
