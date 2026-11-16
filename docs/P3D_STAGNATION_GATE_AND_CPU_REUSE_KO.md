@@ -13,7 +13,7 @@
 2. 동일 소스/동일 모델/동일 과제에서 **동일 응답을 두 번 반환하면 'duplicate_model_response' 정지**. 서로 다른 응답이지만 두 번 모두 AST 원본 무변경으로 검증되었다면 'repeated_unchanged_source' 정지.
 3. 검증된 후보가 한 번이라도 통과하면 추가 생성 대신 'passing_candidate_requires_human_review' 정지. 최대 허용 시도 수 소진도 정지.
 4. 실험의 실패 로그·원본 응답·후보 해시가 누락·변조됐거나 범위를 벗어나면 예외/CLI 비정상 종료하여 **모델 호출 자체를 허용하지 않음**.
-5. scripts/feedback_controller.py: 기존 입력 형식은 보존. 선택적으로 model_history + task/model/base 해시를 제공받으면, 모델 답안 실패를 녹색 하네스 검사와 별도로 감지하고 정체 발생 시 재시도 중단.
+5. scripts/stagnation_aware_feedback.py: 과거 모델 실험의 소스 해시와 연결된 feedback_controller.py는 **바이트 단위로 그대로 보존**. 새 래퍼가 model_history + task/model/base 해시를 받아, 모델 답안 실패를 녹색 하네스 검사와 별도로 감지하고 정체 발생 시 재시도 중단. 기존 역사적 증거 검사를 변경하지 않음.
 6. tests/test_model_stagnation_gate.py: 정체·원본 소스 무변경·중복·해시 위조·임의 필드·권한 상승·기존 feedback 호환·CLI 종료 코드 등에 대한 30개 사전 검증.
 
 ## 무엇이 증명되고 무엇이 아닌가?
