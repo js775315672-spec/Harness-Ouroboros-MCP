@@ -51,7 +51,26 @@ def heldout(root):
     raw = path.read_bytes()
     return raw, sha(raw)
 
-def inspect_function(raw):
+def _v2_unfence(raw):
+    """Remove only one exact Python Markdown envelope, with no prose or edits."""
+    if not isinstance(raw, str):
+        raise ValueError("non-string response")
+    if len(raw.encode("utf-8")) > LIMIT or any(x in raw for x in ("\x00", "\x1b", "\r")):
+        raise ValueError("unsafe model response")
+    stripped = raw.strip()
+    marker = chr(96) * 3
+    if marker not in stripped:
+        return raw
+    opener = marker + "python\n"
+    closer = "\n" + marker
+    if (not stripped.startswith(opener) or not stripped.endswith(closer)
+            or stripped.count(marker) != 2):
+        raise ValueError("untrusted Markdown envelope")
+    return stripped[len(opener):-len(closer)] + "\n"
+
+def inspect_function(raw, *, allow_fence=False):
+    if allow_fence:
+        raw = _v2_unfence(raw)
     if (not isinstance(raw, str) or not 30 <= len(raw.encode()) <= LIMIT
             or len(raw.splitlines()) > 65
             or any(x in raw for x in ("\x00", "\x1b", "\r", chr(96) * 3))):
@@ -112,11 +131,19 @@ def inspect_function(raw):
             raise ValueError("unknown global name")
     return source
 
-def prompt(config, lane):
+def prompt(config, lane, v2=False):
     if lane not in LANES:
         raise ValueError("pilot only authorizes lanes 01 and 02")
     row = next(r for r in config["lanes"] if r["id"] == lane)
-    return TASK + "Implementation hypothesis: " + row["hypothesis"] + "."
+    variant = (
+        " REQUIRE literal boolean identity comparisons, exactly "
+        "state.get('safety') is True and "
+        "state.get('tests_ok') is True. Never use truthiness "
+        "checks for either key. Do NOT use Markdown fences or "
+        "ternary expressions. Use return statements within if blocks. "
+        if v2 else ""
+    )
+    return TASK + variant + "Implementation hypothesis: " + row["hypothesis"] + "."
 
 def docker_test(folder):
     cmd = _docker_command(folder, "python:3.11-slim", [
@@ -163,11 +190,11 @@ def grade(tests, code):
             else "model_candidate_failed", "baseline": baseline, "candidate": candidate,
             "merge_authorized": False}
 
-def context(root, config_path, lane, commit):
+def context(root, config_path, lane, commit, v2=False):
     c = load_config(config_path)
     m = next(x for x in build_manifests(c, commit) if x["lane_id"] == lane)
     tests, tests_hash = heldout(root)
-    message = prompt(c, lane)
+    message = prompt(c, lane, v2=v2)
     fields = {"schema": 1, "repository": m["repository"],
               "source_sha": commit, "lane": lane,
               "architecture": m["architecture_key"],
@@ -176,6 +203,8 @@ def context(root, config_path, lane, commit):
               "model": "Qwen2.5-Coder-7B-Instruct-Q4_K_M",
               "merge_authorized": False, "ci_attested_patches": 0,
               "checkout_modified": False}
+    if v2:
+        fields["study_variant"] = "p1b-v2-exact-fence-and-boolean-prompt"
     return fields, tests, message
 
 def check_model(gguf, metadata):
@@ -188,8 +217,8 @@ def check_model(gguf, metadata):
             or sha256_file(gguf) != meta.get("sha256")):
         raise ValueError("model provenance changed")
 
-def run(root, conf, lane, commit, cli, gguf, metadata):
-    fields, tests, message = context(root, conf, lane, commit)
+def run(root, conf, lane, commit, cli, gguf, metadata, v2=False):
+    fields, tests, message = context(root, conf, lane, commit, v2=v2)
     check_model(gguf, metadata)
     started = time.monotonic()
     raw = CPUInference("7b", cli, gguf, timeout_seconds=150).generate(message)
@@ -199,7 +228,7 @@ def run(root, conf, lane, commit, cli, gguf, metadata):
               "evaluation": None,
               "inference_seconds": round(time.monotonic() - started, 3)}
     try:
-        code = inspect_function(raw)
+        code = inspect_function(raw, allow_fence=v2)
     except ValueError as exc:
         record["reason"] = str(exc)[:200]
     else:
@@ -208,10 +237,10 @@ def run(root, conf, lane, commit, cli, gguf, metadata):
         record["outcome"] = record["evaluation"]["status"]
     return record
 
-def verify(root, conf, commit, record):
+def verify(root, conf, commit, record, v2=False):
     if not isinstance(record, dict) or record.get("lane") not in LANES:
         raise ValueError("invalid lane report")
-    fields, tests, _ = context(root, conf, record["lane"], commit)
+    fields, tests, _ = context(root, conf, record["lane"], commit, v2=v2)
     if (any(type(record.get(k)) is not type(v) or record[k] != v
             for k, v in fields.items())
             or type(record.get("model_calls")) is not int
@@ -222,7 +251,7 @@ def verify(root, conf, commit, record):
             or sha(raw.encode()) != record.get("response_sha256")):
         raise ValueError("response evidence is corrupt")
     try:
-        code = inspect_function(raw)
+        code = inspect_function(raw, allow_fence=v2)
     except ValueError:
         if (record.get("outcome") != "static_gate_rejected"
                 or record.get("candidate_sha256") is not None
@@ -253,6 +282,7 @@ def main():
     ap.add_argument("--metadata", type=Path)
     ap.add_argument("--input", type=Path)
     ap.add_argument("--report", type=Path, required=True)
+    ap.add_argument("--v2-exact-format", action="store_true")
     a = ap.parse_args()
     if a.report.exists() or a.report.is_symlink():
         raise SystemExit("cannot overwrite evidence")
@@ -265,13 +295,14 @@ def main():
             if not a.lane or not a.cli or not a.gguf or not a.metadata:
                 raise ValueError("model inputs missing")
             result = run(a.root, a.config, a.lane, a.head_sha,
-                         a.cli, a.gguf, a.metadata)
+                         a.cli, a.gguf, a.metadata, v2=a.v2_exact_format)
         else:
             if (a.input is None or a.input.is_symlink() or not a.input.is_file()
                     or a.input.stat().st_size > 30000):
                 raise ValueError("invalid immutable evidence")
             result = verify(a.root, a.config, a.head_sha,
-                            json.loads(a.input.read_text(encoding="utf-8")))
+                            json.loads(a.input.read_text(encoding="utf-8")),
+                            v2=a.v2_exact_format)
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError,
             subprocess.SubprocessError) as exc:
         result = {"status": "blocked", "type": type(exc).__name__,
