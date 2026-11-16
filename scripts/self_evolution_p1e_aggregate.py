@@ -109,7 +109,7 @@ def main():
     a=p.parse_args()
     if a.output.exists() or a.output.is_symlink():
         raise SystemExit("cannot overwrite report")
-    model=[read(a.model_dir/f"p1d-lane-{k}"/"record.json") for k in TASKS]
+    model=[read(a.model_dir/f"p1e-lane-{k}"/"record.json") for k in TASKS]
     replay=[read(a.replay_dir/f"lane-{k}.json") for k in TASKS]
     r=aggregate(a.root,a.config,a.head_sha,model,replay)
     a.output.parent.mkdir(parents=True,exist_ok=True)
