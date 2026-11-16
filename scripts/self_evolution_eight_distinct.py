@@ -174,7 +174,7 @@ def infer(cli, gguf, prompt):
                              errors="replace", capture_output=True, timeout=240)
     if process.returncode != 0:
         raise ValueError("pinned CPU completion returned nonzero")
-    response, _ = extract_completion(process.stdout, max_output_bytes=MAX_BYTES)
+    response, _ = extract_completion(process.stdout, max_output_bytes=6000)
     return response, round(time.monotonic()-began,3)
 
 
