@@ -60,6 +60,9 @@ class P1dAggregateTests(unittest.TestCase):
 
     def test_static_rejection_not_a_pass(self):
         def change(m,p):
+            invalid="this is not a Python function"
+            m[0]["raw_response"]=invalid
+            m[0]["response_sha256"]=worker.sha(invalid.encode())
             m[0]["outcome"]="ast_rejected"
             m[0]["candidate_sha256"]=None
             m[0]["grade"]=None
