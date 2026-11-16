@@ -106,7 +106,10 @@ class P1dAggregateTests(unittest.TestCase):
     def test_all_distinct_source_hashes_counted_but_not_architecture(self):
         def change(m,p):
             for i in range(8):
-                h=("%064x"%(i+1))
+                raw="def solve(data):\n    return "+str(i)+"\n"
+                h=worker.sha(raw.encode())
+                m[i]["raw_response"]=raw
+                m[i]["response_sha256"]=h
                 m[i]["candidate_sha256"]=h
                 p[i]["candidate_sha256"]=h
         r=self.summarize(change)
