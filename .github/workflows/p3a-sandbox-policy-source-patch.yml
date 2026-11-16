@@ -59,7 +59,7 @@ jobs:
           python3 - <<'PY'
           import pathlib,sys
           sys.path.insert(0,"scripts")
-          from p2a_real_repo_patch_worker import grade,TARGET
+          from p3a_qwen_sandbox_policy_source_patch import grade,TARGET
           root=pathlib.Path(".").resolve()
           original=(root/TARGET).read_text(encoding="utf-8")
           report=grade(root,original)
