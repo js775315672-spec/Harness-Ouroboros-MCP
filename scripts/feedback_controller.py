@@ -6,12 +6,14 @@ modify source code, or grant the model access to Harness policies.
 """
 import argparse,json,pathlib,sys
 from task_selector import select
+from model_stagnation_gate import evaluate as check_model_stagnation
 
 REQUIRED_CHECKS=("harness","ouroboros","regression","secrets")
 MAX_LOG_CHARS=4000
 MAX_ATTEMPTS=5
 
-def feedback(proposal,checks,attempt=1,max_attempts=MAX_ATTEMPTS):
+def feedback(proposal,checks,attempt=1,max_attempts=MAX_ATTEMPTS,
+             model_history=None,model_context=None):
     if not isinstance(proposal,dict) or proposal.get("decision")!="propose":
         raise ValueError("missing active development proposal")
     if type(attempt) is not int or type(max_attempts) is not int or not 1<=max_attempts<=MAX_ATTEMPTS or not 1<=attempt<=max_attempts:
@@ -29,6 +31,26 @@ def feedback(proposal,checks,attempt=1,max_attempts=MAX_ATTEMPTS):
             raise ValueError("invalid check status or oversized log")
         normalized[name]={"status":status,"log":log}
     failures=[name for name in REQUIRED_CHECKS if normalized[name]["status"]=="fail"]
+    retry_gate = None
+    if model_history is not None or model_context is not None:
+        if (type(model_context) is not dict
+                or set(model_context) != {"task_sha256", "model_sha256",
+                                          "baseline_source_sha256"}
+                or model_history is None):
+            raise ValueError("model retry history and immutable context required")
+        retry_gate = check_model_stagnation(
+            model_history, model_context["task_sha256"],
+            model_context["model_sha256"], model_context["baseline_source_sha256"],
+            max_attempts=max_attempts)
+        if retry_gate["decision"] == "stop":
+            return {"decision": "stop", "cycle": proposal["cycle"],
+                    "attempt": attempt, "failed_checks": failures,
+                    "reason": retry_gate["reason"],
+                    "model_call_performed": False,
+                    "human_merge_approval_required": True,
+                    "model_retry_gate": retry_gate}
+        if model_history and model_history[-1]["outcome"] != "candidate_passed":
+            failures.append("model_candidate")
     if not failures:
         return {"decision":"review","cycle":proposal["cycle"],"attempt":attempt,
                 "failed_checks":[],"model_call_performed":False,
@@ -41,7 +63,8 @@ def feedback(proposal,checks,attempt=1,max_attempts=MAX_ATTEMPTS):
             "next_attempt":attempt+1,"task":proposal["task"],
             "failed_checks":failures,"evidence":normalized,
             "instruction":"Fix the source defect. Do not weaken tests, security gates, or Harness policies.",
-            "model_call_performed":False,"human_merge_approval_required":True}
+            "model_call_performed":False,"human_merge_approval_required":True,
+            **({"model_retry_gate":retry_gate} if retry_gate is not None else {})}
 
 def main():
     p=argparse.ArgumentParser()
