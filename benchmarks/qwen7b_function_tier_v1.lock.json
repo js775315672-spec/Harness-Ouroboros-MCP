@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "benchmark": "qwen7b-function-merge-intervals-v1",
+  "difficulty": "one_full_function",
+  "goal": "Generate Python merge_intervals(intervals) from specification, not a constrained one-line AST expression",
+  "function_name": "merge_intervals",
+  "input_contract": "intervals is a list or tuple of 2-element list/tuple pairs of integers (bool rejected), each start<=end",
+  "output_contract": "new ascending list of (start,end) tuples, overlapping or adjacent inclusive integer intervals merged",
+  "exception_contract": "invalid input raises ValueError, never mutate input",
+  "prompt_contains_tests": false,
+  "hidden_tests_file": "tests/heldout_merge_intervals.py",
+  "trusted_tests_git_blob_sha": "83f6eb4e77ac5234649bca62731a93a065a73d73",
+  "expected_heldout_test_methods": 13,
+  "max_model_calls": 1,
+  "model_parameters": {
+    "model_repository": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+    "revision": "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+    "weight_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+    "llama_cpp_commit": "4e5116f47619dac4180c3007ef02a383f347554c",
+    "temperature": 0,
+    "seed": 42,
+    "threads": 4,
+    "ctx_size": 2048,
+    "max_generated_tokens": 480
+  },
+  "sandbox": {
+    "network_disabled": true,
+    "filesystem_read_only": true,
+    "capabilities_dropped": true,
+    "unprivileged": true,
+    "cpus": 1,
+    "memory_mib": 256,
+    "timeout_seconds": 90,
+    "no_model_editable_tests": true,
+    "no_model_source_checkout_writes": true
+  },
+  "allowable_submission": "single top-level Python function called merge_intervals; no imports, classes, decorators, module level statements, shell execution or unsafe calls",
+  "pass_criterion": "static AST gate AND baseline negative-control tests fail AND all trusted 13 test methods pass in isolated Docker",
+  "status": "pre_registered_unrun",
+  "retries_allowed": 0,
+  "no_general_autonomous_coding_claim": true,
+  "no_merge_authority": true
+}
