@@ -1,0 +1,177 @@
+name: P1b bounded Qwen 7B two-lane full-function study
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/self-evolution-p1b-two-lane.yml"
+      - "scripts/self_evolution_model_lane.py"
+      - "tests/test_self_evolution_model_lane.py"
+      - "tests/heldout_self_evolution_action.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: p1b-two-lane-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  all_eight_read_only_contracts:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact reviewed SHA without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: P1b offline contract and adversarial checks
+        env:
+          REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_self_evolution_task_contract.py -v
+          python3 -m unittest discover -s tests -p test_self_evolution_model_lane.py -v
+          python3 scripts/harness_check.py
+          python3 scripts/self_evolution_model_lane.py preflight \
+            --head-sha "$REVIEW_SHA" --report artifacts/p1b/preflight.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/p1b/preflight.json").read_text())
+          assert r["status"]=="eight_preflights_validated"
+          assert r["count"]==8 and r["model_calls"]==0
+          assert r["merge_authorized"] is False
+          print("Eight read-only P1b manifests validated; model calls zero")
+          PY
+
+  actual_qwen_function_lane:
+    needs: all_eight_read_only_contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 29
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        lane: ["01", "02"]
+    env:
+      LANE_ID: ${{ matrix.lane }}
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - name: Checkout pinned SHA without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify lane, AST and read-only boundaries
+        run: |
+          set -euo pipefail
+          test "$LANE_ID" = 01 -o "$LANE_ID" = 02
+          python3 -m unittest discover -s tests -p test_self_evolution_model_lane.py -q
+      - name: Compile pinned offline CPU llama.cpp
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin 4e5116f47619dac4180c3007ef02a383f347554c
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "4e5116f47619dac4180c3007ef02a383f347554c"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+      - name: Download official Apache-2.0 Qwen 7B GGUF
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model 7b --destination models --report artifacts/p1b/model-provenance.json
+          docker pull python:3.11-slim
+      - name: Single fresh model function, frozen Docker holdout and provenance
+        run: |
+          set -euo pipefail
+          python3 scripts/self_evolution_model_lane.py run \
+            --root . --head-sha "$REVIEW_SHA" --lane "$LANE_ID" \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --metadata artifacts/p1b/model-provenance.json \
+            --report artifacts/p1b/record.json
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/p1b/record.json").read_text())
+          assert r["model_calls"] == 1
+          assert r["outcome"] in ("model_candidate_passed","model_candidate_failed",
+                                  "static_gate_rejected")
+          assert r["merge_authorized"] is False and r["ci_attested_patches"] == 0
+          print("Actual model task outcome:",r["outcome"])
+          PY
+      - name: Publish every result, including model failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p1b-model-${{ matrix.lane }}
+          path: artifacts/p1b/record.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_replay:
+    if: always()
+    needs: [all_eight_read_only_contracts, actual_qwen_function_lane]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout same immutable reviewed source, no credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Download both raw model evidence records
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: p1b-model-*
+          path: artifacts/recovered
+      - name: Verify each response again in fresh non-root Docker
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          for lane in 01 02; do
+            test -f "artifacts/recovered/p1b-model-$lane/record.json"
+            python3 scripts/self_evolution_model_lane.py verify \
+              --root . --head-sha "$REVIEW_SHA" \
+              --input "artifacts/recovered/p1b-model-$lane/record.json" \
+              --report "artifacts/replay/lane-$lane.json"
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=[json.loads(Path(f"artifacts/replay/lane-{n}.json").read_text())
+             for n in ("01","02")]
+          assert [x["lane"] for x in r] == ["01","02"]
+          assert all(x["status"] in ("candidate_replayed",
+                                     "static_rejection_replayed") for x in r)
+          assert all(x["merge_authorized"] is False for x in r)
+          for x in r:
+              print("Replayed lane:",x["lane"],"passed:",x["candidate_passed"])
+          PY
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+      - name: Publish independent evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p1b-independent-replay
+          path: artifacts/replay/
+          if-no-files-found: warn
+          retention-days: 7
