@@ -45,7 +45,7 @@ def _require_loopback(base_url):
 
 
 def build_server_command(cli, gguf, port=8080, ctx=2048, threads=4,
-                         draft_gguf=None, cache_reuse=256):
+                         draft_gguf=None, cache_reuse=None):
     """Return an argv list (never a shell command); does NOT run it.
 
     Caller must verify flags against the *pinned* binary. Draft GGUF is opt-in
@@ -57,7 +57,8 @@ def build_server_command(cli, gguf, port=8080, ctx=2048, threads=4,
         raise ValueError("invalid context size")
     if type(threads) is not int or not 1 <= threads <= 64:
         raise ValueError("invalid CPU thread count")
-    if type(cache_reuse) is not int or not 0 <= cache_reuse <= 2048:
+    if cache_reuse is not None and (
+            type(cache_reuse) is not int or not 0 <= cache_reuse <= 2048):
         raise ValueError("invalid bounded cache reuse")
     if not isinstance(cli, (str, bytes)) and not hasattr(cli, "__fspath__"):
         raise ValueError("invalid binary path")
@@ -65,7 +66,10 @@ def build_server_command(cli, gguf, port=8080, ctx=2048, threads=4,
         raise ValueError("missing binary or model")
     command = [str(cli), "--model", str(gguf), "--host", "127.0.0.1",
                "--port", str(port), "--ctx-size", str(ctx), "--threads", str(threads),
-               "--parallel", "1", "--cache-reuse", str(cache_reuse)]
+               "--parallel", "1"]
+    if cache_reuse is not None:
+        # Optional flag must be verified against the exact pinned binary.
+        command += ["--cache-reuse", str(cache_reuse)]
     if draft_gguf is not None:
         if not str(draft_gguf):
             raise ValueError("invalid speculative model")
@@ -91,7 +95,8 @@ class LlamaServerClient:
                                                    _NoRedirect())
         self.calls = []
 
-    def complete(self, prompt, *, grammar=None, n_predict=140, temperature=0.0, seed=-1):
+    def complete(self, prompt, *, grammar=None, n_predict=140, temperature=0.0,
+                 seed=-1, cache_prompt=True):
         if not isinstance(prompt, str) or not 1 <= len(prompt.encode("utf-8")) <= 5000:
             raise ValueError("invalid prompt budget")
         if grammar is not None and (not isinstance(grammar, str) or
@@ -103,8 +108,10 @@ class LlamaServerClient:
             raise ValueError("invalid temperature")
         if type(seed) is not int or not -1 <= seed <= 2**31 - 1:
             raise ValueError("invalid seed")
+        if type(cache_prompt) is not bool:
+            raise ValueError("cache_prompt must be a boolean")
         body = {"prompt": prompt, "n_predict": n_predict, "temperature": temperature,
-                "seed": seed, "cache_prompt": True}
+                "seed": seed, "cache_prompt": cache_prompt}
         if grammar is not None:
             body["grammar"] = grammar
         request = urllib.request.Request(
@@ -122,6 +129,7 @@ class LlamaServerClient:
             raise ValueError("unbounded model answer")
         self.calls.append({"temperature": temperature, "seed": seed,
                            "grammar": grammar is not None,
+                           "cache_prompt": cache_prompt,
                            "tokens_cached": data.get("tokens_cached") if type(data.get("tokens_cached")) is int else None,
                            "timings": data.get("timings") if isinstance(data.get("timings"), dict) else None})
         return content
