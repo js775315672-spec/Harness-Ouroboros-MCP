@@ -1,0 +1,228 @@
+name: P3a fresh Qwen real sandbox policy security source patch
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3a-sandbox-policy-source-patch.yml"
+      - "scripts/p3a_qwen_sandbox_policy_source_patch.py"
+      - "tests/heldout_p3a_sandbox_policy.py"
+      - "tests/test_p3a_qwen_sandbox_policy_source_patch.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+concurrency:
+  group: p3a-sandbox-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline_contract_and_negative_control:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact reviewed commit without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Run offline adversarial and Harness regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_p3a_qwen_sandbox_policy_source_patch.py -v
+          python3 -m unittest discover -s tests -p test_agent_handoff.py -v
+          python3 -m unittest discover -s tests -p test_sandbox_policy.py -v
+          python3 scripts/harness_check.py
+          python3 scripts/p3a_qwen_sandbox_policy_source_patch.py preflight \
+            --root . --head-sha "$REVIEW_SHA" \
+            --output artifacts/p3a/preflight.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("artifacts/p3a/preflight.json").read_text())
+          assert p["status"]=="reviewed_real_repo_source_contract"
+          assert p["test_count"]==33 and p["model_calls"]==0
+          assert p["merge_authorized"] is False
+          print("Preflight: true repo source anchored, model not called")
+          PY
+      - name: Pull Docker once and establish baseline-negative proof
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          python3 - <<'PY'
+          import pathlib,sys
+          sys.path.insert(0,"scripts")
+          from p2a_real_repo_patch_worker import grade,TARGET
+          root=pathlib.Path(".").resolve()
+          original=(root/TARGET).read_text(encoding="utf-8")
+          report=grade(root,original)
+          assert report["status"]=="real_source_patch_failed"
+          assert report["baseline_legacy_green"] is True
+          assert report["baseline_security_red"] is True
+          assert report["candidate_security_green"] is False
+          print("Genuine security regression reproduced before model inference")
+          PY
+
+  actual_qwen_source_patch:
+    needs: offline_contract_and_negative_control
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact immutable source without token persistence
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify frozen source / holdout contract again
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_p3a_qwen_sandbox_policy_source_patch.py -q
+          python3 scripts/harness_check.py
+      - name: Build precisely pinned CPU llama.cpp without CUDA
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin 4e5116f47619dac4180c3007ef02a383f347554c
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = 4e5116f47619dac4180c3007ef02a383f347554c
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+      - name: Download official Apache-2.0 Qwen2.5 Coder 7B Q4_K_M
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model 7b --destination models \
+            --report artifacts/p3a/model-provenance.json
+          docker pull python:3.11-slim
+      - name: One fresh Qwen attempt patches actual sandbox_policy.py security defect
+        run: |
+          set -euo pipefail
+          python3 scripts/p3a_qwen_sandbox_policy_source_patch.py run \
+            --root . --head-sha "$REVIEW_SHA" \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --metadata artifacts/p3a/model-provenance.json \
+            --output artifacts/p3a/record.json
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("artifacts/p3a/record.json").read_text())
+          assert p["model_calls"]==1
+          assert p["outcome"] in ("static_rejected","real_source_patch_passed",
+                                  "real_source_patch_failed")
+          assert p["ci_attested_model_source_commits"]==0
+          assert p["merge_authorized"] is False
+          if p["unified_diff"] is not None:
+              Path("artifacts/p3a/candidate.patch").write_text(
+                  p["unified_diff"],encoding="utf-8")
+          print("Observed standalone sandbox policy source patch:",p["outcome"])
+          PY
+      - name: Save model output even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3a-actual-qwen-source-patch-and-negative-tests
+          path: |
+            artifacts/p3a/record.json
+            artifacts/p3a/candidate.patch
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_source_patch_replay:
+    if: always()
+    needs: [offline_contract_and_negative_control,actual_qwen_source_patch]
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout same exact original source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Download raw model response and source diff
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3a-actual-qwen-source-patch-and-negative-tests
+          path: artifacts/recovered
+      - name: Fresh standalone Docker checks of original and proposed source
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          test -f artifacts/recovered/record.json
+          python3 scripts/p3a_qwen_sandbox_policy_source_patch.py replay \
+            --root . --head-sha "$REVIEW_SHA" \
+            --input artifacts/recovered/record.json \
+            --output artifacts/p3a-replay/verdict.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/p3a-replay/verdict.json").read_text())
+          assert r["status"] in ("source_patch_replayed",
+                                  "source_patch_static_rejection_replayed")
+          assert r["merge_authorized"] is False
+          print("Independent source patch replay:",r["status"],
+                "candidate_passed:",r["candidate_passed"])
+          PY
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+      - name: Publish independent replay evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3a-independent-real-repo-patch-replay
+          path: artifacts/p3a-replay/verdict.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  candidate_acceptance_gate:
+    if: always()
+    needs: [offline_contract_and_negative_control, actual_qwen_source_patch, independent_source_patch_replay]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Get independent model-written source patch result
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3a-independent-real-repo-patch-replay
+          path: artifacts/final-evidence
+      - name: Real source patch success is mandatory, not merely infrastructure green
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("artifacts/final-evidence/verdict.json")
+          assert p.is_file(), "Missing independent evidence; fail closed"
+          record=json.loads(p.read_text(encoding="utf-8"))
+          print("Independently replayed REAL model patch:",record)
+          assert record.get("status")=="source_patch_replayed", "Model source rejected"
+          assert record.get("candidate_passed") is True, "Model patch failed locked-down Docker tests"
+          assert record.get("target")=="scripts/sandbox_policy.py"
+          assert record.get("model_calls_verified")==1
+          assert record.get("merge_authorized") is False
+          assert record.get("ci_attested_model_source_commits")==0
+          print("P3a model-only source patch PASSED 33/33 frozen tests; no commit or merge authority.")
+          PY
