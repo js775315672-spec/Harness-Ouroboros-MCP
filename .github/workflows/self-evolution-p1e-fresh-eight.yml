@@ -1,0 +1,198 @@
+name: P1e fresh eight Qwen 7B task generalization study
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/self-evolution-p1e-fresh-eight.yml"
+      - "scripts/self_evolution_p1e_fresh.py"
+      - "scripts/self_evolution_p1e_aggregate.py"
+      - "scripts/self_evolution_p1e_task_registry.py"
+      - "tests/heldout_p1e.py"
+      - "tests/test_self_evolution_p1e_fresh.py"
+      - "tests/test_self_evolution_p1e_aggregate.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+concurrency:
+  group: p1e-eight-distinct-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  eight_task_contract_preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout pinned PR SHA without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Eight distinct task specs, frozen oracle and adversarial gates
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_self_evolution_p1e_fresh.py -v
+          python3 -m unittest discover -s tests -p test_self_evolution_p1e_aggregate.py -v
+          python3 -m unittest discover -s tests -p test_self_evolution_task_contract.py -q
+          python3 scripts/governance.py
+          python3 scripts/harness_check.py
+          python3 scripts/self_evolution_p1e_fresh.py preflight \
+            --head-sha "$REVIEW_SHA" --output artifacts/p1e/preflight.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/p1e/preflight.json").read_text())
+          assert r["status"]=="eight_distinct_contracts_preflight_passed"
+          assert r["unique_task_prompts"]==8
+          assert r["model_calls"]==0 and r["merge_authorized"] is False
+          print("Preflight confirmed 8 different preregistered tasks, no inference.")
+          PY
+
+  model_lane:
+    needs: eight_task_contract_preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 34
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        lane: ["01","02","03","04","05","06","07","08"]
+    env:
+      LANE_ID: ${{ matrix.lane }}
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout reviewed SHA; refuse persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check pinned task contract and AST guard before downloading models
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_self_evolution_p1e_fresh.py -q
+          python3 scripts/harness_check.py
+      - name: Compile pinned no-network CPU inference executable
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin 4e5116f47619dac4180c3007ef02a383f347554c
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "4e5116f47619dac4180c3007ef02a383f347554c"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+      - name: Download approved Apache-2.0 Qwen 7B Q4 GGUF
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model 7b --destination models --report artifacts/p1e/model-provenance.json
+          docker pull python:3.11-slim
+      - name: One REAL model call per new task, fresh frozen ten-case Docker check
+        run: |
+          set -euo pipefail
+          python3 scripts/self_evolution_p1e_fresh.py run \
+            --root . --head-sha "$REVIEW_SHA" --lane "$LANE_ID" \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --provenance artifacts/p1e/model-provenance.json \
+            --output artifacts/p1e/record.json
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/p1e/record.json").read_text())
+          assert r["model_calls"]==1
+          assert r["outcome"] in ("ast_rejected","candidate_passed","candidate_failed")
+          assert r["merge_authorized"] is False
+          assert r["ci_attested_source_commits"]==0
+          print("P1e distinct-task actual observed outcome:",r["lane"],r["outcome"])
+          PY
+      - name: Always publish model success AND model failure evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p1e-lane-${{ matrix.lane }}
+          path: artifacts/p1e/record.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_replay_and_truthful_aggregate:
+    if: always()
+    needs: [eight_task_contract_preflight,model_lane]
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout same pinned code; credentials not persisted
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Download all eight raw model output records, no cherry-picking
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: p1e-lane-*
+          path: artifacts/recovered
+      - name: Replay each unmodified candidate in fresh locked-down Docker
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          for lane in 01 02 03 04 05 06 07 08; do
+            test -f "artifacts/recovered/p1e-lane-$lane/record.json"
+            python3 scripts/self_evolution_p1e_fresh.py replay \
+              --root . --head-sha "$REVIEW_SHA" \
+              --input "artifacts/recovered/p1e-lane-$lane/record.json" \
+              --output "artifacts/p1e-replay/lane-$lane.json"
+          done
+          python3 scripts/self_evolution_p1e_aggregate.py \
+            --root . --config configs/self-evolution-8lanes.json \
+            --head-sha "$REVIEW_SHA" \
+            --model-dir artifacts/recovered --replay-dir artifacts/p1e-replay \
+            --output artifacts/p1e-summary.json
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+      - name: Preserve full denominator and uniqueness in summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          p=Path("artifacts/p1e-summary.json")
+          print("## P1e eight distinct coding tasks (one call per task)")
+          if p.exists():
+              r=json.loads(p.read_text())
+              for k in ("status","fresh_model_calls","candidate_passes",
+                        "unique_passing_source_sha256",
+                        "ci_attested_source_commits","recursive_parent_promotions"):
+                  print("- ",k,": ",r[k])
+          else:
+              print("- incomplete or unverifiable; never count missing records as pass")
+          print("- Not source commits, not generalized coding autonomy, no merge.")
+          PY
+      - name: Upload independent report and aggregate
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p1e-independent-replay-and-diversity
+          path: |
+            artifacts/p1e-replay/
+            artifacts/p1e-summary.json
+          if-no-files-found: warn
+          retention-days: 7
