@@ -7,6 +7,12 @@ on:
       - "scripts/qwen_server_cli_comparison.py"
       - "qwen_evolve/llama_server.py"
       - "tests/test_qwen_server_cli_comparison.py"
+      - "scripts/qwen_ab_three_session_replication.py"
+      - "tests/test_qwen_ab_three_session_replication.py"
+      - "scripts/qwen_function_level_probe.py"
+      - "tests/test_qwen_function_level_probe.py"
+      - "tests/heldout_merge_intervals.py"
+      - "benchmarks/qwen7b_function_tier_v1.lock.json"
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,7 +24,7 @@ jobs:
   live_official_qwen_cpu_comparison:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 43
     permissions:
       contents: read
     env:
@@ -41,6 +47,8 @@ jobs:
           python3 -m unittest discover -s tests -p test_qwen_evolve.py -v
           python3 -m unittest discover -s tests -p test_qwen_evolve_security.py -v
           python3 -m unittest discover -s tests -p test_qwen_server_cli_comparison.py -v
+          python3 -m unittest discover -s tests -p test_qwen_ab_three_session_replication.py -v
+          python3 -m unittest discover -s tests -p test_qwen_function_level_probe.py -v
           python3 scripts/harness_check.py
       - name: Compile two binaries from same pinned no-CUDA llama.cpp commit
         run: |
@@ -85,6 +93,42 @@ jobs:
           assert r["summary"]["autonomous_coding_proven"] is False
           print("PASS: identical prompts, fixed configuration, real CPU comparison measured")
           PY
+      - name: Independently restart server three times and preserve all A-B failures
+        run: |
+          python3 scripts/qwen_ab_three_session_replication.py run \
+            --root . \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --server vendor/llama.cpp/build/bin/llama-server \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --provenance artifacts/qwen-ab-weights-provenance.json \
+            --directory artifacts/ab-three-restarts
+          python3 scripts/qwen_ab_three_session_replication.py verify \
+            --directory artifacts/ab-three-restarts
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests benchmarks qwen_evolve)"
+      - name: Pull locked-down Docker image before evaluating new model code
+        run: docker pull python:3.11-slim
+      - name: Probe genuinely new full Python function with held-out immutable tests
+        run: |
+          python3 scripts/qwen_function_level_probe.py \
+            --root . \
+            --server vendor/llama.cpp/build/bin/llama-server \
+            --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+            --metadata artifacts/qwen-ab-weights-provenance.json \
+            --report artifacts/function-tier/function-probe-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/function-tier/function-probe-report.json").read_text())
+          assert r["model_calls"] == 1
+          assert r["benchmark"] == "qwen7b-function-merge-intervals-v1"
+          assert r["outcome"] in (
+              "function_heldout_passed", "function_heldout_failed",
+              "static_ast_rejected")
+          assert r["merge_authorized"] is False
+          assert r["ci_attested_task_completion"] == 0
+          print("Function-level result (PASS or FAIL, no retuning):",r["outcome"])
+          PY
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests benchmarks qwen_evolve)"
       - name: Report measured latency and failures, never claim coding autonomy
         if: always()
         run: |
@@ -110,6 +154,19 @@ jobs:
           else:
               print("- infrastructure blocker:",r.get("error_type","not_available"))
           print("- Grammar, feedback retries and speculative decoding: NOT USED")
+          rep=Path("artifacts/ab-three-restarts/replication-report.json")
+          if rep.exists():
+              x=json.loads(rep.read_text())["summary"]
+              print("- Replication sessions measured / planned:",
+                    x["sessions_measured"],"/",x["sessions_planned"])
+              print("- Across-session median of per-session latency ratios:",
+                    x["median_session_ratio"])
+              print("- Sessions are on ONE runner, not independent hosts")
+          function=Path("artifacts/function-tier/function-probe-report.json")
+          if function.exists():
+              x=json.loads(function.read_text())
+              print("- Held-out full-function task:",x.get("outcome"))
+              print("- Held-out result is NOT a multi-file coding result")
           print("- No merges, paid APIs, agent autonomy, deployment or live trading.")
           PY
       - name: Upload evidence, never upload 7B weights
@@ -121,5 +178,7 @@ jobs:
             artifacts/qwen-ab/ab-report.json
             artifacts/qwen-ab/llama-server-last.log
             artifacts/qwen-ab-weights-provenance.json
+            artifacts/ab-three-restarts/
+            artifacts/function-tier/
           if-no-files-found: warn
           retention-days: 7
