@@ -1,0 +1,160 @@
+name: P3e single pinned llama build shared across eight read-only lanes
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3e-once-build-eight-fanout.yml"
+      - "tests/test_p3e_shared_cpu_binary_contract.py"
+      - "docs/P3E_ONCE_BUILD_EIGHT_LANE_REUSE_KO.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+cache-mode: none
+
+concurrency:
+  group: p3e-one-build-eight-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+  NO_UNTRUSTED_BINARY_CACHE: "true"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  pinned_cpu_build_once:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact PR head without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify source contract and no external binary cache
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_p3e_shared_cpu_binary_contract.py -v
+          python3 scripts/harness_check.py
+          test "$NO_UNTRUSTED_BINARY_CACHE" = true
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+      - name: Fetch exactly pinned upstream llama.cpp source
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+      - name: Compile offline CPU llama-completion exactly once
+        run: |
+          set -euo pipefail
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+      - name: Package same-run immutable binary and source provenance
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/p3e-build
+          cp vendor/llama.cpp/build/bin/llama-completion artifacts/p3e-build/llama-completion
+          cd artifacts/p3e-build
+          sha256sum llama-completion > SHA256SUMS
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          path=pathlib.Path("llama-completion")
+          digest=hashlib.sha256(path.read_bytes()).hexdigest()
+          r={"schema":1,
+             "review_sha":os.environ["REVIEW_SHA"],
+             "upstream_sha":os.environ["PINNED_LLAMA_SHA"],
+             "binary_sha256":digest,
+             "binary_name":"llama-completion",
+             "model_calls":0,
+             "model_weights_included":False,
+             "cross_run_binary_cache_used":False,
+             "repo_writes_authorized":False,
+             "merge_authorized":False}
+          pathlib.Path("provenance.json").write_text(
+              json.dumps(r,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          print("Pinned once-build binary:",digest)
+          PY
+      - name: Upload binary only to this same workflow run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3e-pinned-llama-completion-same-run
+          path: artifacts/p3e-build/
+          if-no-files-found: error
+          retention-days: 3
+
+  eight_independent_binary_consumers:
+    needs: pinned_cpu_build_once
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        lane: ["01", "02", "03", "04", "05", "06", "07", "08"]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Get binary from SAME GitHub Actions run only
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3e-pinned-llama-completion-same-run
+          path: artifacts/p3e-received
+      - name: Verify pinned source and exact SHA-256 before binary execution
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path("artifacts/p3e-received")
+          binary=root/"llama-completion"
+          data=json.loads((root/"provenance.json").read_text(encoding="utf-8"))
+          expected={"schema":1,"review_sha":os.environ["REVIEW_SHA"],
+                    "upstream_sha":os.environ["PINNED_LLAMA_SHA"],
+                    "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
+                    "binary_name":"llama-completion","model_calls":0,
+                    "model_weights_included":False,
+                    "cross_run_binary_cache_used":False,
+                    "repo_writes_authorized":False,"merge_authorized":False}
+          assert type(data) is dict and data==expected, "Untrusted build provenance"
+          sums=(root/"SHA256SUMS").read_text(encoding="utf-8")
+          assert sums==expected["binary_sha256"]+"  llama-completion\n", "Digest mismatch"
+          assert 1_000_000<=binary.stat().st_size<=100_000_000, "Implausible executable size"
+          print("Passed same-run SHA verification for one independent runner.")
+          PY
+          chmod 755 artifacts/p3e-received/llama-completion
+          artifacts/p3e-received/llama-completion --help >/tmp/p3e-help.txt 2>&1
+          grep -qi "usage" /tmp/p3e-help.txt
+      - name: No model inference, no repo modification
+        run: |
+          set -euo pipefail
+          test "$NO_UNTRUSTED_BINARY_CACHE" = true
+          echo "Lane ${{ matrix.lane }}: SHA-bound binary reused; model calls=0; GitHub writes=0"
+
+  final_fanout_attestation:
+    if: always()
+    needs: [pinned_cpu_build_once,eight_independent_binary_consumers]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Fail closed unless one upstream build and all eight consumers succeeded
+        env:
+          BUILD_RESULT: ${{ needs.pinned_cpu_build_once.result }}
+          FANOUT_RESULT: ${{ needs.eight_independent_binary_consumers.result }}
+        run: |
+          set -euo pipefail
+          test "$BUILD_RESULT" = success
+          test "$FANOUT_RESULT" = success
+          echo "P3e verified: 1 compile job + 8 separate consumer jobs, 0 LLM calls."
