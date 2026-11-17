@@ -60,6 +60,21 @@ class ContractDriftTests(unittest.TestCase):
             for row in result["cases"]
         ))
 
+    def test_malformed_validator_success_result_fails_closed(self):
+        # A malformed validator must never be counted as accepting a record.
+        # In particular, bool True compares equal to int 1 in Python.
+        for invalid in (True, 2, -1, "1", None, 1.0):
+            with self.subTest(invalid=invalid):
+                result = audit(lambda records: invalid)
+                self.assertEqual(result["matches"], sum(
+                    not expected for _, _, expected in cases()
+                ))
+                self.assertTrue(all(
+                    not row["observed_accept"]
+                    and row["error_type"] == "InvalidValidatorResult"
+                    for row in result["cases"]
+                ))
+
     def test_perfect_validator_has_no_drift(self):
         decisions = {name: expected for name, _, expected in cases()}
         names = iter(decisions)
