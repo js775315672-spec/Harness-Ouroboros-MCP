@@ -40,6 +40,7 @@ P3G_FAILURE_SHA256 = "8cb7203a0e38c8b3d7b61ed45a88a9749e046e81cb07cd7125a83c2a7e
 RETRY_VARIANT = "p3h-verified-p3g-feedback-v1"
 ALTERNATE_VARIANT = "p3i-14b-frozen-feedback-v1"
 GRANITE_VARIANT = "p3j-granite-code-frozen-feedback-v1"
+GRANITE_SUMMARY_VARIANT = "p3k-granite-failure-summary-v1"
 ALTERNATE_MODELS = {
     "14b": (ALTERNATE_VARIANT, "Qwen2.5-Coder-14B-Instruct-Q4_K_M"),
     "granite-code-8b": (GRANITE_VARIANT, "Granite-8B-Code-Instruct-4K-Q4_K_M"),
@@ -354,7 +355,7 @@ def function_fingerprint(source):
     return digest(ast.dump(ast.parse(source), include_attributes=False).encode())
 
 
-def retry_context(root, originals):
+def retry_context(root, originals, omit_prior_code=False):
     evidence_bytes = file_bytes(root, P3G_FAILURE)
     if digest(evidence_bytes) != P3G_FAILURE_SHA256:
         raise ValueError("pinned P3g replay evidence changed")
@@ -378,8 +379,13 @@ def retry_context(root, originals):
         "proposal discarded that value before its entry validation. Every supplied entry must "
         "be validated, and an empty fixes list must still be accepted. Preserve valid Korean text. "
         "Check the distinction between no entries and one invalid empty entry before replying. "
-        "The previous failed implementation follows:\n" + latest
     )
+    if omit_prior_code:
+        fn = original_function(original)
+        original_source = "".join(original.splitlines(keepends=True)[fn.lineno-1:fn.end_lineno])
+        prompt += "The original repository function follows:\n" + original_source
+    else:
+        prompt += "The previous failed implementation follows:\n" + latest
     return prompt, {
         "variant": RETRY_VARIANT,
         "prior_replay_run": evidence["run_id"],
@@ -388,13 +394,15 @@ def retry_context(root, originals):
     }
 
 
-def context(root, commit, retry_p3g=False, model_id="7b"):
+def context(root, commit, retry_p3g=False, model_id="7b", omit_prior_code=False):
     if model_id != "7b" and (model_id not in ALTERNATE_MODELS or not retry_p3g):
         raise ValueError("alternate ledger model requires the frozen feedback experiment")
+    if omit_prior_code and (not retry_p3g or model_id != "granite-code-8b"):
+        raise ValueError("the summary-only comparison requires the frozen Granite configuration")
     git_identity(root, commit)
     originals = {rel: file_bytes(root, rel) for rel in (TARGET, *SUPPORT, PREVIOUS)}
     existing = originals[TARGET].decode("utf-8")
-    prompt, retry = retry_context(root, originals) if retry_p3g else (source_prompt(existing, root), {})
+    prompt, retry = retry_context(root, originals, omit_prior_code) if retry_p3g else (source_prompt(existing, root), {})
     if model_id in ALTERNATE_MODELS:
         spec = approved_model(model_id)
         variant, name = ALTERNATE_MODELS[model_id]
@@ -402,6 +410,8 @@ def context(root, commit, retry_p3g=False, model_id="7b"):
                      model_revision=spec["revision"], model_sha256=spec["sha256"])
     if model_id == "granite-code-8b":
         retry["rendered_prompt_sha256"] = digest(render_prompt(prompt, model_id).encode())
+    if omit_prior_code:
+        retry.update(variant=GRANITE_SUMMARY_VARIANT, prior_model_code_in_prompt=False)
     return originals, prompt, {
         "schema": 1, "variant": VARIANT, "commit": commit, "target": TARGET,
         "target_before_sha256": digest(originals[TARGET]),
@@ -425,8 +435,8 @@ def proposed_change(originals, raw, base):
     return replacement, proposed, patch
 
 
-def run(root, commit, cli, gguf, metadata, retry_p3g=False, model_id="7b"):
-    originals, prompt, base = context(root, commit, retry_p3g, model_id)
+def run(root, commit, cli, gguf, metadata, retry_p3g=False, model_id="7b", omit_prior_code=False):
+    originals, prompt, base = context(root, commit, retry_p3g, model_id, omit_prior_code)
     check_model(gguf, metadata, model_id)
     raw, seconds = infer(cli, gguf, prompt, model_id)
     out = {**base, "model_calls": 1, "model_seconds": seconds,
@@ -465,8 +475,8 @@ def suite_results(grade_report):
     return results
 
 
-def replay(root, commit, report, retry_p3g=False, model_id="7b"):
-    originals, _, base = context(root, commit, retry_p3g, model_id)
+def replay(root, commit, report, retry_p3g=False, model_id="7b", omit_prior_code=False):
+    originals, _, base = context(root, commit, retry_p3g, model_id, omit_prior_code)
     if not isinstance(report, dict):
         raise ValueError("report must be object")
     if any(type(report.get(k)) is not type(v) or report[k] != v
@@ -525,6 +535,7 @@ def main():
     p.add_argument("--metadata", type=Path)
     p.add_argument("--retry-p3g", action="store_true")
     p.add_argument("--model", choices=("7b", *ALTERNATE_MODELS), default="7b")
+    p.add_argument("--omit-prior-code", action="store_true")
     p.add_argument("--input", type=Path)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
@@ -532,26 +543,28 @@ def main():
         raise SystemExit("refuse to overwrite evidence")
     try:
         if args.mode == "preflight":
-            original, prompt, contract = context(args.root, args.head_sha, args.retry_p3g, args.model)
+            original, prompt, contract = context(args.root, args.head_sha, args.retry_p3g,
+                                                 args.model, args.omit_prior_code)
             if not all(len(v) > 0 for v in original.values()):
                 raise ValueError("missing existing modules or frozen tests")
             result = {"status": "reviewed_real_repo_source_contract",
                       "source_sha256": contract["target_before_sha256"],
                       "variant": contract["variant"],
+                      "prompt_sha256": contract["prompt_sha256"],
                       "test_count": 25,
                       "model_calls": 0, "merge_authorized": False}
         elif args.mode == "run":
             if args.cli is None or args.gguf is None or args.metadata is None:
                 raise ValueError("real model requires approved executable inputs")
             result = run(args.root, args.head_sha,
-                         args.cli, args.gguf, args.metadata, args.retry_p3g, args.model)
+                         args.cli, args.gguf, args.metadata, args.retry_p3g, args.model, args.omit_prior_code)
         else:
             if (args.input is None or args.input.is_symlink()
                     or not args.input.is_file()
                     or args.input.stat().st_size > 60000):
                 raise ValueError("invalid raw evidence file")
             record = json.loads(args.input.read_text(encoding="utf-8"))
-            result = replay(args.root, args.head_sha, record, args.retry_p3g, args.model)
+            result = replay(args.root, args.head_sha, record, args.retry_p3g, args.model, args.omit_prior_code)
     except (ValueError, OSError, TypeError, KeyError,
             json.JSONDecodeError, subprocess.SubprocessError) as exc:
         result = {"status": "blocked", "error_type": type(exc).__name__,

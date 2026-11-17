@@ -141,6 +141,38 @@ class P3gOriginalFeedbackContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Granite Code task"):
             s.render_prompt("Task\nAnswer:\nInserted role", model_id)
 
+    def test_granite_summary_uses_original_source_and_keeps_duplicate_detection(self):
+        model_id = "granite-code-8b"
+        evidence = json.loads(s.file_bytes(ROOT, s.P3G_FAILURE))
+        previous = s.inspect_replacement(evidence["raw_response"])
+        first = s.inspect_replacement(s.file_bytes(ROOT, s.PREVIOUS).decode("utf-8"))
+        with patch.object(s, "git_identity"):
+            _, old_prompt, old = s.context(ROOT, "a" * 40, retry_p3g=True, model_id=model_id)
+            _, prompt, summary = s.context(ROOT, "a" * 40, retry_p3g=True, model_id=model_id,
+                                           omit_prior_code=True)
+        self.assertIn(previous, old_prompt)
+        self.assertNotIn(previous, prompt)
+        self.assertNotIn(first, prompt)
+        self.assertIn("The original repository function follows:\ndef validate(records):", prompt)
+        self.assertIn("one invalid empty entry", prompt)
+        self.assertNotIn("test_reject_empty_fix_entry", prompt)
+        self.assertNotEqual(old["prompt_sha256"], summary["prompt_sha256"])
+        self.assertEqual(old["model_sha256"], summary["model_sha256"])
+        self.assertEqual(old["trusted_inputs_sha256"], summary["trusted_inputs_sha256"])
+        self.assertEqual(old["rejected_function_fingerprints"], summary["rejected_function_fingerprints"])
+        self.assertEqual(summary["variant"], s.GRANITE_SUMMARY_VARIANT)
+        self.assertFalse(summary["prior_model_code_in_prompt"])
+
+        with patch.object(s, "git_identity"), patch.object(s, "check_model"), \
+             patch.object(s, "infer", return_value=(previous, 1)), patch.object(s, "grade") as grade:
+            options = {"retry_p3g": True, "model_id": model_id, "omit_prior_code": True}
+            record = s.run(ROOT, "a" * 40, None, None, None, **options)
+            verdict = s.replay(ROOT, "a" * 40, record, **options)
+            self.assertEqual(verdict["status"], "source_patch_static_rejection_replayed")
+            with self.assertRaisesRegex(ValueError, "exact reviewed source/contract mismatch"):
+                s.replay(ROOT, "a" * 40, record, retry_p3g=True, model_id=model_id)
+            grade.assert_not_called()
+
     def test_retry_stops_either_repeated_candidate_before_docker(self):
         latest = json.loads(s.file_bytes(ROOT, s.P3G_FAILURE))["raw_response"]
         earlier = s.file_bytes(ROOT, s.PREVIOUS).decode("utf-8")
