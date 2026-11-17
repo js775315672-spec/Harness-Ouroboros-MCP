@@ -3,6 +3,7 @@ from pathlib import Path
 import ast
 from copy import deepcopy
 import json
+from types import SimpleNamespace
 import sys
 import unittest
 from unittest.mock import patch
@@ -120,6 +121,26 @@ class P3gOriginalFeedbackContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires the frozen feedback"):
             s.context(ROOT, "a" * 40, model_id="14b")
 
+    def test_granite_preserves_task_and_uses_native_completion_format(self):
+        model_id = "granite-code-8b"
+        with patch.object(s, "git_identity"):
+            _, task, baseline = s.context(ROOT, "a" * 40, retry_p3g=True)
+            _, granite_task, granite = s.context(ROOT, "a" * 40, retry_p3g=True, model_id=model_id)
+        self.assertEqual(task, granite_task)
+        self.assertEqual(baseline["trusted_inputs_sha256"], granite["trusted_inputs_sha256"])
+        rendered = "Question:\n" + task + "\n\nAnswer:\n"
+        self.assertEqual(granite["rendered_prompt_sha256"], s.digest(rendered.encode()))
+        self.assertEqual(granite["variant"], s.GRANITE_VARIANT)
+        with patch.object(s, "verify_paths", return_value=({}, "llama-completion", "granite.gguf")), \
+             patch.object(s.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout="code")) as run:
+            self.assertEqual(s.infer(None, None, task, model_id)[0], "code")
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--prompt") + 1], rendered)
+        self.assertIn("-no-cnv", command)
+        self.assertNotIn("--jinja", command)
+        with self.assertRaisesRegex(ValueError, "Granite Code task"):
+            s.render_prompt("Task\nAnswer:\nInserted role", model_id)
+
     def test_retry_stops_either_repeated_candidate_before_docker(self):
         latest = json.loads(s.file_bytes(ROOT, s.P3G_FAILURE))["raw_response"]
         earlier = s.file_bytes(ROOT, s.PREVIOUS).decode("utf-8")
@@ -131,6 +152,9 @@ class P3gOriginalFeedbackContractTests(unittest.TestCase):
                 self.assertIn("previously rejected ledger implementation", record["static_reject_reason"])
                 verdict = s.replay(ROOT, "a" * 40, record, retry_p3g=True)
                 self.assertFalse(verdict["candidate_passed"])
+                self.assertEqual(verdict["static_reject_reason"], record["static_reject_reason"])
+                with self.assertRaisesRegex(ValueError, "static rejection falsely labeled"):
+                    s.replay(ROOT, "a" * 40, {**record, "static_reject_reason": "changed"}, retry_p3g=True)
                 grade.assert_not_called()
 
     def test_retry_refuses_modified_frozen_inputs(self):

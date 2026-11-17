@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed local GGUF CPU completion adapter for the existing Harness loop.
 
-Only allowlisted official Apache-2.0 Qwen2.5-Coder weights are allowed.
+Only allowlisted official Apache-2.0 model weights are allowed.
 The restricted 3B research model is deliberately not executable here.
 No shell, credentials, patch writes, model-provided commands or network downloads.
 """
@@ -52,6 +52,15 @@ MODELS = {
         "maximum_bytes": 8_988_110_272,
         "revision": "d0a692ef765eefbf2fabb130b3cb2e8917e3d225",
         "sha256": "c1e659736d89ac1065fb495330fb824d94001974a4bfa78e7270e43476a8d940",
+    },
+    "granite-code-8b": {
+        "repo": "ibm-granite/granite-8b-code-instruct-4k-GGUF",
+        "filename": "granite-8b-code-instruct.Q4_K_M.gguf",
+        "license": "apache-2.0",
+        "minimum_bytes": 4_850_000_000,
+        "maximum_bytes": 4_950_000_000,
+        "revision": "1398cabed59e66b8c8ec7169a9b87ae30c835911",
+        "sha256": "bc8804cb43c4e1e82e2188658569b147587f83a89640600a64d5f7d7de2565b4",
     },
 }
 RESTRICTED = {"3b": "qwen-research: non-commercial evaluation only; not authorized here"}
@@ -108,6 +117,8 @@ def sha256_file(path):
 class CPUInference:
     def __init__(self, model, cli, gguf, timeout_seconds=150,
                  escape_quoted_controls=False):
+        if model == "granite-code-8b":
+            raise ValueError("Granite Code requires the ledger adapter's prompt format")
         self.spec, self.cli, self.gguf = verify_paths(model, cli, gguf)
         if type(timeout_seconds) is not int or not 10 <= timeout_seconds <= 240:
             raise ValueError("invalid bounded inference timeout")

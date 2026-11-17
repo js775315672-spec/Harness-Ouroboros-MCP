@@ -28,14 +28,18 @@ class GGUFAdapterTests(unittest.TestCase):
                     approved_model(model)
 
     def test_approved_models_pin_official_repository_and_quantization(self):
-        self.assertEqual(set(MODELS), {"0.5b", "1.5b", "7b", "14b"})
+        self.assertEqual(set(MODELS), {"0.5b", "1.5b", "7b", "14b", "granite-code-8b"})
         self.assertEqual(MODELS["7b"]["repo"], "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF")
         self.assertGreater(MODELS["7b"]["minimum_bytes"], 4_000_000_000 - 1)
         for size in MODELS:
             spec = approved_model(size)
             self.assertEqual(spec["license"], "apache-2.0")
-            self.assertTrue(spec["repo"].startswith("Qwen/Qwen2.5-Coder-"))
-            self.assertTrue(spec["filename"].endswith("-q4_k_m.gguf"))
+            if size == "granite-code-8b":
+                self.assertEqual(spec["repo"], "ibm-granite/granite-8b-code-instruct-4k-GGUF")
+                self.assertTrue(spec["filename"].endswith(".Q4_K_M.gguf"))
+            else:
+                self.assertTrue(spec["repo"].startswith("Qwen/Qwen2.5-Coder-"))
+                self.assertTrue(spec["filename"].endswith("-q4_k_m.gguf"))
 
     def test_license_must_be_checked_before_a_download(self):
         with tempfile.TemporaryDirectory() as d:

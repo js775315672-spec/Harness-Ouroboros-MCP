@@ -1,7 +1,7 @@
-name: P3i Qwen Coder 14B ledger repair on frozen feedback
+name: P3j IBM Granite Code ledger repair on frozen feedback
 on:
   push:
-    branches: [codex/p3i-ledger-14b]
+    branches: [codex/p3j-ledger-granite]
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -25,7 +25,7 @@ env:
   PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
   NO_UNTRUSTED_BINARY_CACHE: "true"
 concurrency:
-  group: p3i-feedback-source-${{ github.event.pull_request.number || github.ref }}
+  group: p3j-feedback-source-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   offline_contract_and_negative_control:
@@ -50,14 +50,14 @@ jobs:
           python3 -m unittest discover -s tests -p test_agent_handoff.py -v
           python3 -m unittest discover -s tests -p test_sandbox_policy.py -v
           python3 scripts/harness_check.py
-          python3 scripts/p3g_qwen_ledger_feedback_repair.py preflight --retry-p3g --model 14b \
+          python3 scripts/p3g_qwen_ledger_feedback_repair.py preflight --retry-p3g --model granite-code-8b \
             --root . --head-sha "$REVIEW_SHA" \
-            --output artifacts/p3i/preflight.json
+            --output artifacts/p3j/preflight.json
           python3 - <<'PY'
           import json
           from pathlib import Path
-          p=json.loads(Path("artifacts/p3i/preflight.json").read_text())
-          assert p["variant"]=="p3i-14b-frozen-feedback-v1"
+          p=json.loads(Path("artifacts/p3j/preflight.json").read_text())
+          assert p["variant"]=="p3j-granite-code-frozen-feedback-v1"
           assert p["status"]=="reviewed_real_repo_source_contract"
           assert p["test_count"]==25 and p["model_calls"]==0
           assert p["merge_authorized"] is False
@@ -153,7 +153,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  actual_qwen_source_patch:
+  actual_granite_source_patch:
     needs: [offline_contract_and_negative_control,pinned_cpu_build_once]
     runs-on: ubuntu-latest
     timeout-minutes: 32
@@ -176,13 +176,13 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: p3e-pinned-llama-completion-same-run
-          path: artifacts/p3i-executable
+          path: artifacts/p3j-executable
       - name: Validate exact reviewed commit and upstream binary sha256
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import hashlib,json,os,pathlib
-          root=pathlib.Path("artifacts/p3i-executable")
+          root=pathlib.Path("artifacts/p3j-executable")
           binary=root/"llama-completion"
           record=json.loads((root/"provenance.json").read_text(encoding="utf-8"))
           expected={"schema":1,
@@ -198,38 +198,38 @@ jobs:
           print("Pinned source and same-run binary SHA verified")
           PY
           mkdir -p vendor/llama.cpp/build/bin
-          cp artifacts/p3i-executable/llama-completion vendor/llama.cpp/build/bin/llama-completion
+          cp artifacts/p3j-executable/llama-completion vendor/llama.cpp/build/bin/llama-completion
           chmod 755 vendor/llama.cpp/build/bin/llama-completion
-      - name: Download official Apache-2.0 Qwen2.5 Coder 14B Q4_K_M
+      - name: Download official Apache-2.0 IBM Granite Code 8B Q4_K_M
         run: |
           set -euo pipefail
           python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
           python3 scripts/gguf_official_download.py \
-            --model 14b --destination models \
-            --report artifacts/p3i/model-provenance.json
+            --model granite-code-8b --destination models \
+            --report artifacts/p3j/model-provenance.json
           docker pull python:3.11-slim
-      - name: Make one 14B attempt with the unchanged P3h prompt
+      - name: Make one native-format Granite attempt on the frozen task
         run: |
           set -euo pipefail
-          python3 scripts/p3g_qwen_ledger_feedback_repair.py run --retry-p3g --model 14b \
+          python3 scripts/p3g_qwen_ledger_feedback_repair.py run --retry-p3g --model granite-code-8b \
             --root . --head-sha "$REVIEW_SHA" \
             --cli vendor/llama.cpp/build/bin/llama-completion \
-            --gguf models/qwen2.5-coder-14b-instruct-q4_k_m.gguf \
-            --metadata artifacts/p3i/model-provenance.json \
-            --output artifacts/p3i/record.json
+            --gguf models/granite-8b-code-instruct.Q4_K_M.gguf \
+            --metadata artifacts/p3j/model-provenance.json \
+            --output artifacts/p3j/record.json
           test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
           python3 - <<'PY'
           import json
           from pathlib import Path
-          p=json.loads(Path("artifacts/p3i/record.json").read_text())
-          assert p["variant"]=="p3i-14b-frozen-feedback-v1"
+          p=json.loads(Path("artifacts/p3j/record.json").read_text())
+          assert p["variant"]=="p3j-granite-code-frozen-feedback-v1"
           assert p["model_calls"]==1
           assert p["outcome"] in ("static_rejected","real_source_patch_passed",
                                   "real_source_patch_failed")
           assert p["ci_attested_model_source_commits"]==0
           assert p["merge_authorized"] is False
           if p["unified_diff"] is not None:
-              Path("artifacts/p3i/candidate.patch").write_text(
+              Path("artifacts/p3j/candidate.patch").write_text(
                   p["unified_diff"],encoding="utf-8")
           print("Observed feedback-driven real ledger source patch:",p["outcome"])
           PY
@@ -237,16 +237,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: p3i-actual-qwen-source-patch-and-negative-tests
+          name: p3j-actual-granite-source-patch-and-negative-tests
           path: |
-            artifacts/p3i/record.json
-            artifacts/p3i/candidate.patch
+            artifacts/p3j/record.json
+            artifacts/p3j/candidate.patch
           if-no-files-found: warn
           retention-days: 7
 
   independent_source_patch_replay:
     if: always()
-    needs: [offline_contract_and_negative_control,actual_qwen_source_patch]
+    needs: [offline_contract_and_negative_control,actual_granite_source_patch]
     runs-on: ubuntu-latest
     timeout-minutes: 11
     permissions:
@@ -262,22 +262,22 @@ jobs:
       - name: Download raw model response and source diff
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: p3i-actual-qwen-source-patch-and-negative-tests
+          name: p3j-actual-granite-source-patch-and-negative-tests
           path: artifacts/recovered
       - name: Fresh standalone Docker checks of original and proposed source
         run: |
           set -euo pipefail
           docker pull python:3.11-slim
           test -f artifacts/recovered/record.json
-          python3 scripts/p3g_qwen_ledger_feedback_repair.py replay --retry-p3g --model 14b \
+          python3 scripts/p3g_qwen_ledger_feedback_repair.py replay --retry-p3g --model granite-code-8b \
             --root . --head-sha "$REVIEW_SHA" \
             --input artifacts/recovered/record.json \
-            --output artifacts/p3i-replay/verdict.json
+            --output artifacts/p3j-replay/verdict.json
           python3 - <<'PY'
           import json
           from pathlib import Path
-          r=json.loads(Path("artifacts/p3i-replay/verdict.json").read_text())
-          assert r["variant"]=="p3i-14b-frozen-feedback-v1"
+          r=json.loads(Path("artifacts/p3j-replay/verdict.json").read_text())
+          assert r["variant"]=="p3j-granite-code-frozen-feedback-v1"
           assert r["status"] in ("source_patch_replayed",
                                   "source_patch_static_rejection_replayed")
           assert r["merge_authorized"] is False
@@ -289,14 +289,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: p3i-independent-real-repo-patch-replay
-          path: artifacts/p3i-replay/verdict.json
+          name: p3j-independent-real-repo-patch-replay
+          path: artifacts/p3j-replay/verdict.json
           if-no-files-found: warn
           retention-days: 7
 
   candidate_acceptance_gate:
     if: always()
-    needs: [offline_contract_and_negative_control, actual_qwen_source_patch, independent_source_patch_replay]
+    needs: [offline_contract_and_negative_control, actual_granite_source_patch, independent_source_patch_replay]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -305,7 +305,7 @@ jobs:
       - name: Get independent model-written source patch result
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: p3i-independent-real-repo-patch-replay
+          name: p3j-independent-real-repo-patch-replay
           path: artifacts/final-evidence
       - name: Real source patch success is mandatory, not merely infrastructure green
         run: |
@@ -317,12 +317,12 @@ jobs:
           assert p.is_file(), "Missing independent evidence; fail closed"
           record=json.loads(p.read_text(encoding="utf-8"))
           print("Independently replayed REAL model patch:",record)
-          assert record.get("variant")=="p3i-14b-frozen-feedback-v1"
+          assert record.get("variant")=="p3j-granite-code-frozen-feedback-v1"
           assert record.get("status")=="source_patch_replayed", "Model source rejected"
           assert record.get("candidate_passed") is True, "Model patch failed locked-down Docker tests"
           assert record.get("target")=="scripts/development_ledger.py"
           assert record.get("model_calls_verified")==1
           assert record.get("merge_authorized") is False
           assert record.get("ci_attested_model_source_commits")==0
-          print("P3i feedback source patch PASSED 25/25 frozen tests; no commit or merge authority.")
+          print("P3j feedback source patch PASSED 25/25 frozen tests; no commit or merge authority.")
           PY

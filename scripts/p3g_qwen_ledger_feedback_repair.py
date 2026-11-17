@@ -39,6 +39,11 @@ P3G_FAILURE = "proposals/p3h_verified_p3g_failure.json"
 P3G_FAILURE_SHA256 = "8cb7203a0e38c8b3d7b61ed45a88a9749e046e81cb07cd7125a83c2a7e6d2264"
 RETRY_VARIANT = "p3h-verified-p3g-feedback-v1"
 ALTERNATE_VARIANT = "p3i-14b-frozen-feedback-v1"
+GRANITE_VARIANT = "p3j-granite-code-frozen-feedback-v1"
+ALTERNATE_MODELS = {
+    "14b": (ALTERNATE_VARIANT, "Qwen2.5-Coder-14B-Instruct-Q4_K_M"),
+    "granite-code-8b": (GRANITE_VARIANT, "Granite-8B-Code-Instruct-4K-Q4_K_M"),
+}
 SHA40 = re.compile(r"[a-f0-9]{40}\Z")
 MAX_RESPONSE = 6000
 MODEL = "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
@@ -243,16 +248,26 @@ def check_model(gguf, metadata, model_id="7b"):
         raise ValueError("official model GGUF provenance mismatch")
 
 
+def render_prompt(task, model_id):
+    if model_id != "granite-code-8b":
+        return format_chatml(task)
+    if not 1 <= len(task.encode("utf-8")) <= 5000 or any(
+            part in "\n" + task for part in ("\r", "\x00", "\x1b", "\nQuestion:\n", "\nAnswer:\n", "\nSystem:\n")):
+        raise ValueError("invalid bounded Granite Code task")
+    return "Question:\n" + task + "\n\nAnswer:\n"
+
+
 def infer(cli, gguf, prompt, model_id="7b"):
     _, binary, weights = verify_paths(model_id, cli, gguf)
-    if len(prompt.encode()) > 5000:
-        raise ValueError("model prompt too large")
     cmd = [str(binary), "--model", str(weights),
-           "--prompt", format_chatml(prompt),
+           "--prompt", render_prompt(prompt, model_id),
            "--n-predict", "800", "--ctx-size", "3072",
            "--threads", "4", "--temp", "0", "--seed", "42",
-           "--no-display-prompt", "--simple-io", "--single-turn",
-           "--jinja", "--offline", "--log-verbosity", "1", "--color", "off"]
+           "--no-display-prompt", "--simple-io", "--offline", "--log-verbosity", "1", "--color", "off"]
+    if model_id == "granite-code-8b":
+        cmd.extend(("-no-cnv", "--no-escape"))
+    else:
+        cmd.extend(("--single-turn", "--jinja"))
     env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp",
            "LANG": "C.UTF-8", "OMP_NUM_THREADS": "4"}
     started = time.monotonic()
@@ -374,16 +389,19 @@ def retry_context(root, originals):
 
 
 def context(root, commit, retry_p3g=False, model_id="7b"):
-    if model_id != "7b" and (model_id != "14b" or not retry_p3g):
+    if model_id != "7b" and (model_id not in ALTERNATE_MODELS or not retry_p3g):
         raise ValueError("alternate ledger model requires the frozen feedback experiment")
     git_identity(root, commit)
     originals = {rel: file_bytes(root, rel) for rel in (TARGET, *SUPPORT, PREVIOUS)}
     existing = originals[TARGET].decode("utf-8")
     prompt, retry = retry_context(root, originals) if retry_p3g else (source_prompt(existing, root), {})
-    if model_id == "14b":
+    if model_id in ALTERNATE_MODELS:
         spec = approved_model(model_id)
-        retry.update(variant=ALTERNATE_VARIANT, model="Qwen2.5-Coder-14B-Instruct-Q4_K_M",
+        variant, name = ALTERNATE_MODELS[model_id]
+        retry.update(variant=variant, model=name,
                      model_revision=spec["revision"], model_sha256=spec["sha256"])
+    if model_id == "granite-code-8b":
+        retry["rendered_prompt_sha256"] = digest(render_prompt(prompt, model_id).encode())
     return originals, prompt, {
         "schema": 1, "variant": VARIANT, "commit": commit, "target": TARGET,
         "target_before_sha256": digest(originals[TARGET]),
@@ -462,13 +480,16 @@ def replay(root, commit, report, retry_p3g=False, model_id="7b"):
         raise ValueError("response bytes changed")
     try:
         replacement, proposed, patch = proposed_change(originals, raw, base)
-    except ValueError:
+    except ValueError as exc:
+        reason = str(exc)[:160]
         if (report.get("outcome") != "static_rejected"
                 or report.get("grade") is not None
-                or report.get("replacement_sha256") is not None):
+                or report.get("replacement_sha256") is not None
+                or report.get("static_reject_reason") != reason):
             raise ValueError("static rejection falsely labeled")
         return {"status": "source_patch_static_rejection_replayed",
                 "variant": base["variant"], "candidate_passed": False,
+                "static_reject_reason": reason,
                 "merge_authorized": False}
     checks = {
         "replacement_sha256": digest(replacement.encode()),
@@ -503,7 +524,7 @@ def main():
     p.add_argument("--gguf", type=Path)
     p.add_argument("--metadata", type=Path)
     p.add_argument("--retry-p3g", action="store_true")
-    p.add_argument("--model", choices=("7b", "14b"), default="7b")
+    p.add_argument("--model", choices=("7b", *ALTERNATE_MODELS), default="7b")
     p.add_argument("--input", type=Path)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
@@ -541,7 +562,7 @@ def main():
                            encoding="utf-8")
     print(json.dumps({k: result.get(k) for k in (
         "status", "outcome", "model_calls", "candidate_passed",
-        "proposed_source_sha256", "merge_authorized")}, sort_keys=True))
+        "proposed_source_sha256", "static_reject_reason", "merge_authorized")}, sort_keys=True))
     return 2 if result.get("status") == "blocked" else 0
 
 

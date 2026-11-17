@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download only officially-published, license-checked Qwen GGUF weights.
+"""Download only officially-published, license-checked GGUF weights.
 
 No unrestricted model URI, implicit token, third-party quantizer or 3B access.
 Download commit and SHA256 are saved for experimental provenance.
@@ -64,7 +64,7 @@ def download(model, destination, get_info, get_file):
     # hardlink avoids retaining an unnecessary second full model copy.
     # Fail closed if a safe hardlink cannot be created; no download fallback
     # from untrusted hosts, partial model or unrestricted path is permitted.
-    if model in ("7b", "14b"):
+    if model in ("7b", "14b", "granite-code-8b"):
         os.link(cache_path, target)
     else:
         shutil.copyfile(cache_path, target)
