@@ -1,0 +1,52 @@
+name: P3L W07 promotion request preflight (no model/no promotion)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3l-w07-request-preflight.yml"
+      - "scripts/p3l_w07_request.py"
+      - "tests/test_p3l_w07_request.py"
+      - "docs/p3l/W07-promotion-rollback.ko.md"
+      - "scripts/model_task_queue_bridge.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare_w07_only:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Test safe W07 request preflight
+        run: python3 -m unittest discover -s tests -p 'test_p3l_w07_request.py' -v
+      - name: Prepare W07 request (zero model calls; promotion blocked)
+        env:
+          REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/p3l_w07_request.py --root . --head-sha "$REVIEW_SHA" --out artifacts/p3l-w07/request.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('artifacts/p3l-w07/request.json').read_text(encoding='utf-8'))
+          assert report['model_calls'] == 0
+          assert report['executor_connected'] is False
+          assert report['promotion_authorized'] is False
+          assert report['promotion_eligible'] is False
+          assert report['merge_authorized'] is False
+          assert report['status'] == 'PREPARED_BLOCKED_ON_W05_W06'
+          print('PASS: W07 request staged, NOT model output, NO promotion')
+          PY
+      - name: Upload request artifact (not an AI W07 patch)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w07-unexecuted-request
+          path: artifacts/p3l-w07/request.json
+          if-no-files-found: error
+          retention-days: 7
