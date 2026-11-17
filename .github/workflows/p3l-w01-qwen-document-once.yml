@@ -1,0 +1,155 @@
+name: P3L W01 actual Qwen CPU Markdown worker (one-shot)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3l-w01-qwen-document-once.yml"
+      - "scripts/p3l_w01_cpu_worker.py"
+      - "tests/test_p3l_w01_cpu_worker.py"
+permissions:
+  contents: read
+concurrency:
+  group: p3l-w01-actual-model-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+jobs:
+  offline_preflight:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact reviewed source without persistent token
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify request and executor before invoking model
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_p3l_w01_request.py -v
+          python3 -m unittest discover -s tests -p test_p3l_w01_cpu_worker.py -v
+          python3 scripts/harness_check.py
+          python3 scripts/p3l_w01_request.py \
+            --root . --head-sha "$REVIEW_SHA" --out artifacts/p3l-w01/request.json
+          python3 - <<'PY'
+          import json,pathlib
+          q=json.loads(pathlib.Path("artifacts/p3l-w01/request.json").read_text(encoding="utf-8"))
+          assert q["worker"]=="W01" and q["model_calls"]==0
+          assert q["allowed_output"]==["docs/p3l/ledger-input-contract.ko.md"]
+          assert q["merge_authorized"] is False
+          print("preflight passed; model not yet invoked")
+          PY
+
+  real_model_document_once:
+    needs: offline_preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact immutable commit without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Reconstruct original SHA-bound W01 task
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 scripts/p3l_w01_request.py \
+            --root . --head-sha "$REVIEW_SHA" --out artifacts/p3l-w01/request.json
+      - name: Fetch exactly pinned public llama.cpp source
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+      - name: Compile offline CPU inference engine
+        run: |
+          set -euo pipefail
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+          sha256sum vendor/llama.cpp/build/bin/llama-completion
+      - name: Download official Apache-2.0 Qwen 7B Q4 GGUF with model SHA evidence
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model 7b --destination models \
+            --report artifacts/p3l-w01/model-provenance.json
+      - name: Execute one bounded local Qwen call for W01 document
+        run: |
+          set -euo pipefail
+          python3 scripts/p3l_w01_cpu_worker.py --root . --head-sha "$REVIEW_SHA" \
+            --request artifacts/p3l-w01/request.json \
+            --model-provenance artifacts/p3l-w01/model-provenance.json
+          git diff --exit-code -- scripts/ tests/ .github/workflows/ docs/
+      - name: Preserve model output and evidence, including failure cases
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w01-real-model-response-not-yet-accepted
+          path: artifacts/p3l-w01/
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_document_artifact_check:
+    if: always()
+    needs: real_model_document_once
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - name: Fetch response from the same one-shot workflow
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w01-real-model-response-not-yet-accepted
+          path: artifacts/replay
+      - name: Cross-check SHA and explicitly reject false success claims
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          root=pathlib.Path("artifacts/replay")
+          rec=json.loads((root/"execution-evidence.json").read_text(encoding="utf-8"))
+          assert rec["schema"]=="p3l-w01-model-execution-v1"
+          assert rec["worker"]=="W01" and rec["model"]=="7b"
+          assert rec["model_calls"]==1
+          assert rec["candidate_verified"] is False and rec["merge_authorized"] is False
+          assert rec["result"]=="MODEL_GENERATED_UNVERIFIED"
+          raw=(root/"raw-model-response.txt").read_bytes()
+          doc=(root/"ledger-input-contract.ko.md").read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==rec["response_sha256"]
+          assert hashlib.sha256(doc).hexdigest()==rec["document_sha256"]
+          assert rec["candidate_path"]=="docs/p3l/ledger-input-contract.ko.md"
+          assert 100<=len(doc)<=24000
+          print("PASS: true model output hashes reproduced; W01 contract NOT YET REVIEWED")
+          PY
+      - name: State what has and has not been proven
+        if: always()
+        run: |
+          {
+            echo "## W01 execution evidence"
+            echo "This checks whether one real Qwen CPU call produced an artifact."
+            echo "**Green evidence is not W01 contract acceptance.**"
+            echo "GPT-6 independently reviews the model response and W01 contract."
+            echo "No PR merge, source promotion or secret key was authorized."
+          } >> "$GITHUB_STEP_SUMMARY"
