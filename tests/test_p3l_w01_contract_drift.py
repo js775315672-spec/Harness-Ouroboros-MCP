@@ -35,7 +35,7 @@ class ContractDriftTests(unittest.TestCase):
             row["case"] for row in result["cases"] if not row["matches_contract"]
         ])
         self.assertTrue(all(
-            row["matches_contract"] == (row["expected_accept"] == row["observed_accept"])
+            row["matches_contract"] == (row["expected_accept"] == row["observed_accept"] and row["input_unchanged"] and (row["error_type"] is None or (row["error_type"] == "ValueError" and not row["expected_accept"])))
             for row in result["cases"]
         ))
         self.assertIn("empty_fixes_valid", {row["case"] for row in result["cases"]})
@@ -66,9 +66,7 @@ class ContractDriftTests(unittest.TestCase):
         for invalid in (True, 2, -1, "1", None, 1.0):
             with self.subTest(invalid=invalid):
                 result = audit(lambda records: invalid)
-                self.assertEqual(result["matches"], sum(
-                    not expected for _, _, expected in cases()
-                ))
+                self.assertEqual(result["matches"], 0)
                 self.assertTrue(all(
                     not row["observed_accept"]
                     and row["error_type"] == "InvalidValidatorResult"
@@ -85,6 +83,8 @@ class ContractDriftTests(unittest.TestCase):
             for row in result["cases"]
         ))
         self.assertFalse(result["candidate_verified"])
+        self.assertEqual(result["matches"], 0)
+        self.assertEqual(len(result["mismatches"]), len(result["cases"]))
 
     def test_perfect_validator_has_no_drift(self):
         decisions = {name: expected for name, _, expected in cases()}
