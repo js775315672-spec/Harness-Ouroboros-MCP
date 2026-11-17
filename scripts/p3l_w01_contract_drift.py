@@ -55,8 +55,16 @@ def audit(validator=validate):
         supplied = copy.deepcopy(record)
         before = copy.deepcopy(supplied)
         try:
-            observed = validator([supplied]) == 1
-            error = None
+            verdict = validator([supplied])
+            # bool is an int subclass: True == 1. Never accept it as
+            # a verified ledger count. Unexpected return types/counts
+            # must fail closed, not become acceptance evidence.
+            if type(verdict) is not int or verdict not in (0, 1):
+                observed = False
+                error = "InvalidValidatorResult"
+            else:
+                observed = verdict == 1
+                error = None
         except ValueError as exc:
             observed = False
             error = type(exc).__name__
