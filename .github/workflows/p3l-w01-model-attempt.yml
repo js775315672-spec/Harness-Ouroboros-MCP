@@ -1,0 +1,117 @@
+name: P3L W01 single Granite CPU model attempt (unreviewed artifact)
+on:
+  push:
+    branches: [infra/p3l-w01-model-attempt-20261117]
+    paths:
+      - ".github/workflows/p3l-w01-model-attempt.yml"
+permissions:
+  contents: read
+concurrency:
+  group: p3l-w01-model-attempt-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+jobs:
+  w01_single_model_response_only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout exact reviewed branch SHA without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prove exact checkout and offline W01 transport contract
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 -m unittest discover -s tests -p test_p3l_w01_request.py -v
+          python3 -m unittest discover -s tests -p test_p3l_w01_model_attempt.py -v
+          python3 scripts/p3l_w01_request.py --root . --head-sha "$REVIEW_SHA" \
+            --out artifacts/p3l-w01/request.json
+          python3 - <<'PY'
+          import json,pathlib
+          request=json.loads(pathlib.Path('artifacts/p3l-w01/request.json').read_text(encoding='utf-8'))
+          assert request['model_calls']==0 and request['executor_connected'] is False
+          assert request['merge_authorized'] is False
+          print('Preflight: W01 request bound; no model call yet')
+          PY
+      - name: Fetch pinned llama.cpp and compile CPU binary
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+          mkdir -p artifacts/p3l-w01-model-build
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          f=pathlib.Path('vendor/llama.cpp/build/bin/llama-completion')
+          d={
+            "schema":"p3l-w01-pinned-binary-v1",
+            "review_sha":os.environ['REVIEW_SHA'],
+            "upstream_sha":os.environ['PINNED_LLAMA_SHA'],
+            "binary_sha256":hashlib.sha256(f.read_bytes()).hexdigest(),
+            "model_calls":0,
+            "merge_authorized":False,
+          }
+          pathlib.Path('artifacts/p3l-w01-model-build/binary.json').write_text(
+              json.dumps(d,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          print('Pinned binary SHA:',d['binary_sha256'])
+          PY
+      - name: Retrieve officially pinned Apache-2.0 Granite Code weights
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model granite-code-8b --destination models \
+            --report artifacts/p3l-w01-model-build/model-provenance.json
+      - name: Single bounded model attempt; store response, NEVER apply as source
+        run: |
+          set -euo pipefail
+          python3 scripts/p3l_w01_model_attempt.py \
+            --root . --head-sha "$REVIEW_SHA" \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/granite-8b-code-instruct.Q4_K_M.gguf \
+            --metadata artifacts/p3l-w01-model-build/model-provenance.json \
+            --binary-manifest artifacts/p3l-w01-model-build/binary.json \
+            --out-dir artifacts/p3l-w01-model
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests docs configs .github)"
+          python3 - <<'PY'
+          import json,pathlib
+          p=json.loads(pathlib.Path('artifacts/p3l-w01-model/receipt.json').read_text(encoding='utf-8'))
+          assert p['model_calls']==1
+          assert p['status']=='RAW_MODEL_RESPONSE_PENDING_REVIEW'
+          assert p['model_authored_document_verified'] is False
+          assert p['model_patch_applied'] is False
+          assert p['merge_authorized'] is False
+          print('Model response archived; W01 contract validation still pending')
+          PY
+      - name: Upload W01 raw model evidence (not reviewed contract)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w01-granite-unreviewed-model-attempt
+          path: |
+            artifacts/p3l-w01/request.json
+            artifacts/p3l-w01-model/receipt.json
+            artifacts/p3l-w01-model/raw_model_response.txt
+            artifacts/p3l-w01-model-build/binary.json
+            artifacts/p3l-w01-model-build/model-provenance.json
+          if-no-files-found: warn
+          retention-days: 7
