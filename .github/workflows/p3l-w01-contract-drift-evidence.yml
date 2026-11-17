@@ -41,7 +41,8 @@ jobs:
           assert data["candidate_verified"] is False
           assert data["merge_authorized"] is False
           assert data["fixed_25_modified"] is False
-          assert data["mismatches"], "existing validator drift must be explicitly recorded"
+          assert isinstance(data["mismatches"], list), "drift must be explicitly recorded (including zero)"
+          assert data["matches"] + len(data["mismatches"]) == len(data["cases"])
           assert len(data["cases"]) >= 19
           assert len({x["case"] for x in data["cases"]}) == len(data["cases"])
           assert all(x["matches_contract"] == (x["expected_accept"] == x["observed_accept"]) for x in data["cases"])
