@@ -1,0 +1,21 @@
+name: P3L W06 stop duplicate W01 model invocation
+on:
+  push:
+    branches:
+      - infra/p3l-w06-w01-executor-20261117
+permissions:
+  contents: read
+# Same exact concurrency key as PR #53. This newer run cancels the
+# duplicate W01 experiment; another W01 model run is already active.
+concurrency:
+  group: p3l-w01-model-once-53
+  cancel-in-progress: true
+jobs:
+  stop_duplicate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Record suppression without invoking any model
+        run: |
+          echo "W06 duplicate W01 inference stopped in favor of existing PR #50."
+          echo "No model inference or repository write in this workflow."
