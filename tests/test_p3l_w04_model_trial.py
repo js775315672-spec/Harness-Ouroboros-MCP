@@ -22,12 +22,12 @@ class W04ModelTrialTests(unittest.TestCase):
         self.assertIn("<|im_start|>user", render(prompt))
 
     def test_candidate_is_parsed_but_not_executed(self):
-        code = "def normalized_ast_sha256(source):\\n    raise RuntimeError('MUST NOT BE RUN')\\n"
+        code = "def normalized_ast_sha256(source):\n    raise RuntimeError('MUST NOT BE RUN')\n"
         self.assertEqual(inspect_candidate(code),
                          "untrusted_function_candidate_for_review")
         self.assertEqual(inspect_candidate("print('not a function')"),
                          "model_response_rejected")
-        self.assertEqual(inspect_candidate("def other(x):\\n    return x\\n"),
+        self.assertEqual(inspect_candidate("def other(x):\n    return x\n"),
                          "model_response_rejected")
 
     def test_malformed_or_oversized_output_is_rejected(self):
