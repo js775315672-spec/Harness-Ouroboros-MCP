@@ -1,0 +1,212 @@
+name: P3L W05 one-shot Qwen code proposal
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3l-w05-one-shot-model-proposal.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: p3l-w05-model-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  model_candidate:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      CUDA_VISIBLE_DEVICES: ""
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout reviewed commit without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Baseline attestation and unmodified frozen suite
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 scripts/harness_check.py
+          python3 - <<'PY'
+          import ast,hashlib,json,os,pathlib
+          paths=['docs/p3l/W05-replay-evidence.ko.md','scripts/ci_attestation.py',
+                 'tests/test_development_ledger.py','tests/test_ci_attestation.py',
+                 'tests/heldout_p3f_development_ledger.py']
+          expected=[None,None,8,7,10]
+          hashes={}
+          for p,n in zip(paths,expected):
+              f=pathlib.Path(p)
+              assert f.is_file() and not f.is_symlink() and 0<f.stat().st_size<25000
+              b=f.read_bytes()
+              hashes[p]=hashlib.sha256(b).hexdigest()
+              if n is not None:
+                  tree=ast.parse(b.decode('utf-8'))
+                  count=sum(isinstance(x,ast.FunctionDef) and x.name.startswith('test_') for x in ast.walk(tree))
+                  assert count==n,(p,count)
+          pathlib.Path('artifacts/w05').mkdir(parents=True,exist_ok=True)
+          pathlib.Path('artifacts/w05/preflight.json').write_text(json.dumps({
+              'worker':'W05','issue':41,'review_commit':os.environ['REVIEW_SHA'],
+              'file_sha256':hashes,'frozen_counts':[8,7,10],
+              'frozen_total':25,'model_calls':0,
+              'status':'PREPARED_NOT_EXECUTED','candidate_verified':False
+          },sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          print('PASS: source digests and frozen test counts 8/7/10 verified, model calls 0')
+          PY
+      - name: Compile one pinned CPU inference executable
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+      - name: Fetch official license-checked Qwen 7B model
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py --model 7b --destination models \
+            --report artifacts/w05/model-provenance.json
+      - name: Execute one real W05 model code-generation call, with no patch writes
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import ast,hashlib,json,os,pathlib,subprocess,time
+          from gguf_cpu_runtime import approved_model,sha256_file,verify_paths
+          from qwen_chatml_prompt import format_chatml
+          from gguf_output_boundary import extract_completion
+          root=pathlib.Path('.').resolve()
+          out=root/'artifacts/w05'
+          pre=json.loads((out/'preflight.json').read_text(encoding='utf-8'))
+          meta=json.loads((out/'model-provenance.json').read_text(encoding='utf-8'))
+          model=approved_model('7b')
+          binary=root/'vendor/llama.cpp/build/bin/llama-completion'
+          weights=root/'models'/model['filename']
+          _,binary,weights=verify_paths('7b',binary,weights)
+          assert meta['repository']==model['repo'] and meta['filename']==model['filename']
+          assert meta['license']=='apache-2.0' and meta['sha256']==sha256_file(weights)
+          spec=(root/'docs/p3l/W05-replay-evidence.ko.md').read_text(encoding='utf-8')
+          prompt=('You are Harness-Ouroboros W05, the IMPLEMENTING coding model. '
+              'Return ONLY a complete Python standard-library module for '
+              'scripts/ledger_replay_evidence.py; no Markdown or prose. '
+              'Define validate_evidence(record) with fail-closed input checks: '
+              'required exact lowercase SHA40 commit and SHA256 source, model response, '
+              'diff, candidate and frozen test bundle; precise target path; '
+              'distinct original/replay runner IDs and same original/candidate identity; '
+              'both runners report matching grouped counts: ledger 8/8, ci 7/7, '
+              'heldout 10/10, total 25/25; static source gate pass; '
+              'model run completed. Reject missing, mixed baseline, altered hashes, '
+              'wrong run/runner IDs, inconsistent per-suite result or overall flag '
+              'with ValueError. Do not confuse successful CI infrastructure with '
+              'successful candidate. No network, file writes, shell, dynamic code, '
+              'secrets, tokens or promotion. Your output is an UNTRUSTED DRAFT, '
+              'not a verified or accepted patch. Follow this W05 role spec:\n'+spec)
+          assert 1<=len(prompt.encode('utf-8'))<=5000
+          cmd=[str(binary),'--model',str(weights),'--prompt',format_chatml(prompt),
+               '--n-predict','1100','--ctx-size','3072','--threads','4',
+               '--temp','0','--seed','42','--no-display-prompt','--simple-io',
+               '--single-turn','--jinja','--offline','--log-verbosity','1','--color','off']
+          environment={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':'/tmp',
+                       'LANG':'C.UTF-8','OMP_NUM_THREADS':'4'}
+          started=time.monotonic()
+          p=subprocess.run(cmd,capture_output=True,text=True,errors='replace',
+                           timeout=240,env=environment,check=False)
+          assert p.returncode==0,'bounded model call failed'
+          raw,terminal_removed=extract_completion(p.stdout,max_output_bytes=6000)
+          response=raw.encode('utf-8')
+          (out/'raw-model-output.txt').write_bytes(response)
+          code=raw.strip()
+          if code.startswith(chr(96)*3+'python\n') and code.endswith('\n'+chr(96)*3):
+              code=code[10:-4]
+          try:
+              parsed=ast.parse(code)
+              syntax_ok=any(isinstance(x,ast.FunctionDef) and x.name=='validate_evidence' for x in parsed.body)
+          except SyntaxError:
+              syntax_ok=False
+          receipt={'schema':'p3l-w05-model-proposal-v1','worker':'W05','issue':41,
+                   'review_commit':os.environ['REVIEW_SHA'],
+                   'source_sha256':pre['file_sha256'],
+                   'frozen_counts':[8,7,10],'frozen_total':25,
+                   'model_calls':1,'model_name':'Qwen2.5-Coder-7B-Instruct-Q4_K_M',
+                   'model_revision':meta['revision'],'model_sha256':meta['sha256'],
+                   'llama_sha':os.environ['PINNED_LLAMA_SHA'],
+                   'binary_sha256':sha256_file(binary),
+                   'prompt_sha256':hashlib.sha256(prompt.encode()).hexdigest(),
+                   'response_sha256':hashlib.sha256(response).hexdigest(),
+                   'response_bytes':len(response),'terminal_marker_stripped':terminal_removed,
+                   'elapsed_seconds':round(time.monotonic()-started,3),
+                   'syntax_valid':syntax_ok,'status':'MODEL_OUTPUT_UNTRUSTED',
+                   'candidate_verified':False,'fixed_25_candidate_tests_executed':False,
+                   'independent_test_replay_complete':False,'merge_authorized':False,
+                   'source_author':'Harness-Ouroboros Qwen, not GPT-6 coordinator'}
+          (out/'receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps({k:receipt[k] for k in ('model_calls','status','response_sha256',
+                                                   'syntax_valid','candidate_verified')}))
+          PY
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests)"
+      - name: Preserve raw model evidence even if later steps fail
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w05-one-shot-untrusted-model-proposal
+          path: artifacts/w05/
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_receipt:
+    needs: model_candidate
+    if: ${{ always() && needs.model_candidate.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Independent runner checks out identical commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Download exact raw model artifact from producer
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w05-one-shot-untrusted-model-proposal
+          path: artifacts/replay
+      - name: Independently check source and model response SHA256
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          r=json.loads(pathlib.Path('artifacts/replay/receipt.json').read_text(encoding='utf-8'))
+          raw=pathlib.Path('artifacts/replay/raw-model-output.txt').read_bytes()
+          assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['REVIEW_SHA']
+          assert r['review_commit']==os.environ['REVIEW_SHA'] and r['worker']=='W05' and r['issue']==41
+          assert r['model_calls']==1 and r['status']=='MODEL_OUTPUT_UNTRUSTED'
+          assert r['frozen_counts']==[8,7,10] and r['frozen_total']==25
+          assert r['candidate_verified'] is False and r['merge_authorized'] is False
+          assert r['fixed_25_candidate_tests_executed'] is False
+          assert r['independent_test_replay_complete'] is False
+          assert len(raw)==r['response_bytes'] and hashlib.sha256(raw).hexdigest()==r['response_sha256']
+          allowed={'docs/p3l/W05-replay-evidence.ko.md','scripts/ci_attestation.py',
+                   'tests/test_development_ledger.py','tests/test_ci_attestation.py',
+                   'tests/heldout_p3f_development_ledger.py'}
+          assert set(r['source_sha256'])==allowed
+          for p,h in r['source_sha256'].items():
+              assert hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()==h
+          print('Independent artifact transport SHA and source binding: verified')
+          print('Candidate execution / 25 tests / full independent replay: NOT DONE')
+          PY
