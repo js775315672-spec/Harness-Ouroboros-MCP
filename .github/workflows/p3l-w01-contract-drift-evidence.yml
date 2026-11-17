@@ -1,0 +1,59 @@
+name: P3L W01 contract drift evidence (no model call)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3l-w01-contract-drift-evidence.yml"
+      - "scripts/p3l_w01_contract_drift.py"
+      - "tests/test_p3l_w01_contract_drift.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: p3l-w01-contract-drift-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  contract_drift_evidence:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout reviewed commit without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Run W01 drift unit tests (not frozen 25 acceptance)
+        run: python3 -m unittest discover -s tests -p test_p3l_w01_contract_drift.py -v
+      - name: Generate and independently inspect drift report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/p3l_w01_contract_drift.py --out artifacts/p3l-w01/contract-drift.json
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          p=Path("artifacts/p3l-w01/contract-drift.json")
+          data=json.loads(p.read_text(encoding="utf-8"))
+          assert data["model_calls"] == 0
+          assert data["candidate_verified"] is False
+          assert data["merge_authorized"] is False
+          assert data["fixed_25_modified"] is False
+          assert data["mismatches"], "existing validator drift must be explicitly recorded"
+          assert len(data["cases"]) >= 19
+          assert len({x["case"] for x in data["cases"]}) == len(data["cases"])
+          assert all(x["matches_contract"] == (x["expected_accept"] == x["observed_accept"]) for x in data["cases"])
+          digest=hashlib.sha256(p.read_bytes()).hexdigest()
+          Path("artifacts/p3l-w01/report.sha256").write_text(digest+"  contract-drift.json\n")
+          print(f"PASS: {len(data['cases'])} cases; {len(data['mismatches'])} drift mismatches; sha256={digest}")
+          PY
+      - name: Upload exact read-only drift evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3l-w01-contract-drift-evidence
+          path: artifacts/p3l-w01/
+          if-no-files-found: warn
+          retention-days: 7
