@@ -42,6 +42,24 @@ class ContractDriftTests(unittest.TestCase):
         # A future validator that meets the contract must not fail this probe.
         # Drift is an observation, not a permanently expected failure.
 
+    def test_validator_mutation_is_reported_even_when_decision_matches(self):
+        decisions = {name: expected for name, _, expected in cases()}
+        names = iter(decisions)
+        def mutating_validator(records):
+            records[0]["change"] = "unexpected mutation"
+            name = next(names)
+            if not decisions[name]:
+                raise ValueError("rejected")
+            return 1
+        result = audit(mutating_validator)
+        self.assertEqual(result["matches"], 0)
+        self.assertEqual(len(result["mismatches"]), len(decisions))
+        self.assertTrue(all(not row["input_unchanged"] for row in result["cases"]))
+        self.assertTrue(all(
+            row["expected_accept"] == row["observed_accept"]
+            for row in result["cases"]
+        ))
+
     def test_perfect_validator_has_no_drift(self):
         decisions = {name: expected for name, _, expected in cases()}
         names = iter(decisions)
