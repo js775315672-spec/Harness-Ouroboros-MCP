@@ -52,15 +52,20 @@ def cases():
 def audit(validator=validate):
     rows = []
     for name, record, expected in cases():
+        supplied = copy.deepcopy(record)
+        before = copy.deepcopy(supplied)
         try:
-            observed = validator([copy.deepcopy(record)]) == 1
+            observed = validator([supplied]) == 1
             error = None
         except ValueError as exc:
             observed = False
             error = type(exc).__name__
+        unchanged = supplied == before
         rows.append({
             "case": name, "expected_accept": expected, "observed_accept": observed,
-            "matches_contract": observed == expected, "error_type": error,
+            "input_unchanged": unchanged,
+            "matches_contract": observed == expected and unchanged,
+            "error_type": error,
         })
     return {
         "schema": "p3l-w01-contract-drift-v1",
