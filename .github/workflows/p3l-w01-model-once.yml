@@ -1,0 +1,191 @@
+name: P3L W06 bootstrap one W01 Qwen document attempt (unreviewed)
+on:
+  pull_request:
+    types: [opened]
+    paths:
+      - ".github/workflows/p3l-w01-model-once.yml"
+      - "scripts/p3l_w01_model_executor.py"
+      - "tests/test_p3l_w01_model_executor.py"
+  # Intentionally NO workflow_dispatch, push or synchronize: one new PR event.
+permissions:
+  contents: read
+concurrency:
+  group: p3l-w01-model-once-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+
+jobs:
+  bounded_preflight:
+    if: ${{ github.run_attempt == 1 && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact candidate without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Offline executor gates plus original W01 request gates
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 -m unittest discover -s tests -p test_p3l_w01_request.py -v
+          python3 -m unittest discover -s tests -p test_p3l_w01_model_executor.py -v
+          python3 scripts/harness_check.py
+      - name: Build exact SHA-bound W01 request; NO model call
+        run: |
+          set -euo pipefail
+          python3 scripts/p3l_w01_request.py --root . --head-sha "$REVIEW_SHA" --out artifacts/p3l-w01/request.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("artifacts/p3l-w01/request.json").read_text(encoding="utf-8"))
+          assert p["model_calls"]==0 and p["executor_connected"] is False
+          assert p["candidate_verified"] is False and p["merge_authorized"] is False
+          PY
+      - name: Save frozen request for downstream model runner
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w01-exact-unexecuted-request
+          path: artifacts/p3l-w01/request.json
+          if-no-files-found: error
+          retention-days: 7
+
+  one_pinned_cpu_model_attempt:
+    needs: bounded_preflight
+    if: ${{ github.run_attempt == 1 && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 43
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact PR SHA, no saved credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Load exact same-run request
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w01-exact-unexecuted-request
+          path: artifacts/p3l-w01
+      - name: Compile exact pinned llama.cpp CPU source without binary cache
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+      - name: Official license-checked Qwen2.5 Coder 1.5B GGUF on CPU
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model 1.5b --destination models \
+            --report artifacts/p3l-w01-model/model-provenance.json
+      - name: SINGLE bounded inference, unreviewed Markdown only
+        run: |
+          set -euo pipefail
+          python3 scripts/p3l_w01_model_executor.py \
+            --root . --head-sha "$REVIEW_SHA" \
+            --request artifacts/p3l-w01/request.json \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
+            --metadata artifacts/p3l-w01-model/model-provenance.json \
+            --out artifacts/p3l-w01-model
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/p3l-w01-model/record.json").read_text(encoding="utf-8"))
+          assert r["outcome"]=="generated_unreviewed" and r["model_calls"]==1
+          assert r["candidate_verified"] is False and r["merge_authorized"] is False
+          assert r["harness_25_tests_passed"] is False
+          print("Model draft only; W01 contract NOT accepted, W06 25/25 NOT claimed.")
+          PY
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs docs)"
+      - name: Save raw model output and failure evidence even if invocation fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w01-model-draft-unreviewed
+          path: artifacts/p3l-w01-model/
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_artifact_integrity:
+    if: ${{ always() && github.run_attempt == 1 }}
+    needs: [bounded_preflight,one_pinned_cpu_model_attempt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+      PREFLIGHT_RESULT: ${{ needs.bounded_preflight.result }}
+      MODEL_RESULT: ${{ needs.one_pinned_cpu_model_attempt.result }}
+    steps:
+      - name: Fail closed unless genuine model job succeeded
+        run: |
+          set -euo pipefail
+          test "$PREFLIGHT_RESULT" = success
+          test "$MODEL_RESULT" = success
+      - name: Checkout same reviewed source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Download request artifact from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w01-exact-unexecuted-request
+          path: artifacts/p3l-w01
+      - name: Download model artifact from separate model runner
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w01-model-draft-unreviewed
+          path: artifacts/p3l-w01-model
+      - name: Independently bind exact request, model artifact SHA and review status
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,sys
+          from pathlib import Path
+          sys.path.insert(0,"scripts")
+          from p3l_w01_request import build_request
+          source=Path(".").resolve()
+          sha=os.environ["REVIEW_SHA"]
+          r=json.loads(Path("artifacts/p3l-w01-model/record.json").read_text(encoding="utf-8"))
+          q=json.loads(Path("artifacts/p3l-w01/request.json").read_text(encoding="utf-8"))
+          assert q==build_request(source,sha)
+          assert r["schema"]=="p3l-w01-model-attempt-v1" and r["worker"]=="W01"
+          assert r["review_commit"]==sha and r["request_sha256"]==q["request_sha256"]
+          assert r["source_sha256"]==q["source_sha256"] and r["spec_sha256"]==q["spec_sha256"]
+          assert r["model_calls"]==1 and r["outcome"]=="generated_unreviewed"
+          assert r["model"]=="1.5b" and len(r["binary_sha256"])==64
+          assert len(r["weights_sha256"])==64 and len(r["rendered_prompt_sha256"])==64
+          assert r["candidate_verified"] is False and r["merge_authorized"] is False
+          assert r["harness_25_tests_passed"] is False
+          response=Path("artifacts/p3l-w01-model/model_candidate.md").read_text(encoding="utf-8")
+          assert response.endswith("\n")
+          assert hashlib.sha256(response[:-1].encode("utf-8")).hexdigest()==r["candidate_sha256"]
+          print("Independent W01 transport attestation PASS; semantic contract still UNREVIEWED")
+          PY
