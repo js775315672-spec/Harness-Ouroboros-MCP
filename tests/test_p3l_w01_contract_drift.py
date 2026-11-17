@@ -86,6 +86,24 @@ class ContractDriftTests(unittest.TestCase):
         self.assertEqual(result["matches"], 0)
         self.assertEqual(len(result["mismatches"]), len(result["cases"]))
 
+    def test_zero_return_is_not_valid_rejection(self):
+        report = audit(lambda records: 0)
+        self.assertEqual(report["matches"], 0)
+        self.assertTrue(all(row["error_type"] == "InvalidValidatorResult" for row in report["cases"]))
+
+    def test_outer_list_mutation_fails_closed(self):
+        def pop_record(records):
+            records.pop()
+            return 1
+        report = audit(pop_record)
+        self.assertEqual(report["matches"], 0)
+        self.assertTrue(all(not row["input_unchanged"] for row in report["cases"]))
+
+    def test_change_cases_use_nonempty_valid_fixes(self):
+        for name, record, _ in cases():
+            if name.startswith("change_"):
+                self.assertEqual(record["fixes"], ["fixed"])
+
     def test_perfect_validator_has_no_drift(self):
         decisions = {name: expected for name, _, expected in cases()}
         names = iter(decisions)
