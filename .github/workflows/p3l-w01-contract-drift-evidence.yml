@@ -45,7 +45,7 @@ jobs:
           assert data["matches"] + len(data["mismatches"]) == len(data["cases"])
           assert len(data["cases"]) >= 19
           assert len({x["case"] for x in data["cases"]}) == len(data["cases"])
-          assert all(x["matches_contract"] == (x["expected_accept"] == x["observed_accept"] and x["input_unchanged"]) for x in data["cases"])
+          assert all(x["matches_contract"] == (x["expected_accept"] == x["observed_accept"] and x["input_unchanged"] and (x["error_type"] is None or (x["error_type"] == "ValueError" and not x["expected_accept"]))) for x in data["cases"])
           digest=hashlib.sha256(p.read_bytes()).hexdigest()
           Path("artifacts/p3l-w01/report.sha256").write_text(digest+"  contract-drift.json\n")
           print(f"PASS: {len(data['cases'])} cases; {len(data['mismatches'])} drift mismatches; sha256={digest}")
