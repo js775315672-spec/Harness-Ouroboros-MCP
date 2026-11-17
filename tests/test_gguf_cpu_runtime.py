@@ -1,7 +1,9 @@
 """Offline GGUF CPU adapter, license, structured feedback and gate tests."""
+import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,13 +22,13 @@ from qwen_semantic_repair_loop import (AST_FEEDBACK, classify_ast_failure,
 class GGUFAdapterTests(unittest.TestCase):
     def test_3b_research_license_is_blocked(self):
         for model in ("3b", "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-                      "../models/3b", "", "14b"):
+                      "../models/3b", "", "32b"):
             with self.subTest(model=model):
                 with self.assertRaises(ValueError):
                     approved_model(model)
 
     def test_approved_models_pin_official_repository_and_quantization(self):
-        self.assertEqual(set(MODELS), {"0.5b", "1.5b", "7b"})
+        self.assertEqual(set(MODELS), {"0.5b", "1.5b", "7b", "14b"})
         self.assertEqual(MODELS["7b"]["repo"], "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF")
         self.assertGreater(MODELS["7b"]["minimum_bytes"], 4_000_000_000 - 1)
         for size in MODELS:
@@ -54,6 +56,29 @@ class GGUFAdapterTests(unittest.TestCase):
                          lambda repo: SimpleNamespace(
                              sha="main", card_data={"license": "apache-2.0"}),
                          lambda *args: self.fail("must not download"))
+
+    def test_alternate_model_requires_exact_revision_and_digest(self):
+        data = b"GGUFtest"
+        spec = {**MODELS["14b"], "minimum_bytes": len(data), "maximum_bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest()}
+        with tempfile.TemporaryDirectory() as d, patch.dict(MODELS, {"14b": spec}):
+            root = Path(d)
+            cached = root / "cached.gguf"
+            cached.write_bytes(b"GGUFfail")
+            with self.assertRaisesRegex(ValueError, "pinned revision"):
+                download("14b", root / "models",
+                         lambda repo, revision: SimpleNamespace(sha="a" * 40, card_data={"license": "apache-2.0"}),
+                         lambda *args: self.fail("must not download an unpinned revision"))
+            info = lambda repo, revision: SimpleNamespace(sha=revision, card_data={"license": "apache-2.0"})
+            with self.assertRaisesRegex(ValueError, "pinned digest"):
+                download("14b", root / "models", info, lambda *args: cached)
+            self.assertFalse((root / "models" / spec["filename"]).exists())
+            cached.write_bytes(data)
+            with patch("gguf_official_download.os.link", side_effect=shutil.copyfile) as link:
+                record = download("14b", root / "models", info, lambda *args: cached)
+            link.assert_called_once_with(cached, root / "models" / spec["filename"])
+            self.assertEqual(record["revision"], spec["revision"])
+            self.assertEqual(record["sha256"], spec["sha256"])
 
     def test_model_runtime_checks_local_file_and_no_shell_execution(self):
         with tempfile.TemporaryDirectory() as d:

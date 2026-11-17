@@ -38,6 +38,7 @@ PREVIOUS_SHA256 = "d526bb30b6b5be5cb2baa88ed86977b8a6dcbc4d043e265595a9d3707bad6
 P3G_FAILURE = "proposals/p3h_verified_p3g_failure.json"
 P3G_FAILURE_SHA256 = "8cb7203a0e38c8b3d7b61ed45a88a9749e046e81cb07cd7125a83c2a7e6d2264"
 RETRY_VARIANT = "p3h-verified-p3g-feedback-v1"
+ALTERNATE_VARIANT = "p3i-14b-frozen-feedback-v1"
 SHA40 = re.compile(r"[a-f0-9]{40}\Z")
 MAX_RESPONSE = 6000
 MODEL = "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
@@ -229,19 +230,21 @@ def patch_original(original, replacement):
     return proposed, delta
 
 
-def check_model(gguf, metadata):
-    model = approved_model("7b")
+def check_model(gguf, metadata, model_id="7b"):
+    model = approved_model(model_id)
     meta = json.loads(Path(metadata).read_text(encoding="utf-8"))
-    if (meta.get("model") != "7b" or meta.get("repository") != model["repo"]
+    if (meta.get("model") != model_id or meta.get("repository") != model["repo"]
             or meta.get("filename") != model["filename"]
             or meta.get("license") != "apache-2.0"
             or meta.get("quantization") != "Q4_K_M"
+            or ("revision" in model and meta.get("revision") != model["revision"])
+            or ("sha256" in model and meta.get("sha256") != model["sha256"])
             or sha256_file(gguf) != meta.get("sha256")):
         raise ValueError("official model GGUF provenance mismatch")
 
 
-def infer(cli, gguf, prompt):
-    _, binary, weights = verify_paths("7b", cli, gguf)
+def infer(cli, gguf, prompt, model_id="7b"):
+    _, binary, weights = verify_paths(model_id, cli, gguf)
     if len(prompt.encode()) > 5000:
         raise ValueError("model prompt too large")
     cmd = [str(binary), "--model", str(weights),
@@ -254,7 +257,7 @@ def infer(cli, gguf, prompt):
            "LANG": "C.UTF-8", "OMP_NUM_THREADS": "4"}
     started = time.monotonic()
     result = subprocess.run(cmd, capture_output=True, text=True,
-                            errors="replace", timeout=240, env=env,
+                            errors="replace", timeout=420 if model_id == "14b" else 240, env=env,
                             shell=False)
     if result.returncode != 0:
         raise ValueError("bounded model invocation failed")
@@ -370,11 +373,17 @@ def retry_context(root, originals):
     }
 
 
-def context(root, commit, retry_p3g=False):
+def context(root, commit, retry_p3g=False, model_id="7b"):
+    if model_id != "7b" and (model_id != "14b" or not retry_p3g):
+        raise ValueError("alternate ledger model requires the frozen feedback experiment")
     git_identity(root, commit)
     originals = {rel: file_bytes(root, rel) for rel in (TARGET, *SUPPORT, PREVIOUS)}
     existing = originals[TARGET].decode("utf-8")
     prompt, retry = retry_context(root, originals) if retry_p3g else (source_prompt(existing, root), {})
+    if model_id == "14b":
+        spec = approved_model(model_id)
+        retry.update(variant=ALTERNATE_VARIANT, model="Qwen2.5-Coder-14B-Instruct-Q4_K_M",
+                     model_revision=spec["revision"], model_sha256=spec["sha256"])
     return originals, prompt, {
         "schema": 1, "variant": VARIANT, "commit": commit, "target": TARGET,
         "target_before_sha256": digest(originals[TARGET]),
@@ -398,10 +407,10 @@ def proposed_change(originals, raw, base):
     return replacement, proposed, patch
 
 
-def run(root, commit, cli, gguf, metadata, retry_p3g=False):
-    originals, prompt, base = context(root, commit, retry_p3g)
-    check_model(gguf, metadata)
-    raw, seconds = infer(cli, gguf, prompt)
+def run(root, commit, cli, gguf, metadata, retry_p3g=False, model_id="7b"):
+    originals, prompt, base = context(root, commit, retry_p3g, model_id)
+    check_model(gguf, metadata, model_id)
+    raw, seconds = infer(cli, gguf, prompt, model_id)
     out = {**base, "model_calls": 1, "model_seconds": seconds,
            "raw_response": raw, "response_sha256": digest(raw.encode()),
            "replacement_sha256": None, "proposed_source_sha256": None,
@@ -438,8 +447,8 @@ def suite_results(grade_report):
     return results
 
 
-def replay(root, commit, report, retry_p3g=False):
-    originals, _, base = context(root, commit, retry_p3g)
+def replay(root, commit, report, retry_p3g=False, model_id="7b"):
+    originals, _, base = context(root, commit, retry_p3g, model_id)
     if not isinstance(report, dict):
         raise ValueError("report must be object")
     if any(type(report.get(k)) is not type(v) or report[k] != v
@@ -494,6 +503,7 @@ def main():
     p.add_argument("--gguf", type=Path)
     p.add_argument("--metadata", type=Path)
     p.add_argument("--retry-p3g", action="store_true")
+    p.add_argument("--model", choices=("7b", "14b"), default="7b")
     p.add_argument("--input", type=Path)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
@@ -501,7 +511,7 @@ def main():
         raise SystemExit("refuse to overwrite evidence")
     try:
         if args.mode == "preflight":
-            original, prompt, contract = context(args.root, args.head_sha, args.retry_p3g)
+            original, prompt, contract = context(args.root, args.head_sha, args.retry_p3g, args.model)
             if not all(len(v) > 0 for v in original.values()):
                 raise ValueError("missing existing modules or frozen tests")
             result = {"status": "reviewed_real_repo_source_contract",
@@ -513,14 +523,14 @@ def main():
             if args.cli is None or args.gguf is None or args.metadata is None:
                 raise ValueError("real model requires approved executable inputs")
             result = run(args.root, args.head_sha,
-                         args.cli, args.gguf, args.metadata, args.retry_p3g)
+                         args.cli, args.gguf, args.metadata, args.retry_p3g, args.model)
         else:
             if (args.input is None or args.input.is_symlink()
                     or not args.input.is_file()
                     or args.input.stat().st_size > 60000):
                 raise ValueError("invalid raw evidence file")
             record = json.loads(args.input.read_text(encoding="utf-8"))
-            result = replay(args.root, args.head_sha, record, args.retry_p3g)
+            result = replay(args.root, args.head_sha, record, args.retry_p3g, args.model)
     except (ValueError, OSError, TypeError, KeyError,
             json.JSONDecodeError, subprocess.SubprocessError) as exc:
         result = {"status": "blocked", "error_type": type(exc).__name__,

@@ -13,9 +13,9 @@ import re
 import shutil
 
 try:
-    from .gguf_cpu_runtime import approved_model, sha256_file
+    from .gguf_cpu_runtime import MODELS, approved_model, sha256_file
 except ImportError:
-    from gguf_cpu_runtime import approved_model, sha256_file
+    from gguf_cpu_runtime import MODELS, approved_model, sha256_file
 
 
 def resolve_license(card):
@@ -26,11 +26,14 @@ def resolve_license(card):
 
 def download(model, destination, get_info, get_file):
     spec = approved_model(model)
-    info = get_info(spec["repo"])
+    revision = spec.get("revision")
+    info = get_info(spec["repo"], revision=revision) if revision else get_info(spec["repo"])
     sha = getattr(info, "sha", None)
     license_id = resolve_license(getattr(info, "card_data", None))
     if not isinstance(sha, str) or re.fullmatch("[0-9a-f]{40}", sha) is None:
         raise ValueError("unverified official model commit")
+    if revision and sha != revision:
+        raise ValueError("official model revision differs from the pinned revision")
     if license_id != "apache-2.0":
         raise ValueError("official model license is not an approved Apache-2.0 license")
     root = Path(destination)
@@ -54,11 +57,14 @@ def download(model, destination, get_info, get_file):
     with cache_path.open("rb") as stream:
         if stream.read(4) != b"GGUF":
             raise ValueError("download did not have GGUF file signature")
-    # A 7B GGUF is several gigabytes. On the same ephemeral CI volume, a
+    checksum = sha256_file(cache_path)
+    if "sha256" in spec and checksum != spec["sha256"]:
+        raise ValueError("official model bytes differ from the pinned digest")
+    # Large GGUFs are several gigabytes. On the same ephemeral CI volume, a
     # hardlink avoids retaining an unnecessary second full model copy.
     # Fail closed if a safe hardlink cannot be created; no download fallback
     # from untrusted hosts, partial model or unrestricted path is permitted.
-    if model == "7b":
+    if model in ("7b", "14b"):
         os.link(cache_path, target)
     else:
         shutil.copyfile(cache_path, target)
@@ -66,22 +72,22 @@ def download(model, destination, get_info, get_file):
         "model": model, "repository": spec["repo"], "revision": sha,
         "filename": filename, "license": license_id, "quantization": "Q4_K_M",
         "size_bytes": target.stat().st_size,
-        "sha256": sha256_file(target),
+        "sha256": checksum,
         "secret_or_paid_api_used": False, "approved_for_3b": False,
     }
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True, choices=["0.5b", "1.5b", "7b"])
+    parser.add_argument("--model", required=True, choices=MODELS)
     parser.add_argument("--destination", type=Path, default=Path("models"))
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
     from huggingface_hub import hf_hub_download, model_info
-    def get_info(repo):
-        return model_info(repo, token=False)
+    def get_info(repo, revision=None):
+        return model_info(repo, revision=revision, token=False)
     def get_file(repo, filename, sha):
         return hf_hub_download(
             repo_id=repo, filename=filename, revision=sha, token=False)

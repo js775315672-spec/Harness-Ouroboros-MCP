@@ -108,6 +108,18 @@ class P3gOriginalFeedbackContractTests(unittest.TestCase):
         self.assertIn("discarded that value before its entry validation", prompt)
         self.assertNotIn("test_reject_empty_fix_entry", prompt)
 
+    def test_alternate_model_uses_identical_prompt_and_frozen_inputs(self):
+        with patch.object(s, "git_identity"):
+            _, prompt, previous = s.context(ROOT, "a" * 40, retry_p3g=True)
+            _, alternate_prompt, alternate = s.context(ROOT, "a" * 40, retry_p3g=True, model_id="14b")
+        self.assertEqual(prompt, alternate_prompt)
+        self.assertEqual(alternate["trusted_inputs_sha256"], previous["trusted_inputs_sha256"])
+        self.assertEqual(alternate["rejected_function_fingerprints"], previous["rejected_function_fingerprints"])
+        self.assertEqual(alternate["variant"], s.ALTERNATE_VARIANT)
+        self.assertEqual(alternate["model_sha256"], s.approved_model("14b")["sha256"])
+        with self.assertRaisesRegex(ValueError, "requires the frozen feedback"):
+            s.context(ROOT, "a" * 40, model_id="14b")
+
     def test_retry_stops_either_repeated_candidate_before_docker(self):
         latest = json.loads(s.file_bytes(ROOT, s.P3G_FAILURE))["raw_response"]
         earlier = s.file_bytes(ROOT, s.PREVIOUS).decode("utf-8")
