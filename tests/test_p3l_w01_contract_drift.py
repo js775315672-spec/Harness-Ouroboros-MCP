@@ -30,9 +30,17 @@ class ContractDriftTests(unittest.TestCase):
         self.assertEqual(result["model_calls"], 0)
         self.assertFalse(result["candidate_verified"])
         self.assertFalse(result["merge_authorized"])
-        self.assertIn("empty_fix_rejected", result["mismatches"])
-        self.assertIn("thirteen_fixes_rejected", result["mismatches"])
-        self.assertNotIn("empty_fixes_valid", result["mismatches"])
+        self.assertEqual(result["matches"] + len(result["mismatches"]), len(result["cases"]))
+        self.assertEqual(result["mismatches"], [
+            row["case"] for row in result["cases"] if not row["matches_contract"]
+        ])
+        self.assertTrue(all(
+            row["matches_contract"] == (row["expected_accept"] == row["observed_accept"])
+            for row in result["cases"]
+        ))
+        self.assertIn("empty_fixes_valid", {row["case"] for row in result["cases"]})
+        # A future validator that meets the contract must not fail this probe.
+        # Drift is an observation, not a permanently expected failure.
 
     def test_perfect_validator_has_no_drift(self):
         decisions = {name: expected for name, _, expected in cases()}
