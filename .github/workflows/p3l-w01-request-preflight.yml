@@ -6,6 +6,8 @@ on:
       - ".github/workflows/p3l-w01-request-preflight.yml"
       - "scripts/p3l_w01_request.py"
       - "tests/test_p3l_w01_request.py"
+      - "scripts/p3l_w01_cpu_dispatch.py"
+      - "tests/test_p3l_w01_cpu_dispatch.py"
       - "docs/p3l/W01-ledger-contract.ko.md"
       - "scripts/development_ledger.py"
   workflow_dispatch:
@@ -25,7 +27,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Validate W01 bounded request parser
-        run: python3 -m unittest discover -s tests -p 'test_p3l_w01_request.py' -v
+        run: |
+          python3 -m unittest discover -s tests -p 'test_p3l_w01_request.py' -v
+          python3 -m unittest discover -s tests -p 'test_p3l_w01_cpu_dispatch.py' -v
       - name: Prepare immutable W01 task request; zero model calls
         env:
           REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -44,10 +48,27 @@ jobs:
           assert doc['status'] == 'PREPARED_AWAITING_EXECUTOR_AND_REVIEW'
           print('PASS: request only; NOT an AI-generated W01 deliverable')
           PY
-      - name: Upload W01 request (not model output)
+          python3 scripts/p3l_w01_cpu_dispatch.py \
+            --root . --head-sha "$REVIEW_SHA" \
+            --request artifacts/p3l-w01/request.json \
+            --model 0.5b \
+            --out artifacts/p3l-w01/dispatch.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('artifacts/p3l-w01/dispatch.json').read_text(encoding='utf-8'))
+          assert d['actual_model_calls'] == 0 and d['execution_enabled'] is False
+          assert d['candidate_verified'] is False and d['merge_authorized'] is False
+          assert d['executor_connected'] is False and d['model_pinned'] is False
+          assert len(d['required_approval_gates']) == 5
+          print('PASS: CPU model adapter manifest prepared; execution BLOCKED')
+          PY
+      - name: Upload W01 request and blocked CPU adapter manifest (not model output)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: p3l-w01-unexecuted-request
-          path: artifacts/p3l-w01/request.json
+          name: p3l-w01-unexecuted-handoff
+          path: |
+            artifacts/p3l-w01/request.json
+            artifacts/p3l-w01/dispatch.json
           if-no-files-found: error
           retention-days: 7
