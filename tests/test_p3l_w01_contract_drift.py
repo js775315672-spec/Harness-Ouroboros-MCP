@@ -75,6 +75,17 @@ class ContractDriftTests(unittest.TestCase):
                     for row in result["cases"]
                 ))
 
+    def test_unexpected_validator_exception_is_reported_without_abort(self):
+        def broken_validator(records):
+            raise TypeError("malformed model candidate")
+        result = audit(broken_validator)
+        self.assertEqual(len(result["cases"]), len(list(cases())))
+        self.assertTrue(all(
+            row["error_type"] == "TypeError" and not row["observed_accept"]
+            for row in result["cases"]
+        ))
+        self.assertFalse(result["candidate_verified"])
+
     def test_perfect_validator_has_no_drift(self):
         decisions = {name: expected for name, _, expected in cases()}
         names = iter(decisions)
