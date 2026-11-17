@@ -139,8 +139,9 @@ def main():
                                                    root / opts.model_provenance)
         summary["model_sha256"] = meta["sha256"]
         summary["model_revision"] = meta["revision"]
-        result, elapsed = invoke_once(cli, weights, prompt)
+        # Count the attempted invocation even if the runner times out or errors.
         summary["model_calls"] = 1
+        result, elapsed = invoke_once(cli, weights, prompt)
         summary["duration_seconds"] = elapsed
         summary["model_exit_code"] = result.returncode
         summary["stderr_sha256"] = sha(result.stderr.encode("utf-8"))
