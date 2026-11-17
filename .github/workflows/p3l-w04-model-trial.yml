@@ -1,0 +1,102 @@
+name: P3L W04 real Qwen AST retry-gate candidate
+on:
+  push:
+    branches: [work/p3l-w04]
+    paths:
+      - ".github/workflows/p3l-w04-model-trial.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p3l-w04-model-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  PYTHONDONTWRITEBYTECODE: "1"
+  PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+
+jobs:
+  w04_model_candidate:
+    if: ${{ github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact W04 HEAD without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Offline W04 source guard, prior retry tests, and Harness scan
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          python3 -m unittest discover -s tests -p test_p3l_w04_model_trial.py -v
+          python3 -m unittest discover -s tests -p test_model_stagnation_gate.py -v
+          python3 scripts/harness_check.py
+
+      - name: Build exact pinned llama.cpp CPU binary
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+
+      - name: Fetch official public Apache-2.0 Qwen 1.5B GGUF
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py \
+            --model 1.5b --destination models \
+            --report artifacts/p3l-w04/model-origin.json
+
+      - name: One real local model call, untrusted candidate only
+        run: |
+          set -euo pipefail
+          python3 scripts/p3l_w04_model_trial.py \
+            --root . \
+            --cli vendor/llama.cpp/build/bin/llama-completion \
+            --gguf models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
+            --metadata artifacts/p3l-w04/model-origin.json \
+            --output artifacts/p3l-w04/trial.json
+          test -z "$(git status --porcelain -- scripts/model_stagnation_gate.py tests/test_model_stagnation_gate.py)"
+
+      - name: Truthful model-call and candidate summary
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json,pathlib
+          p=pathlib.Path("artifacts/p3l-w04/trial.json")
+          x=json.loads(p.read_text()) if p.exists() else {}
+          print("## P3L W04 actual-model experiment")
+          for k in ("model_called","model_call_count","candidate_status",
+                    "model_response_sha256","prompt_sha256","baseline_sha256",
+                    "model_code_executed","source_checkout_modified",
+                    "model_test_passed","merge_authorized"):
+              print("- " + k + ": " + str(x.get(k,"not_run")))
+          print("- This job makes a real Qwen model candidate only.")
+          print("- No model-generated code is run, committed, or merged.")
+          PY
+
+      - name: Preserve model provenance and raw untrusted candidate
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w04-real-qwen-untrusted-candidate
+          path: artifacts/p3l-w04/
+          if-no-files-found: warn
+          retention-days: 3
