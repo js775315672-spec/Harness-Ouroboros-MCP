@@ -65,7 +65,11 @@ def audit(validator=validate):
             else:
                 observed = verdict == 1
                 error = None
-        except ValueError as exc:
+        except Exception as exc:
+            # Candidate validators may raise TypeError, AssertionError, or
+            # other ordinary errors. Record the failure without letting one
+            # malformed case suppress the remaining independent evidence.
+            # SystemExit/KeyboardInterrupt are intentionally not swallowed.
             observed = False
             error = type(exc).__name__
         unchanged = supplied == before
