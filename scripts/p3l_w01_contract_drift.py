@@ -46,6 +46,8 @@ def cases():
     for name, changes, expected in variants:
         record = valid_record()
         record.update(changes)
+        if name.startswith("change_"):
+            record["fixes"] = ["fixed"]
         yield name, record, expected
 
 
@@ -54,12 +56,13 @@ def audit(validator=validate):
     for name, record, expected in cases():
         supplied = copy.deepcopy(record)
         before = copy.deepcopy(supplied)
+        records = [supplied]
         try:
-            verdict = validator([supplied])
+            verdict = validator(records)
             # bool is an int subclass: True == 1. Never accept it as
             # a verified ledger count. Unexpected return types/counts
             # must fail closed, not become acceptance evidence.
-            if type(verdict) is not int or verdict not in (0, 1):
+            if type(verdict) is not int or verdict != 1:
                 observed = False
                 error = "InvalidValidatorResult"
             else:
@@ -72,7 +75,7 @@ def audit(validator=validate):
             # SystemExit/KeyboardInterrupt are intentionally not swallowed.
             observed = False
             error = type(exc).__name__
-        unchanged = supplied == before
+        unchanged = records == [before]
         rows.append({
             "case": name, "expected_accept": expected, "observed_accept": observed,
             "input_unchanged": unchanged,
