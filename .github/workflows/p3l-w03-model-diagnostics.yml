@@ -1,0 +1,204 @@
+name: P3L W03 Harness model-authored diagnostics
+on:
+  push:
+    branches: [infra/p3l-w03-granite-diagnostic-run-20261117]
+    paths: [".github/workflows/p3l-w03-model-diagnostics.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: p3l-w03-model-cpu
+  cancel-in-progress: false
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  PINNED_LLAMA_SHA: 4e5116f47619dac4180c3007ef02a383f347554c
+jobs:
+  model_authors_w03_tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact experiment SHA without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Baseline regression and safe evidence directory
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test ! -e tests/test_ledger_rule_diagnostics.py
+          python3 -m unittest discover -s tests -p test_development_ledger.py -v
+          python3 -m unittest discover -s tests -p test_ci_attestation.py -v
+          python3 scripts/harness_check.py
+          mkdir -p artifacts/w03
+      - name: Build pinned llama.cpp CPU binary without cache
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+          sha256sum vendor/llama.cpp/build/bin/llama-completion > artifacts/w03/binary.sha256
+      - name: Download SHA-verified Apache-2.0 Granite GGUF model
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py --model granite-code-8b \
+            --destination models --report artifacts/w03/model-provenance.json
+      - name: Harness Granite inference to author W03 regression suite
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast,hashlib,json,os,subprocess,time
+          from pathlib import Path
+          e=Path("artifacts/w03")
+          src=Path("scripts/development_ledger.py").read_bytes()
+          spec=Path("docs/p3l/W03-diagnostics.ko.md").read_bytes()
+          tree=ast.parse(src.decode())
+          fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=="validate")
+          original="".join(src.decode().splitlines(keepends=True)[fn.lineno-1:fn.end_lineno])
+          task=(
+            "You are the Harness-Ouroboros W03 model worker. Output ONLY complete Python "
+            "unittest source for tests/test_ledger_rule_diagnostics.py, no Markdown or prose. "
+            "Use at least 12 test methods, each building a fresh valid ledger record. "
+            "A valid record has cycle=1, commit='a'*40, change='Tested feature', "
+            "checks={'harness':'pass','ouroboros':'pass','regression':'pass','secrets':'pass'}, "
+            "fixes=[], ci_url='https://github.com/org/repo/actions/runs/123'. "
+            "Import validate from scripts using sys.path. "
+            "Tests must check valid fixes=[] accepted, fixes=[''] rejected, "
+            "12 fixes accepted vs 13 rejected, 128 vs 129 UTF-8 bytes per fix, "
+            "256 vs 257 UTF-8 bytes per change including Korean, and NUL/LF/ESC "
+            "in either field rejected. For change cases fixes MUST be a valid nonempty "
+            "list; for fixes cases change MUST be valid. Verify inputs not mutated. "
+            "Use assertRaises(ValueError) for negatives, validate([record])==1 for positives. "
+            "Test the target contract even though buggy original should fail some cases. "
+            "Do not modify validate or existing 25 tests. "
+            "No extra imports, subprocesses, I/O or network calls in candidate tests.\n"
+            "Reviewed W03 scope:\n"+spec.decode()+
+            "\nOriginal validate function (read only):\n"+original)
+          p="Question:\n"+task+"\n\nAnswer:\n"
+          assert 1<=len(p.encode())<=5600 and "\x00" not in p and "\x1b" not in p
+          model=json.loads((e/"model-provenance.json").read_text())
+          assert model["sha256"]=="bc8804cb43c4e1e82e2188658569b147587f83a89640600a64d5f7d7de2565b4"
+          assert model["revision"]=="1398cabed59e66b8c8ec7169a9b87ae30c835911"
+          assert model["license"]=="apache-2.0"
+          data={"schema":1,"worker":"W03","model_author":"Harness-Ouroboros/Granite-8B",
+                "coordinator_authored_tests":False,"review_sha":os.environ["GITHUB_SHA"],
+                "source_sha256":hashlib.sha256(src).hexdigest(),
+                "spec_sha256":hashlib.sha256(spec).hexdigest(),
+                "prompt_sha256":hashlib.sha256(p.encode()).hexdigest(),
+                "model":model,"model_calls_attempted":1,"model_calls_completed":0,
+                "candidate_accepted":False,"merge_authorized":False}
+          (e/"attempt.json").write_text(json.dumps(data,sort_keys=True,indent=2)+"\n")
+          (e/"prompt.txt").write_text(p)
+          command=["vendor/llama.cpp/build/bin/llama-completion","--model",
+                   "models/granite-8b-code-instruct.Q4_K_M.gguf",
+                   "--prompt",p,"--n-predict","2500","--ctx-size","4096",
+                   "--threads","4","--temp","0","--seed","42",
+                   "--no-display-prompt","--simple-io","--offline",
+                   "--log-verbosity","1","--color","off","-no-cnv","--no-escape"]
+          t=time.monotonic()
+          result=subprocess.run(command,text=True,capture_output=True,errors="replace",
+                                timeout=480,check=False)
+          data["elapsed_seconds"]=round(time.monotonic()-t,3)
+          data["model_returncode"]=result.returncode
+          (e/"model-stdout.txt").write_text(result.stdout)
+          (e/"model-stderr-tail.txt").write_text(result.stderr[-4000:])
+          data["raw_sha256"]=hashlib.sha256(result.stdout.encode()).hexdigest()
+          if result.returncode==0:
+              data["model_calls_completed"]=1
+              candidate=result.stdout.strip()
+              if candidate.endswith("[end of text]"):
+                  candidate=candidate[:-len("[end of text]")].strip()
+              fence=chr(96)*3
+              if candidate.startswith(fence+"python\n") and candidate.endswith("\n"+fence):
+                  candidate=candidate[len(fence+"python\n"):-len("\n"+fence)].strip()
+              if 0<len(candidate.encode())<=15000:
+                  (e/"candidate.py").write_text(candidate+"\n")
+                  data["candidate_sha256"]=hashlib.sha256((candidate+"\n").encode()).hexdigest()
+                  try:
+                      parsed=ast.parse(candidate)
+                      methods=[x for c in parsed.body if isinstance(c,ast.ClassDef)
+                               for x in c.body if isinstance(x,ast.FunctionDef)
+                               and x.name.startswith("test_")]
+                      data["test_methods"]=len(methods)
+                      data["status"]="candidate_generated" if len(methods)>=12 else "rejected_too_few_tests"
+                  except SyntaxError:
+                      data["status"]="rejected_invalid_syntax"
+              else:
+                  data["status"]="rejected_response_size"
+          else:
+              data["status"]="model_call_failed"
+          (e/"record.json").write_text(json.dumps(data,sort_keys=True,indent=2)+"\n")
+          print("W03 actual model call:",data["status"],"SHA:",data["raw_sha256"])
+          PY
+      - name: Run model-written tests in read-only isolated Docker
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,pathlib,shutil
+          e=pathlib.Path("artifacts/w03")
+          d=json.loads((e/"record.json").read_text())
+          if d["status"]=="candidate_generated":
+              s=pathlib.Path("artifacts/w03-stage")
+              (s/"scripts").mkdir(parents=True,exist_ok=True)
+              (s/"tests").mkdir(parents=True,exist_ok=True)
+              shutil.copyfile("scripts/development_ledger.py",s/"scripts/development_ledger.py")
+              shutil.copyfile(e/"candidate.py",s/"tests/test_ledger_rule_diagnostics.py")
+          PY
+          if test -f artifacts/w03-stage/tests/test_ledger_rule_diagnostics.py; then
+            docker pull python:3.11-slim
+            set +e
+            timeout 120s docker run --rm --network=none --read-only \
+              --cap-drop=ALL --security-opt=no-new-privileges --user=65534:65534 \
+              --pids-limit=100 --memory=768m --cpus=2 --tmpfs /tmp:rw,nosuid,noexec,size=32m \
+              -v "$PWD/artifacts/w03-stage:/app:ro" -w /app python:3.11-slim \
+              python3 -B -m unittest discover -s tests \
+              -p test_ledger_rule_diagnostics.py -v \
+              > artifacts/w03/test-stdout.txt 2> artifacts/w03/test-stderr.txt
+            rc=$?
+            set -e
+            python3 - "$rc" <<'PY'
+          import json,pathlib,re,sys
+          e=pathlib.Path("artifacts/w03")
+          d=json.loads((e/"record.json").read_text())
+          log=(e/"test-stdout.txt").read_text()+(e/"test-stderr.txt").read_text()
+          match=re.search(r"Ran (\d+) tests?",log)
+          d["docker_returncode"]=int(sys.argv[1])
+          d["docker_tests_run"]=int(match.group(1)) if match else None
+          d["status"]="diagnostics_replayed_isolated"
+          d["candidate_accepted"]=False
+          (e/"record.json").write_text(json.dumps(d,sort_keys=True,indent=2)+"\n")
+          print("W03 isolated run:",d["docker_tests_run"],"tests; exit:",d["docker_returncode"])
+          PY
+          fi
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+      - name: Upload model response and evidence even on failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w03-harness-model-raw-output
+          path: artifacts/w03/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Require actual model and Docker run, not candidate acceptance
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          d=json.load(open("artifacts/w03/record.json"))
+          assert d["model_calls_completed"]==1
+          assert d["status"]=="diagnostics_replayed_isolated"
+          assert d["docker_tests_run"] is not None
+          assert d["candidate_accepted"] is False and d["merge_authorized"] is False
+          print("W03 CPU inference evidence ready; model candidate NOT accepted or merged")
+          PY
