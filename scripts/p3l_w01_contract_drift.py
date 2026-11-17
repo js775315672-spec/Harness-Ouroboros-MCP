@@ -76,7 +76,7 @@ def audit(validator=validate):
         rows.append({
             "case": name, "expected_accept": expected, "observed_accept": observed,
             "input_unchanged": unchanged,
-            "matches_contract": observed == expected and unchanged,
+            "matches_contract": observed == expected and unchanged and error not in ("InvalidValidatorResult",) and (error is None or (error == "ValueError" and not expected)),
             "error_type": error,
         })
     return {
