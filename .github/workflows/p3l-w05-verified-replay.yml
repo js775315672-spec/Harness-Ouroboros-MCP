@@ -11,7 +11,9 @@ permissions:
   contents: read
 jobs:
   historical_replay:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/p3l-w05-integrated-evidence'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

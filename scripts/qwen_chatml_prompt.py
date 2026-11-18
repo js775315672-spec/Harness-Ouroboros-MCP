@@ -14,13 +14,14 @@ SYSTEM = (
 )
 
 
-def format_chatml(task):
-    if not isinstance(task, str) or not 1 <= len(task.encode("utf-8")) <= 5000:
+def format_chatml(task, *, system=SYSTEM):
+    if (not isinstance(task, str) or not 1 <= len(task.encode("utf-8")) <= 5000
+            or not isinstance(system, str) or not system.strip()):
         raise ValueError("invalid bounded ChatML task")
-    if any(token in task for token in (BEGIN, END, "\x00", "\x1b", "\r")):
+    if any(token in task or token in system for token in (BEGIN, END, "\x00", "\x1b", "\r")):
         raise ValueError("task includes disallowed role or control marker")
     result = (
-        BEGIN + "system\n" + SYSTEM + END + "\n"
+        BEGIN + "system\n" + system + END + "\n"
         + BEGIN + "user\n" + task + END + "\n"
         + BEGIN + "assistant\n"
     )

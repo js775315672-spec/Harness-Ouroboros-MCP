@@ -259,16 +259,23 @@ def render_prompt(task, model_id):
 
 
 def infer(cli, gguf, prompt, model_id="7b"):
-    _, binary, weights = verify_paths(model_id, cli, gguf)
-    cmd = [str(binary), "--model", str(weights),
-           "--prompt", render_prompt(prompt, model_id),
-           "--n-predict", "800", "--ctx-size", "3072",
-           "--threads", "4", "--temp", "0", "--seed", "42",
-           "--no-display-prompt", "--simple-io", "--offline", "--log-verbosity", "1", "--color", "off"]
+    return infer_prepared(cli, gguf, render_prompt(prompt, model_id), model_id)
+
+
+def inference_flags(model_id):
+    flags = ["--n-predict", "800", "--ctx-size", "3072", "--threads", "4",
+             "--temp", "0", "--seed", "42", "--no-display-prompt", "--simple-io",
+             "--offline", "--log-verbosity", "1", "--color", "off"]
     if model_id == "granite-code-8b":
-        cmd.extend(("-no-cnv", "--no-escape"))
+        flags.extend(("-no-cnv", "--no-escape"))
     else:
-        cmd.extend(("--single-turn", "--jinja"))
+        flags.extend(("--single-turn", "--jinja"))
+    return flags
+
+
+def infer_prepared(cli, gguf, prompt, model_id):
+    _, binary, weights = verify_paths(model_id, cli, gguf)
+    cmd = [str(binary), "--model", str(weights), "--prompt", prompt, *inference_flags(model_id)]
     env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp",
            "LANG": "C.UTF-8", "OMP_NUM_THREADS": "4"}
     started = time.monotonic()

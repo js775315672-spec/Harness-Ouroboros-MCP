@@ -12,6 +12,7 @@ from pathlib import Path
 
 from p3l_w01_contract_drift import audit, cases, gate_exit_code
 from p3l_w01_candidate_validator import validate as isolated_validate
+from qwen_chatml_prompt import format_chatml
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY = Path("scripts/development_ledger.py")
@@ -64,35 +65,29 @@ def build(root=ROOT):
     # Only original function + the proposed written rules are visible to a model;
     # W03 diagnostics, frozen holdouts and model-failure source are not sent.
     source = legacy.decode("utf-8")
-    prompt = (
-        "Write a single complete replacement Python def validate(records): for "
-        "the original development ledger validator. Return Python source only; "
-        "no imports, wrappers, Markdown, explanations or changes outside this function.\n"
-        "Keep the original record schema, sequential cycle, unique 40-character "
-        "lowercase hex commit, valid GitHub Actions run URL, and exactly four "
-        "passing checks. Preserve caller-owned records without mutation.\n"
-        "Proposed W01 contract (not yet approved for promotion): fixes=[] is valid; "
-        "a nonempty fixes list has at most 12 string entries; each entry must be "
-        "nonempty and <=128 UTF-8 bytes. Description change is a nonempty, "
-        "non-whitespace string of <=256 UTF-8 bytes. Reject C0/C1 control "
-        "characters (ord<32 or 127..159) in either field. Count UTF-8 bytes, "
-        "not Unicode characters; allow otherwise valid Korean text. "
-        "For records failing any rule, raise ValueError. "
-        "Retain prior working behavior for undecided whitespace-only fixes. "
-        "Do not inspect hidden tests or previous model answers.\n"
-        "Public W01 implementation checklist (all obligations are REQUIRED): "
-        "(1) fixes=[] MUST be valid; a nonempty list containing '' MUST be "
-        "rejected; do not reject a valid empty list. "
-        "(2) Reject len(fixes)>12. "
-        "(3) Every nonempty fixes item must be a string with "
-        "len(item.encode('utf-8'))<=128, NOT merely len(item)<=128. "
-        "(4) The nonblank change must have "
-        "len(change.encode('utf-8'))<=256, NOT merely len(change)<=256. "
-        "(5) Reject NUL, LF, ESC and every C0/C1 code point in both fields. "
-        "Preserve valid Korean text and all original record, commit, "
-        "cycle, URL, checks and immutability rules. This is a public "
-        "contract checklist; do not infer or include hidden tests. \n"
-        "Original function follows:\n" + legacy_function(source)
+    task = (
+        "Return the complete Python def validate(records): with the original checks "
+        "and return behavior preserved. Do not mutate records. Change only the "
+        "validation at the existing change and fixes sections in the function below.\n"
+        "Original function:\n" + legacy_function(source) + "\n"
+        "Public W01 implementation checklist (provisional contract):\n"
+        "1. change section: keep the existing string and nonblank checks, enforce "
+        "256 UTF-8 bytes with len(change.encode('utf-8'))<=256, and reject every "
+        "C0/C1 character (ord 0..31 or 127..159, including NUL, LF, ESC).\n"
+        "2. fixes section: keep list and item string checks. fixes=[] MUST be valid; "
+        "a list containing '' MUST be rejected. Reject len(fixes)>12. "
+        "Require at most 128 UTF-8 bytes per item with len(item.encode('utf-8'))<=128. "
+        "Reject the same C0/C1 characters in each item. Preserve the prior behavior "
+        "for a nonempty whitespace-only fixes item and keep the records unchanged.\n"
+        "3. Preserve valid Korean text and raise ValueError for invalid records. "
+        "Before output, check that the change section explicitly implements both "
+        "new change guards and that the fixes section rejects an empty item while "
+        "accepting an empty list. Return only the complete function."
+    )
+    prompt = format_chatml(
+        task,
+        system="You repair Python code from a public contract. Return one complete "
+        "replacement Python function. Do not add imports, Markdown, or explanations.",
     )
     encoded = prompt.encode("utf-8")
     if len(encoded) > 7000:
