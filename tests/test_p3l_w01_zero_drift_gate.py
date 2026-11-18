@@ -60,8 +60,15 @@ class W01ZeroDriftGateTests(unittest.TestCase):
     def test_observation_mode_does_not_claim_acceptance(self):
         self.assertEqual(gate_exit_code(audit(), False), 0)
 
-    def test_real_validator_meets_all_proposed_rules(self):
+    def test_immutable_legacy_validator_still_blocks_premature_acceptance(self):
         report = audit()
+        self.assertEqual(len(report["cases"]), 19)
+        self.assertTrue(report["mismatches"])
+        self.assertEqual(gate_exit_code(report, True), 2)
+
+    def test_isolated_candidate_meets_all_proposed_rules(self):
+        from p3l_w01_candidate_validator import validate as candidate_validate
+        report = audit(candidate_validate)
         self.assertEqual(len(report["cases"]), 19)
         self.assertEqual(report["matches"], 19)
         self.assertEqual(report["mismatches"], [])
@@ -96,7 +103,7 @@ class W01ZeroDriftGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = pathlib.Path(folder) / "report.json"
             command = [sys.executable, str(ROOT / "scripts/p3l_w01_contract_drift.py"),
-                       "--out", str(path), "--require-zero-drift"]
+                       "--out", str(path), "--candidate-validator", "--require-zero-drift"]
             proc = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue(path.exists())
