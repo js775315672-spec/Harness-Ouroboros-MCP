@@ -4,12 +4,14 @@ import argparse
 from functools import partial
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 
 import p3g_qwen_ledger_feedback_repair as p3g
 import p3l_w04_one_call_gate as w04
-from p3l_w04_attempt_registry import AttemptBlocked, AttemptInput
+from p3l_w04_attempt_registry import AttemptBlocked, AttemptInput, Lease
+from p3l_w04_local_service import RegistryClient, read_registry_object
 import p3l_w02_model_handoff as w02
 
 # Source digests independently rejected by W05 in runs 44233044418,
@@ -30,6 +32,11 @@ def inference_config_sha256():
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def observed_head(root):
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
+                          text=True, timeout=10, check=True).stdout.strip()
 
 
 def managed_attempt_input(root, review_sha, handoff, model):
@@ -54,8 +61,7 @@ def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None, 
         raise ValueError("invalid workflow run id")
     if type(review_sha) is not str or len(review_sha)!=40 or any(c not in "0123456789abcdef" for c in review_sha):
         raise ValueError("invalid reviewed commit")
-    observed=subprocess.run(["git","rev-parse","HEAD"],cwd=root,capture_output=True,text=True,timeout=10,check=True).stdout.strip()
-    if observed!=review_sha:
+    if observed_head(root)!=review_sha:
         raise ValueError("wrong reviewed commit")
     plan=w04.plan(root,history=[],model_id="7b")
     handoff=w02.build(root)
@@ -68,9 +74,9 @@ def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None, 
         registry,lease=admission
         if lease.task_key != managed_attempt_input(root,review_sha,handoff,model).task_key:
             raise AttemptBlocked("lease does not match the verified W06 inputs")
-        observed=subprocess.run(["git","rev-parse","HEAD"],cwd=root,capture_output=True,text=True,
-                                timeout=10,check=True).stdout.strip()
-        registry.start(lease,observed_head=observed,run_id=run_id)
+        registry.start(lease,observed_head=observed_head(root),run_id=run_id)
+        if observed_head(root)!=review_sha:
+            raise AttemptBlocked("reviewed HEAD changed during admission")
     raw,elapsed=infer_fn(binary,weights,handoff["prompt"],"7b")
     if type(raw) is not str or not 1<=len(raw.encode("utf-8"))<=6000:
         raise ValueError("invalid bounded model response")
@@ -112,10 +118,20 @@ def main():
     p.add_argument("--metadata",type=Path,required=True)
     p.add_argument("--llama-revision",required=True)
     p.add_argument("--out",type=Path,required=True)
+    p.add_argument("--registry-port",type=int)
+    p.add_argument("--lease",type=Path)
     args=p.parse_args()
     if len(args.llama_revision)!=40 or any(c not in "0123456789abcdef" for c in args.llama_revision):
         raise ValueError("invalid pinned llama.cpp revision")
-    result=execute(w02.ROOT,args.head_sha,args.run_id,args.cli,args.gguf,args.metadata)
+    admission=None
+    if (args.registry_port is None)!=(args.lease is None):
+        p.error("shared admission requires both --registry-port and --lease")
+    if args.lease is not None:
+        if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+            p.error("shared W06 worker must not receive a coordinator token")
+        admission=(RegistryClient(args.registry_port,require_shared=True),
+                   Lease(**read_registry_object(args.lease)))
+    result=execute(w02.ROOT,args.head_sha,args.run_id,args.cli,args.gguf,args.metadata,admission=admission)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(result,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
     metadata=json.loads(args.metadata.read_bytes())
