@@ -1,5 +1,6 @@
 """W06 safety tests use model stubs: they do not claim actual inference."""
 import hashlib,pathlib,sys,unittest
+from pathlib import Path
 from unittest.mock import patch,Mock
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"))
