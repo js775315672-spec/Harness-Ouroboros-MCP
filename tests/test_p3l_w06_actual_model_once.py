@@ -44,7 +44,7 @@ class W06AttemptTests(unittest.TestCase):
         self.assertIn("-no-cnv",argv)
         self.assertIn("--no-escape",argv)
         self.assertNotIn("--jinja",argv)
-        self.assertEqual(argv[argv.index("--temp")+1],"0.35")
+        self.assertEqual(argv[argv.index("--temp")+1],"0")
         self.assertEqual(argv[argv.index("--seed")+1],"1085")
         self.assertEqual(w06.inference_config_sha256(),w06.w04.digest_json(argv[5:]))
         self.assertIn("--jinja",p3g.inference_flags("7b"))
