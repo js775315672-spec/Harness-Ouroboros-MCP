@@ -1,10 +1,13 @@
-name: P3L W06 one real Qwen coding attempt and independent replay
+# Scoped user-requested second model experiment:
+# - New W02 public-contract checklist changes prompt/task SHA from first failed W06.
+# - One PR-opened trigger only, no workflow_dispatch/synchronize/reopened.
+# - Never rerun old SHA/model input; no auto-merge or promotion.
+name: P3L W06 fresh public-contract prompt single Qwen attempt with independent replay
 on:
   pull_request:
     types: [opened]
     paths:
       - ".github/workflows/ledger-next-experiment.yml"
-  workflow_dispatch:
 permissions:
   contents: read
 env:
@@ -35,6 +38,21 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 -m unittest discover -s tests -p test_p3l_w02_public_prompt_clarity.py -v
+          python3 - <<'PY'
+          import hashlib
+          import sys
+          sys.path.insert(0, 'scripts')
+          from p3l_w02_model_handoff import build
+          from p3l_w04_one_call_gate import plan
+          handoff = build()
+          gate = plan()
+          assert 'Public W01 implementation checklist' in handoff['prompt']
+          assert gate['prompt_sha256'] == hashlib.sha256(handoff['prompt'].encode('utf-8')).hexdigest()
+          assert gate['decision'] == 'allow_one_model_call'
+          assert gate['model_calls'] == 0 and gate['model_invoked'] is False
+          print('PASS: new public W01 prompt and W04 single-call input gate (no model yet)')
+          PY
           python3 -m unittest discover -s tests -p test_p3l_w04_one_call_gate.py -v
           python3 -m unittest discover -s tests -p test_p3l_w05_replay_evidence.py -v
           python3 -m unittest discover -s tests -p test_p3l_w06_actual_model_once.py -v
