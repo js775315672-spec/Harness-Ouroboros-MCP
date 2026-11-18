@@ -1,0 +1,40 @@
+name: W04 across-run atomic claim rehearsal
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - ".github/workflows/p3l-w04-ref-cas-rehearsal.yml"
+      - "scripts/p3l_w04_ref_cas_rehearsal.py"
+      - "tests/test_p3l_w04_ref_cas_rehearsal.py"
+permissions:
+  contents: read
+jobs:
+  claim:
+    if: >-
+      github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'work/p3l-w04-ref-cas-rehearsal' &&
+      github.event.pull_request.base.sha == '0740c52707e5d2bbb750e8281d0a1e40457d9084' &&
+      github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Attempt one create-only synthetic claim
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_BASE: ${{ github.event.pull_request.base.sha }}
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 -B scripts/p3l_w04_ref_cas_rehearsal.py --receipt "$RUNNER_TEMP/claim.json"
+      - name: Preserve claim receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w04-synthetic-atomic-claim
+          path: ${{ runner.temp }}/claim.json
+          if-no-files-found: error
+          retention-days: 7
