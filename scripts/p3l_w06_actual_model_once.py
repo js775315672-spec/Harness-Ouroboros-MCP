@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""W06: a single real Qwen model attempt on the W02 contract, review only."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+
+import p3g_qwen_ledger_feedback_repair as p3g
+import p3l_w04_one_call_gate as w04
+import p3l_w02_model_handoff as w02
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None):
+    if type(run_id) is not int or run_id<1:
+        raise ValueError("invalid workflow run id")
+    if type(review_sha) is not str or len(review_sha)!=40 or any(c not in "0123456789abcdef" for c in review_sha):
+        raise ValueError("invalid reviewed commit")
+    observed=subprocess.run(["git","rev-parse","HEAD"],cwd=root,capture_output=True,text=True,timeout=10,check=True).stdout.strip()
+    if observed!=review_sha:
+        raise ValueError("wrong reviewed commit")
+    plan=w04.plan(root,history=[],model_id="7b")
+    handoff=w02.build(root)
+    if plan["decision"]!="allow_one_model_call" or plan["prompt_sha256"]!=handoff["prompt_sha256"]:
+        raise ValueError("W04 refused one model attempt")
+    p3g.check_model(weights,metadata,"7b")
+    if infer_fn is None:
+        infer_fn=p3g.infer
+    raw,elapsed=infer_fn(binary,weights,handoff["prompt"],"7b")
+    if type(raw) is not str or not 1<=len(raw.encode("utf-8"))<=6000:
+        raise ValueError("invalid bounded model response")
+    receipt={
+        "schema":"p3l-w06-one-shot-output-v1",
+        "run_id":run_id,"runner_role":"model_inference",
+        "model_calls":1,"model_id":"7b",
+        "task_sha256":plan["task_sha256"],
+        "prompt_sha256":plan["prompt_sha256"],
+        "source_sha256":plan["source_sha256"],
+        "model_config_sha256":plan["model_config_sha256"],
+        "raw_response":raw,
+        "raw_response_sha256":sha(raw.encode("utf-8")),
+        "candidate_source_sha256":None,
+        "diff_sha256":None,
+        "merge_authorized":False,
+    }
+    try:
+        replacement=p3g.inspect_replacement(raw)
+        original=p3g.file_bytes(root,p3g.TARGET).decode("utf-8")
+        patched,diff=p3g.patch_original(original,replacement)
+        receipt["candidate_source_sha256"]=sha(patched.encode("utf-8"))
+        receipt["diff_sha256"]=sha(diff.encode("utf-8"))
+    except (ValueError,SyntaxError) as exc:
+        # Preserve original response, do not fabricate a valid patch.
+        receipt["schema"]="p3l-w06-static-rejected-v1"
+        receipt["static_rejection"]=type(exc).__name__+": "+str(exc)[:160]
+    return receipt
+
+def main():
+    p=argparse.ArgumentParser()
+    p.add_argument("--head-sha",required=True)
+    p.add_argument("--run-id",type=int,required=True)
+    p.add_argument("--cli",type=Path,required=True)
+    p.add_argument("--gguf",type=Path,required=True)
+    p.add_argument("--metadata",type=Path,required=True)
+    p.add_argument("--out",type=Path,required=True)
+    args=p.parse_args()
+    result=execute(w02.ROOT,args.head_sha,args.run_id,args.cli,args.gguf,args.metadata)
+    args.out.parent.mkdir(parents=True,exist_ok=True)
+    args.out.write_text(json.dumps(result,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+    print("W06 real model completed; output:",result["schema"])
+    return 0 if result["schema"]=="p3l-w06-one-shot-output-v1" else 2
+
+if __name__=="__main__":
+    raise SystemExit(main())
