@@ -68,7 +68,7 @@ jobs:
           assert d["candidate_verified"] is False
           assert d["merge_authorized"] is False
           digest = hashlib.sha256(p.read_bytes()).hexdigest()
-          Path("artifacts/p3l-w01/candidate.sha256").write_text(digest+"  candidate-acceptance.json\\n")
+          Path("artifacts/p3l-w01/candidate.sha256").write_text(digest+"  candidate-acceptance.json"+chr(10))
           print(f"PASS: isolated W01 candidate 19/19; sha256={digest}")
           PY
       - name: Upload exact read-only drift evidence
