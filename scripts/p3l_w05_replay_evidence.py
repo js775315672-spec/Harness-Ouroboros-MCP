@@ -25,8 +25,10 @@ def replay(root, report, run_id):
     if set(report)!=required:
         raise ValueError("missing or unexpected model receipt fields")
     if (report["schema"]!="p3l-w06-one-shot-output-v1"
-            or report["run_id"]!=run_id or report["runner_role"]!="model_inference"
-            or report["model_calls"]!=1 or report["model_id"]!="7b"
+            or type(report["run_id"]) is not int or report["run_id"]!=run_id
+            or report["runner_role"]!="model_inference"
+            or type(report["model_calls"]) is not int or report["model_calls"]!=1
+            or report["model_id"]!="7b"
             or report["merge_authorized"] is not False):
         raise ValueError("model execution evidence invalid")
     plan=w04.plan(root,model_id=report["model_id"])

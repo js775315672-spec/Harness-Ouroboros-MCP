@@ -51,6 +51,23 @@ class W05ReplayTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     w05.replay(ROOT,record,1234)
 
+    def test_boolean_model_call_count_is_not_one_real_call(self):
+        record=sample()
+        record["model_calls"]=True
+        with patch.object(w05.p3g,"grade") as runner:
+            with self.assertRaises(ValueError):
+                w05.replay(ROOT,record,1234)
+            runner.assert_not_called()
+
+    def test_fractional_or_boolean_receipt_run_id_is_rejected(self):
+        for bad in (True, 1234.0):
+            record=sample()
+            record["run_id"]=bad
+            with self.subTest(bad=bad), patch.object(w05.p3g,"grade") as runner:
+                with self.assertRaises(ValueError):
+                    w05.replay(ROOT,record,1234)
+                runner.assert_not_called()
+
     def test_missing_frozen_test_count_blocked(self):
         wrong=grade(True)
         wrong["candidate"]["heldout_p3f_development_ledger.py"]["tests_run"]=9
