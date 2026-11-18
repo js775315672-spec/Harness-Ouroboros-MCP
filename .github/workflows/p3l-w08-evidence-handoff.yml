@@ -1,0 +1,103 @@
+name: W08 independent evidence handoff
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p3l-w08-evidence-handoff.yml"
+      - "scripts/p3l_w08_evidence_handoff.py"
+permissions:
+  contents: read
+jobs:
+  produce:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/p3l-w08-evidence-handoff' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      receipt_sha256: ${{ steps.receipt.outputs.receipt_sha256 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Publish a coordinator fixture and bound receipt
+        id: receipt
+        run: |
+          cat > "$RUNNER_TEMP/fixture.py" <<'PY'
+          def test_concurrent_checkpoint_cas(self):
+              from concurrent.futures import ThreadPoolExecutor
+              from threading import Barrier, Event
+              with tempfile.TemporaryDirectory() as directory:
+                  path = Path(directory) / "queue.json"
+                  base = new_queue(TASKS, REPO, COMMIT)
+                  save(path, base)
+                  first = advance(base, evidence(sha="b"*40), fetch=github_ok("b"*40))
+                  second = advance(base, evidence(sha="c"*40), fetch=github_ok("c"*40))
+                  ready = Barrier(2)
+                  committed = Event()
+                  def writer_first():
+                      ready.wait(timeout=5)
+                      save(path, first, expected_integrity=base["integrity"])
+                      committed.set()
+                  def writer_second():
+                      ready.wait(timeout=5)
+                      self.assertTrue(committed.wait(timeout=5))
+                      save(path, second, expected_integrity=base["integrity"])
+                  with ThreadPoolExecutor(2) as pool:
+                      a = pool.submit(writer_first)
+                      b = pool.submit(writer_second)
+                      a.result(timeout=10)
+                      with self.assertRaisesRegex(ValueError, "stale checkpoint generation"):
+                          b.result(timeout=10)
+                  self.assertEqual(load(path), first)
+                  self.assertFalse(path.with_name("queue.json.lock").exists())
+          PY
+          python3 -B scripts/p3l_w08_evidence_handoff.py publish \
+            --proposal "$RUNNER_TEMP/fixture.py" --receipt "$RUNNER_TEMP/receipt.json" | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w08-rehearsal-input
+          path: |
+            ${{ runner.temp }}/fixture.py
+            ${{ runner.temp }}/receipt.json
+          if-no-files-found: error
+          retention-days: 7
+  verify:
+    needs: produce
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: candidate
+          ref: '8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc'
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Reconstruct and verify reviewed candidate
+        working-directory: candidate
+        run: |
+          test "$(git rev-parse 'HEAD^{tree}')" = '0863df1be5c336415f8ed2a5fcd7d15e31ffea16'
+          exact=$(printf '%s' 'dHJlZSAwODYzZGYxYmU1YzMzNjQxNWY4ZWQyYTVmY2Q3ZDE1ZTMxZmZlYTE2CnBhcmVudCBmMmM4YzVkMzdjN2Y0ZmU3OWE2NThjYzI1YTZiMGVjMTI2OTcyNTc4CmF1dGhvciBQM0wgVzA3IHJldmlldyA8dzA3QGV4YW1wbGUuaW52YWxpZD4gMTc5NDk2MDAwMCArMDAwMApjb21taXR0ZXIgUDNMIFcwNyByZXZpZXcgPHcwN0BleGFtcGxlLmludmFsaWQ+IDE3OTQ5NjAwMDAgKzAwMDAKClcwNyBkcnkgcnVuOiBtb2RlbC1nZW5lcmF0ZWQgdmFsaWRhdGUK' | base64 -d | git hash-object -t commit -w --stdin)
+          test "$exact" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          git -c advice.detachedHead=false checkout --detach "$exact"
+          test "$(git rev-parse HEAD)" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          sha256sum tests/test_resumable_task_queue.py
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-rehearsal-input
+          path: ${{ runner.temp }}/handoff
+      - name: Independently verify the receipt and proposal
+        env:
+          EXPECTED_RECEIPT_SHA: ${{ needs.produce.outputs.receipt_sha256 }}
+        run: |
+          docker pull python:3.11-slim
+          docker image inspect --format '{{.Id}} {{.RepoDigests}}' python:3.11-slim
+          python3 -B harness/scripts/p3l_w08_evidence_handoff.py verify --checkout candidate \
+            --proposal "$RUNNER_TEMP/handoff/fixture.py" --receipt "$RUNNER_TEMP/handoff/receipt.json" \
+            | tee "$RUNNER_TEMP/grade.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w08-rehearsal-grade
+          path: ${{ runner.temp }}/grade.json
+          if-no-files-found: error
+          retention-days: 7
