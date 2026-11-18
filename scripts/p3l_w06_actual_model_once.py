@@ -9,6 +9,7 @@ import subprocess
 
 import p3g_qwen_ledger_feedback_repair as p3g
 import p3l_w04_one_call_gate as w04
+from p3l_w04_attempt_registry import AttemptBlocked, AttemptInput
 import p3l_w02_model_handoff as w02
 
 # Source digests independently rejected by W05 in runs 44233044418,
@@ -30,7 +31,25 @@ def inference_config_sha256():
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
-def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None):
+
+def managed_attempt_input(root, review_sha, handoff, model):
+    parent = subprocess.run(
+        ["git", "rev-parse", "--verify", "--end-of-options", review_sha + "^"],
+        cwd=root, capture_output=True, text=True, timeout=10, check=True,
+    ).stdout.strip()
+    return AttemptInput(
+        task_type="ledger-validation",
+        public_contract_sha256=handoff["w01_provisional_spec_sha256"],
+        base_sha=parent,
+        head_sha=review_sha,
+        model_revision=model["revision"],
+        gguf_sha256=model["sha256"],
+        inference_config_sha256=inference_config_sha256(),
+        prompt_sha256=handoff["prompt_sha256"],
+    )
+
+
+def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None, *, admission=None):
     if type(run_id) is not int or run_id<1:
         raise ValueError("invalid workflow run id")
     if type(review_sha) is not str or len(review_sha)!=40 or any(c not in "0123456789abcdef" for c in review_sha):
@@ -42,9 +61,16 @@ def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None):
     handoff=w02.build(root)
     if plan["decision"]!="allow_one_model_call" or plan["prompt_sha256"]!=handoff["prompt_sha256"]:
         raise ValueError("W04 refused one model attempt")
-    p3g.check_model(weights,metadata,"7b")
+    model=p3g.check_model(weights,metadata,"7b")
     if infer_fn is None:
         infer_fn=partial(p3g.infer_prepared, **INFERENCE_OPTIONS)
+    if admission is not None:
+        registry,lease=admission
+        if lease.task_key != managed_attempt_input(root,review_sha,handoff,model).task_key:
+            raise AttemptBlocked("lease does not match the verified W06 inputs")
+        observed=subprocess.run(["git","rev-parse","HEAD"],cwd=root,capture_output=True,text=True,
+                                timeout=10,check=True).stdout.strip()
+        registry.start(lease,observed_head=observed,run_id=run_id)
     raw,elapsed=infer_fn(binary,weights,handoff["prompt"],"7b")
     if type(raw) is not str or not 1<=len(raw.encode("utf-8"))<=6000:
         raise ValueError("invalid bounded model response")
