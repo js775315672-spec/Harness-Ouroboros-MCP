@@ -1,0 +1,75 @@
+name: P3L W02 W03 isolated handoff evidence (no model)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3l-w02-w03-handoff-evidence.yml"
+      - "scripts/p3l_w01_candidate_validator.py"
+      - "scripts/p3l_w01_contract_drift.py"
+      - "scripts/p3l_w02_model_handoff.py"
+      - "scripts/p3l_w03_rule_diagnostics.py"
+      - "tests/test_p3l_w02_model_handoff.py"
+      - "tests/test_ledger_rule_diagnostics.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: p3l-w02-w03-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  w02_w03_handoff:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact proposed commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Validate W02 and W03 with offline model stubs only
+        run: |
+          python3 -m unittest discover -s tests -p test_p3l_w02_model_handoff.py -v
+          python3 -m unittest discover -s tests -p test_ledger_rule_diagnostics.py -v
+          python3 scripts/p3l_w02_model_handoff.py --out artifacts/p3l-w02/handoff.json
+          python3 scripts/p3l_w03_rule_diagnostics.py --out artifacts/p3l-w03/rule-diagnostics.json
+      - name: Reconcile independent W02 and W03 receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          w2 = Path("artifacts/p3l-w02/handoff.json")
+          w3 = Path("artifacts/p3l-w03/rule-diagnostics.json")
+          a = json.loads(w2.read_text(encoding="utf-8"))
+          b = json.loads(w3.read_text(encoding="utf-8"))
+          assert a["schema"] == "p3l-w02-provisional-handoff-v1"
+          assert b["schema"] == "p3l-w03-rule-diagnostics-v1"
+          assert a["prompt_sha256"] == b["w02_prompt_sha256"]
+          assert a["w01_case_manifest_sha256"] == b["w01_case_manifest_sha256"]
+          assert a["w01_candidate_sha256"] == b["w01_candidate_sha256"]
+          assert b["cases_checked"] == b["isolated_rule_passed"] == 19
+          assert b["candidate_contract_matches"] == 19
+          assert b["candidate_contract_mismatches"] == []
+          assert a["model_calls"] == b["model_calls"] == 0
+          assert a["merge_authorized"] is b["merge_authorized"] is False
+          assert b["promoted"] is False and b["candidate_model_generated"] is False
+          for path in (w2, w3):
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              (path.parent / (path.stem+".sha256")).write_text(digest+"  "+path.name+"\n")
+              print(f"PASS: {path.name} sha256={digest}")
+          print("PASS: W01 -> W02 -> W03 provisional handoff 19/19; no model inference")
+          PY
+      - name: Upload isolated evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p3l-w02-w03-provisional-handoff
+          path: |
+            artifacts/p3l-w02/
+            artifacts/p3l-w03/
+          if-no-files-found: warn
+          retention-days: 7
