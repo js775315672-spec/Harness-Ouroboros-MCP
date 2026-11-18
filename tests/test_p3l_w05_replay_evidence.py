@@ -51,6 +51,60 @@ class W05ReplayTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     w05.replay(ROOT,record,1234)
 
+    def test_boolean_model_call_count_is_not_one_real_call(self):
+        for bad in (True, 1.0, "1", None):
+            record=sample()
+            record["model_calls"]=bad
+            with self.subTest(bad=bad), patch.object(w05.p3g,"grade") as runner:
+                with self.assertRaises(ValueError):
+                    w05.replay(ROOT,record,1234)
+                runner.assert_not_called()
+
+    def test_fractional_or_boolean_receipt_run_id_is_rejected(self):
+        for bad in (True, 1234.0):
+            record=sample()
+            record["run_id"]=bad
+            with self.subTest(bad=bad), patch.object(w05.p3g,"grade") as runner:
+                with self.assertRaises(ValueError):
+                    w05.replay(ROOT,record,1234)
+                runner.assert_not_called()
+
+    def test_boolean_or_fractional_docker_exit_code_is_not_success(self):
+        # Python permits False == 0 and 0.0 == 0; neither is a real
+        # integer process exit status from the isolated runner.
+        for invalid in (False, 0.0, "0", None):
+            evidence=grade(True)
+            evidence["candidate"]["test_ci_attestation.py"]["exit_code"]=invalid
+            with self.subTest(invalid=repr(invalid)), patch.object(w05.p3g,"grade",return_value=evidence):
+                with self.assertRaisesRegex(ValueError,"invalid evidence types"):
+                    w05.replay(ROOT,sample(),1234)
+
+    def test_numeric_or_string_docker_passed_flag_is_not_boolean(self):
+        for invalid in (1, 0, "true", "false", None):
+            evidence=grade(True)
+            evidence["candidate"]["test_development_ledger.py"]["passed"]=invalid
+            with self.subTest(invalid=repr(invalid)), patch.object(w05.p3g,"grade",return_value=evidence):
+                with self.assertRaisesRegex(ValueError,"invalid evidence types"):
+                    w05.replay(ROOT,sample(),1234)
+
+    def test_disagreeing_suite_exit_code_and_flag_are_rejected(self):
+        for passed, exit_code in ((True, 1), (False, 0)):
+            evidence=grade(False)
+            evidence["candidate"]["test_ci_attestation.py"].update(passed=passed,exit_code=exit_code)
+            with self.subTest(passed=passed), patch.object(w05.p3g,"grade",return_value=evidence):
+                with self.assertRaisesRegex(ValueError,"contradicts exit code"):
+                    w05.replay(ROOT,sample(),1234)
+
+    def test_forged_candidate_and_diff_digests_are_rejected_before_grade(self):
+        for field in ("raw_response_sha256", "candidate_source_sha256", "diff_sha256"):
+            for bad in ("a"*64, "A"*64, 0, None):
+                record=sample()
+                record[field]=bad
+                with self.subTest(field=field,bad=bad), patch.object(w05.p3g,"grade") as runner:
+                    with self.assertRaises(ValueError):
+                        w05.replay(ROOT,record,1234)
+                    runner.assert_not_called()
+
     def test_missing_frozen_test_count_blocked(self):
         wrong=grade(True)
         wrong["candidate"]["heldout_p3f_development_ledger.py"]["tests_run"]=9
