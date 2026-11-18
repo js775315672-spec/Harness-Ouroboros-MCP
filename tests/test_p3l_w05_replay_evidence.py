@@ -51,6 +51,41 @@ class W05ReplayTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     w05.replay(ROOT,record,1234)
 
+    def test_boolean_model_call_count_is_not_one_real_call(self):
+        record=sample()
+        record["model_calls"]=True
+        with patch.object(w05.p3g,"grade") as runner:
+            with self.assertRaises(ValueError):
+                w05.replay(ROOT,record,1234)
+            runner.assert_not_called()
+
+    def test_fractional_or_boolean_receipt_run_id_is_rejected(self):
+        for bad in (True, 1234.0):
+            record=sample()
+            record["run_id"]=bad
+            with self.subTest(bad=bad), patch.object(w05.p3g,"grade") as runner:
+                with self.assertRaises(ValueError):
+                    w05.replay(ROOT,record,1234)
+                runner.assert_not_called()
+
+    def test_boolean_or_fractional_docker_exit_code_is_not_success(self):
+        # Python permits False == 0 and 0.0 == 0; neither is a real
+        # integer process exit status from the isolated runner.
+        for invalid in (False, 0.0, "0", None):
+            evidence=grade(True)
+            evidence["candidate"]["test_ci_attestation.py"]["exit_code"]=invalid
+            with self.subTest(invalid=repr(invalid)), patch.object(w05.p3g,"grade",return_value=evidence):
+                with self.assertRaisesRegex(ValueError,"invalid evidence types"):
+                    w05.replay(ROOT,sample(),1234)
+
+    def test_numeric_or_string_docker_passed_flag_is_not_boolean(self):
+        for invalid in (1, 0, "true", "false"):
+            evidence=grade(True)
+            evidence["candidate"]["test_development_ledger.py"]["passed"]=invalid
+            with self.subTest(invalid=repr(invalid)), patch.object(w05.p3g,"grade",return_value=evidence):
+                with self.assertRaisesRegex(ValueError,"invalid evidence types"):
+                    w05.replay(ROOT,sample(),1234)
+
     def test_missing_frozen_test_count_blocked(self):
         wrong=grade(True)
         wrong["candidate"]["heldout_p3f_development_ledger.py"]["tests_run"]=9
