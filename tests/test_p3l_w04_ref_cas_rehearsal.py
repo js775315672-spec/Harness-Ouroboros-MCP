@@ -53,7 +53,7 @@ class RefClaimTests(unittest.TestCase):
     def test_unrelated_or_wrong_target_success_response_is_rejected(self):
         request = Mock(return_value=(201, '{"ref":"refs/heads/other","object":'
                                            '{"type":"commit","sha":"' + FIRST + '"}}'))
-        with self.assertRaisesRegex(ValueError, "exact rehearsal ref"):
+        with self.assertRaisesRegex(ValueError, "exact GitHub ref"):
             claim(REHEARSAL_BASE, FIRST, request)
         with self.assertRaisesRegex(ValueError, "unexpected review revisions"):
             claim(SECOND, FIRST, request)
