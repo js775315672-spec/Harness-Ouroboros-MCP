@@ -82,9 +82,12 @@ def build(root=ROOT):
         "Reject the same C0/C1 characters in each item. Preserve the prior behavior "
         "for a nonempty whitespace-only fixes item and keep the records unchanged.\n"
         "3. Preserve valid Korean text and raise ValueError for invalid records. "
-        "Before output, check that the change section explicitly implements both "
-        "new change guards and that the fixes section rejects an empty item while "
-        "accepting an empty list. Return only the complete function."
+        "Before output, walk through the public checklist against your function. "
+        "Trace an empty fixes list, then trace a one-element list containing the "
+        "empty string. Ensure the first reaches the return and the second raises "
+        "ValueError. Give the nonempty item check its own condition so the upper "
+        "byte limit cannot stand in for it. Check both change guards separately. "
+        "Return only the complete function."
     )
     prompt = format_chatml(
         task,

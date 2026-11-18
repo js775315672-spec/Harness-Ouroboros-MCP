@@ -262,20 +262,21 @@ def infer(cli, gguf, prompt, model_id="7b"):
     return infer_prepared(cli, gguf, render_prompt(prompt, model_id), model_id)
 
 
-def inference_flags(model_id):
+def inference_flags(model_id, *, exact_prompt=False):
     flags = ["--n-predict", "800", "--ctx-size", "3072", "--threads", "4",
              "--temp", "0", "--seed", "42", "--no-display-prompt", "--simple-io",
              "--offline", "--log-verbosity", "1", "--color", "off"]
-    if model_id == "granite-code-8b":
+    if exact_prompt or model_id == "granite-code-8b":
         flags.extend(("-no-cnv", "--no-escape"))
     else:
         flags.extend(("--single-turn", "--jinja"))
     return flags
 
 
-def infer_prepared(cli, gguf, prompt, model_id):
+def infer_prepared(cli, gguf, prompt, model_id, *, exact_prompt=False):
     _, binary, weights = verify_paths(model_id, cli, gguf)
-    cmd = [str(binary), "--model", str(weights), "--prompt", prompt, *inference_flags(model_id)]
+    cmd = [str(binary), "--model", str(weights), "--prompt", prompt,
+           *inference_flags(model_id, exact_prompt=exact_prompt)]
     env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp",
            "LANG": "C.UTF-8", "OMP_NUM_THREADS": "4"}
     started = time.monotonic()
