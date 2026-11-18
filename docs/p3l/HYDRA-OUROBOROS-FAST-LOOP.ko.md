@@ -74,7 +74,7 @@ flowchart TD
 
 ## 6. 발전 속도 계측 (날짜 기준 제거)
 
-- **주지표:** `verified_changes_per_hour = 독립 W05 통과 + 실질 코드 변경인 신규 후보 수 / 실제 wall-clock 시간`.
+- **주지표:** `verified_changes_per_hour = (실제 코드 변경·새 SHA·W05 독립 25/25 합격을 모두 만족한 신규 후보 수) / 실제 wall-clock 시간`. 서로 다른 조건을 더해 중복 계산하지 않는다.
 - **기타:** `latency_task_to_replay`, `median_time_to_first_failure`, `model_calls_per_verified_change`, `runner_minutes_per_verified_change`, `duplicate_model_calls`, `rollback_rate`, `independent_replay_mismatch`, 새 과제에서의 실패율.
 - **A/B:** 같은 외부 고정 평가 세트·같은 시간/CPU 예산으로 순차 루프와 Hydra 병렬 준비를 비교. 통계적으로 믿을 표본이 쌓이기 전에는 '배속 향상' 주장 금지. 하네스 자체를 수정해도 독립 검증·보안 정책은 수정 대상에서 제외.
 - **첫 수용 기준:** 새로운 모델 생성 코드에서 정확히 고정 25/25 + 별도 runner 동일 SHA 합격 증거 1건, 위 실패·중복·권한 반례 통과, 새 과제 mock 인계가 실제 SHA로 추적 가능하고 무승인 승격 0건. 이후 다른 과제에서 반복 재현해야 '자율 진화 가속'을 주장할 수 있다.
