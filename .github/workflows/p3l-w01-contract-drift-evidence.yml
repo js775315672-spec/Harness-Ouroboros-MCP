@@ -50,6 +50,27 @@ jobs:
           Path("artifacts/p3l-w01/report.sha256").write_text(digest+"  contract-drift.json\n")
           print(f"PASS: {len(data['cases'])} cases; {len(data['mismatches'])} drift mismatches; sha256={digest}")
           PY
+      - name: Verify isolated W01 candidate 19/19 (no model, no promotion)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_p3l_w01_validator_acceptance.py -v
+          python3 scripts/p3l_w01_contract_drift.py --candidate-validator --require-zero-drift --out artifacts/p3l-w01/candidate-acceptance.json
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          p = Path("artifacts/p3l-w01/candidate-acceptance.json")
+          d = json.loads(p.read_text(encoding="utf-8"))
+          assert d["validator"] == "isolated_w01_candidate"
+          assert len(d["cases"]) == d["matches"] == 19
+          assert d["mismatches"] == []
+          assert d["model_calls"] == 0
+          assert d["candidate_verified"] is False
+          assert d["merge_authorized"] is False
+          digest = hashlib.sha256(p.read_bytes()).hexdigest()
+          Path("artifacts/p3l-w01/candidate.sha256").write_text(digest+"  candidate-acceptance.json\\n")
+          print(f"PASS: isolated W01 candidate 19/19; sha256={digest}")
+          PY
       - name: Upload exact read-only drift evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
