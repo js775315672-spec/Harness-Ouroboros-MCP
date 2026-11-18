@@ -2,7 +2,7 @@
 name: P3L W06 exact prompt and independent replay
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize]
     paths:
       - ".github/workflows/ledger-next-experiment.yml"
 permissions:
@@ -15,10 +15,11 @@ env:
   PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
 concurrency:
   group: w06-exact-chatml-verified
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   offline_w01_w05_preflight:
     if: >-
+      github.event.action == 'opened' &&
       github.run_attempt == '1' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'experiment/p3l-w06-exact-chatml-verified' &&
