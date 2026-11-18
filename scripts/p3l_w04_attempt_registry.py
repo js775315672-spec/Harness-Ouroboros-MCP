@@ -89,6 +89,12 @@ class AttemptRegistry:
                     )
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS successor_handoffs (
+                    predecessor_task_key TEXT PRIMARY KEY,
+                    proposal_json TEXT NOT NULL
+                )
+            """)
 
     @contextmanager
     def _transaction(self):
@@ -167,6 +173,31 @@ class AttemptRegistry:
             """, (receipt_sha256, lease.task_key, lease.owner, lease.epoch, run_id, receipt_sha256))
             if result.rowcount != 1:
                 raise AttemptBlocked("receipt conflicts with the admitted run")
+
+    def queue_successor(self, inputs, *, run_id, receipt_sha256, proposal):
+        """Persist one review-only proposal after the coordinator verifies independent evidence."""
+        if type(run_id) is not int or not 0 < run_id <= 2**63 - 1:
+            raise ValueError("invalid run id")
+        payload = canonical(proposal).decode("utf-8")
+        with self._transaction() as db:
+            admitted = db.execute("""
+                SELECT 1 FROM attempts WHERE task_key = ? AND state = 'MODEL_GENERATED'
+                    AND run_id = ? AND receipt_sha256 = ?
+            """, (inputs.task_key, run_id, receipt_sha256)).fetchone()
+            if admitted is None:
+                raise AttemptBlocked("no matching reconciled model artifact")
+            inserted = db.execute("""
+                INSERT INTO successor_handoffs VALUES (?, ?)
+                ON CONFLICT(predecessor_task_key) DO NOTHING
+            """, (inputs.task_key, payload))
+            if inserted.rowcount == 1:
+                return True
+            saved = db.execute("""
+                SELECT proposal_json FROM successor_handoffs WHERE predecessor_task_key = ?
+            """, (inputs.task_key,)).fetchone()
+            if saved["proposal_json"] != payload:
+                raise AttemptBlocked("predecessor already has a different successor proposal")
+            return False
 
     def status(self, inputs):
         """Return the stored task record or the fail-closed view of an expired run."""
