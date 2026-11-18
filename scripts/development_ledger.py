@@ -4,6 +4,20 @@ import argparse,json,pathlib,re,sys
 SHA=re.compile(r"^[0-9a-f]{40}$")
 CI=re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/actions/runs/[1-9][0-9]*$")
 STEPS=("harness","ouroboros","regression","secrets")
+
+def _safe_text(value, max_utf8_bytes, allow_whitespace_only=False):
+    """Keep untrusted ledger text short and free of control characters."""
+    if not isinstance(value,str) or not value:
+        return False
+    if not allow_whitespace_only and not value.strip():
+        return False
+    if any(ord(char)<32 or 127<=ord(char)<=159 for char in value):
+        return False
+    try:
+        return len(value.encode("utf-8"))<=max_utf8_bytes
+    except UnicodeEncodeError:
+        return False
+
 def validate(records):
     if not isinstance(records,list):raise ValueError("expected list")
     seen=set()
@@ -12,10 +26,10 @@ def validate(records):
         if type(record["cycle"]) is not int or record["cycle"]!=index:raise ValueError("nonsequential cycle")
         if not isinstance(record["commit"],str) or not SHA.fullmatch(record["commit"]) or record["commit"] in seen:raise ValueError("missing or repeated development commit")
         seen.add(record["commit"])
-        if not isinstance(record["change"],str) or not record["change"].strip():raise ValueError("missing change description")
+        if not _safe_text(record["change"],256):raise ValueError("invalid change description or UTF-8 length")
         if not isinstance(record["ci_url"],str) or not CI.fullmatch(record["ci_url"]):raise ValueError("invalid CI evidence URL")
         if not isinstance(record["checks"],dict) or set(record["checks"])!=set(STEPS) or any(record["checks"][step]!="pass" for step in STEPS):raise ValueError("unverified cycle")
-        if not isinstance(record["fixes"],list) or any(not isinstance(x,str) for x in record["fixes"]):raise ValueError("invalid fixes")
+        if not isinstance(record["fixes"],list) or len(record["fixes"])>12 or any(not _safe_text(x,128,allow_whitespace_only=True) for x in record["fixes"]):raise ValueError("invalid fixes, control characters, or UTF-8 length")
     return len(records)
 def main():
     p=argparse.ArgumentParser()
