@@ -117,6 +117,8 @@ def gate_exit_code(report, require_zero_drift=False):
             or report.get("fixed_25_modified") is not False):
         return 2
     for row, (_, _, expected) in zip(rows, cases()):
+        if not {"case", "expected_accept", "observed_accept", "input_unchanged", "matches_contract", "error_type"}.issubset(row):
+            return 2
         if (row.get("expected_accept") is not expected
                 or row.get("observed_accept") is not expected
                 or row.get("input_unchanged") is not True
