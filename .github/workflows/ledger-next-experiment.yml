@@ -14,15 +14,15 @@ env:
   CUDA_VISIBLE_DEVICES: ""
   PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
 concurrency:
-  group: w06-item-lower-bound
+  group: w06-item-lower-bound-verified
   cancel-in-progress: false
 jobs:
   offline_w01_w05_preflight:
     if: >-
       github.run_attempt == '1' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'experiment/p3l-w06-item-lower-bound' &&
-      github.event.pull_request.base.ref == 'experiment/p3l-w06-structured-public-repair'
+      github.event.pull_request.head.ref == 'experiment/p3l-w06-item-lower-bound-verified' &&
+      github.event.pull_request.base.ref == 'experiment/p3l-w06-item-lower-bound'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
