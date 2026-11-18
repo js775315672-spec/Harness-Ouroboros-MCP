@@ -1,0 +1,88 @@
+name: Hydra fast-loop offline preflight and cross-runner handoff
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/p3l-hydra-fast-gates.yml"
+      - "scripts/p3l_hydra_fast_lane_gate.py"
+      - "tests/test_p3l_hydra_fast_lane_gate.py"
+      - "tests/fixtures/p3l_hydra_fast_lane_plan.json"
+
+permissions:
+  contents: read
+
+jobs:
+  fast_public_contract_and_lane_gate:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout immutable PR commit with no saved credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Check exact HEAD and run only small public tests
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 -m unittest discover -s tests -p 'test_p3l_hydra_fast_lane_gate.py' -v
+          python3 -m unittest discover -s tests -p 'test_p3l_w01_validator_acceptance.py' -v
+          python3 -m unittest discover -s tests -p 'test_p3l_w06_*lint*.py' -v
+          python3 scripts/harness_check.py
+          mkdir -p artifacts/fast-loop
+          python3 scripts/p3l_w01_contract_drift.py --candidate-validator --require-zero-drift --out artifacts/fast-loop/w01-reference-contract.json
+          python3 scripts/p3l_hydra_fast_lane_gate.py --plan tests/fixtures/p3l_hydra_fast_lane_plan.json --out artifacts/fast-loop/lane-plan.json
+      - name: Export SHA-bound preflight artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-fast-preflight
+          path: artifacts/fast-loop/
+          if-no-files-found: error
+          retention-days: 7
+
+  fresh_runner_verify_handoff:
+    needs: fast_public_contract_and_lane_gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout independent runner at exact same HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Restore preflight artifact from prior job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hydra-fast-preflight
+          path: artifacts/recovered/
+      - name: Independently recompute lane receipt and W01 public contract
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 scripts/p3l_hydra_fast_lane_gate.py --plan tests/fixtures/p3l_hydra_fast_lane_plan.json --verify artifacts/recovered/lane-plan.json
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, "scripts")
+          from p3l_w01_contract_drift import gate_exit_code
+          report = json.loads(Path("artifacts/recovered/w01-reference-contract.json").read_text())
+          assert gate_exit_code(report, require_zero_drift=True) == 0
+          assert report["model_calls"] == 0
+          assert report["candidate_verified"] is False
+          print("PASS: W01 reference contract evidence intact; no model success claimed")
+          PY
+      - name: Safety note
+        run: |
+          echo 'This is an offline preflight and cross-job handoff only.'
+          echo 'This is NOT W06 model-authored 25/25 and NOT W05 independent Docker replay.'
+          echo 'No live model calls, releases, merges or promotion were performed.'
