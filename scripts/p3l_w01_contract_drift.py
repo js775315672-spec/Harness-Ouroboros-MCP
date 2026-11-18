@@ -133,8 +133,16 @@ def main():
     parser.add_argument("--out", type=pathlib.Path)
     parser.add_argument("--require-zero-drift", action="store_true",
                         help="Exit nonzero unless every contract case matches; no model execution")
+    parser.add_argument("--candidate-validator", action="store_true",
+                        help="Audit isolated W01 candidate instead of immutable P3g baseline")
     args = parser.parse_args()
-    report = audit()
+    if args.candidate_validator:
+        from p3l_w01_candidate_validator import validate as candidate_validate
+        report = audit(candidate_validate)
+        report["validator"] = "isolated_w01_candidate"
+    else:
+        report = audit()
+        report["validator"] = "unchanged_p3g_baseline"
     data = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
