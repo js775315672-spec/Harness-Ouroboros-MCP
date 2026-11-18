@@ -83,6 +83,14 @@ def _has_empty_item_guard(tree):
 def diagnose(report):
     if type(report) is not dict or report.get("schema") != "p3l-w06-one-shot-output-v1":
         raise ValueError("unsupported model output receipt")
+    # Preserve provenance without trusting untyped or fabricated receipt metadata.
+    # This is a shape check only: it does not independently attest the candidate.
+    run_id = report.get("run_id")
+    if type(run_id) is not int or run_id <= 0:
+        raise ValueError("invalid run_id")
+    candidate_sha = report.get("candidate_source_sha256")
+    if type(candidate_sha) is not str or re.fullmatch(r"[0-9a-f]{64}", candidate_sha) is None:
+        raise ValueError("invalid candidate_source_sha256")
     raw = report.get("raw_response")
     if type(raw) is not str or type(report.get("raw_response_sha256")) is not str:
         raise ValueError("missing original response proof")
