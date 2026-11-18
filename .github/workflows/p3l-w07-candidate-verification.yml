@@ -1,0 +1,101 @@
+name: W07 reviewed candidate verification
+on:
+  pull_request:
+    paths:
+      - .github/p3l/w07-candidate.json
+      - .github/actions/p3l-w07-checkout/action.yml
+      - .github/workflows/p3l-w07-candidate-verification.yml
+      - .github/workflows/harness.yml
+permissions:
+  contents: read
+jobs:
+  candidate-ci:
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'work/p3l-w07-')
+    uses: ./.github/workflows/harness.yml
+    with:
+      p3l_review_candidate: true
+  isolated-rollback:
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'work/p3l-w07-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - id: reviewed
+        uses: ./.github/actions/p3l-w07-checkout
+      - name: Rehearse activation, blocked rollback, restore, and reapply
+        env:
+          BASELINE: ${{ steps.reviewed.outputs.baseline }}
+          CANDIDATE: ${{ steps.reviewed.outputs.candidate }}
+          GIT_NO_REPLACE_OBJECTS: '1'
+        run: |
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import tempfile
+
+          baseline, candidate = os.environ["BASELINE"], os.environ["CANDIDATE"]
+          target = "scripts/development_ledger.py"
+          active = "refs/p3l-w07/simulated-active"
+          history = []
+
+          def git(*args, cwd=None):
+              return subprocess.check_output(["git", *args], cwd=cwd, timeout=30).decode().strip()
+
+          def require(condition, reason):
+              if not condition:
+                  raise SystemExit(reason)
+
+          def record(step, revision, checkout):
+              require(git("rev-parse", active) == revision, "Simulated active pointer differs")
+              require(git("rev-parse", "HEAD", cwd=checkout) == revision, "Disposable checkout differs")
+              git("diff", "--exit-code", revision, "--", target, cwd=checkout)
+              history.append({"step": step, "active_commit": revision})
+              print(f"{step} {revision}", flush=True)
+
+          with tempfile.TemporaryDirectory() as directory:
+              checkout = Path(directory, "runtime")
+              git("worktree", "add", "--detach", str(checkout), baseline)
+              try:
+                  git("update-ref", active, baseline, "0" * 40)
+                  record("initial", baseline, checkout)
+                  git("update-ref", active, candidate, baseline)
+                  git("checkout", "--detach", git("rev-parse", active), cwd=checkout)
+                  record("candidate", candidate, checkout)
+
+                  stale = subprocess.run(
+                      ["git", "update-ref", active, baseline, baseline],
+                      capture_output=True, text=True, timeout=30,
+                  )
+                  require(stale.returncode != 0 and "expected" in stale.stderr,
+                          "The stale rollback must fail its expected-commit check")
+                  record("stale_rollback_blocked", candidate, checkout)
+
+                  git("update-ref", active, baseline, candidate)
+                  git("checkout", "--detach", git("rev-parse", active), cwd=checkout)
+                  record("restored", baseline, checkout)
+                  git("update-ref", active, candidate, baseline)
+                  git("checkout", "--detach", git("rev-parse", active), cwd=checkout)
+                  record("reapplied", candidate, checkout)
+                  git("update-ref", active, candidate, candidate)
+                  record("repeat_same_candidate", candidate, checkout)
+              finally:
+                  git("worktree", "remove", str(checkout))
+                  git("update-ref", "-d", active)
+
+          report = {"candidate": candidate, "baseline": baseline, "history": history,
+                    "simulation_only": True, "model_calls": 0}
+          Path(os.environ["RUNNER_TEMP"], "w07-rollback.json").write_text(json.dumps(report, indent=2) + "\n")
+          PY
+      - name: Upload isolated rollback evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w07-rollback-evidence
+          path: |
+            ${{ runner.temp }}/w07-candidate.json
+            ${{ runner.temp }}/w07-rollback.json
+          if-no-files-found: error
+          retention-days: 7
