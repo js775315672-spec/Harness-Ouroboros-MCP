@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
-from development_ledger import validate
+from p3l_w01_candidate_validator import validate
 from p3l_w01_contract_drift import audit, cases, gate_exit_code, valid_record
 
 
