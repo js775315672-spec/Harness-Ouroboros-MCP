@@ -1,0 +1,75 @@
+name: W04 cross-runner recovery rehearsal
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - ".github/workflows/p3l-w04-runner-rehearsal.yml"
+      - "scripts/p3l_w04_runner_rehearsal.py"
+      - "tests/test_p3l_w04_runner_rehearsal.py"
+permissions:
+  contents: read
+env:
+  REVIEW_BASE: ${{ github.event.pull_request.base.sha }}
+  REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+jobs:
+  publish:
+    if: >-
+      github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'work/p3l-w04-cross-runner-rehearsal' &&
+      github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    outputs:
+      snapshot_sha: ${{ steps.snapshot.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Spend one synthetic budget and export its snapshot
+        id: snapshot
+        run: |
+          python3 -B scripts/p3l_w04_runner_rehearsal.py publish \
+            --snapshot "$RUNNER_TEMP/registry.sqlite3" --receipt "$RUNNER_TEMP/publish.json"
+          digest=$(sha256sum "$RUNNER_TEMP/registry.sqlite3")
+          printf 'sha256=%s\n' "${digest%% *}" >> "$GITHUB_OUTPUT"
+      - name: Preserve SQLite snapshot and publish receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w04-synthetic-snapshot
+          path: |
+            ${{ runner.temp }}/registry.sqlite3
+            ${{ runner.temp }}/publish.json
+          if-no-files-found: error
+          retention-days: 7
+
+  recover:
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        worker: [first, second]
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Download the publisher's same-run snapshot
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w04-synthetic-snapshot
+          path: ${{ runner.temp }}/snapshot
+      - name: Recover expired start and reject duplicate requests
+        env:
+          EXPECTED_SNAPSHOT_SHA: ${{ needs.publish.outputs.snapshot_sha }}
+        run: |
+          python3 -B scripts/p3l_w04_runner_rehearsal.py recover \
+            --snapshot "$RUNNER_TEMP/snapshot/registry.sqlite3" --receipt "$RUNNER_TEMP/recover.json"
+      - name: Preserve the recovery receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w04-synthetic-recovery-${{ matrix.worker }}
+          path: ${{ runner.temp }}/recover.json
+          if-no-files-found: error
+          retention-days: 7
