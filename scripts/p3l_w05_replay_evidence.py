@@ -58,7 +58,11 @@ def replay(root, report, run_id):
         actual=suites[name]
         if type(actual) is not dict or type(actual.get("tests_run")) is not int or actual["tests_run"]!=count:
             raise ValueError("independent test count mismatch")
-        passed=actual.get("passed") is True and actual.get("exit_code")==0
+        # False == 0 and 0.0 == 0 in Python; neither is valid process
+        # evidence. A numeric 0/1 is not a valid boolean verdict either.
+        if type(actual.get("passed")) is not bool or type(actual.get("exit_code")) is not int:
+            raise ValueError("independent test verdict has invalid evidence types")
+        passed=actual["passed"] is True and actual["exit_code"]==0
         all_passed=all_passed and passed
         details[name]={"tests_run":count,"passed":passed}
     if grade.get("status")!=("real_source_patch_passed" if all_passed else "real_source_patch_failed"):
