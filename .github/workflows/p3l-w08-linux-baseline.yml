@@ -1,0 +1,27 @@
+name: W08 exact candidate Linux baseline
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p3l-w08-linux-baseline.yml"
+permissions:
+  contents: read
+jobs:
+  baseline:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/p3l-w08-linux-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: '8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc'
+          persist-credentials: false
+      - name: Reconstruct and verify reviewed candidate
+        run: |
+          test "$(git rev-parse 'HEAD^{tree}')" = '0863df1be5c336415f8ed2a5fcd7d15e31ffea16'
+          exact=$(printf '%s' 'dHJlZSAwODYzZGYxYmU1YzMzNjQxNWY4ZWQyYTVmY2Q3ZDE1ZTMxZmZlYTE2CnBhcmVudCBmMmM4YzVkMzdjN2Y0ZmU3OWE2NThjYzI1YTZiMGVjMTI2OTcyNTc4CmF1dGhvciBQM0wgVzA3IHJldmlldyA8dzA3QGV4YW1wbGUuaW52YWxpZD4gMTc5NDk2MDAwMCArMDAwMApjb21taXR0ZXIgUDNMIFcwNyByZXZpZXcgPHcwN0BleGFtcGxlLmludmFsaWQ+IDE3OTQ5NjAwMDAgKzAwMDAKClcwNyBkcnkgcnVuOiBtb2RlbC1nZW5lcmF0ZWQgdmFsaWRhdGUK' | base64 -d | git hash-object -t commit -w --stdin)
+          test "$exact" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          git -c advice.detachedHead=false checkout --detach "$exact"
+          test "$(git rev-parse HEAD)" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          sha256sum tests/test_resumable_task_queue.py
+      - name: Verify unmodified W08 Linux baseline
+        run: python3 -B -m unittest discover -s tests -p test_resumable_task_queue.py -v
