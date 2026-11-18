@@ -43,6 +43,11 @@ class W01ZeroDriftGateTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertEqual(gate_exit_code(report, True), 2)
 
+    def test_missing_required_error_type_rejected(self):
+        report = self.complete_report()
+        del report["cases"][0]["error_type"]
+        self.assertEqual(gate_exit_code(report, True), 2)
+
     def test_spoofed_report_provenance_rejected(self):
         for field, value in (("schema", "unknown"), ("candidate_verified", True),
                              ("merge_authorized", True), ("model_calls", 1),
@@ -55,8 +60,22 @@ class W01ZeroDriftGateTests(unittest.TestCase):
     def test_observation_mode_does_not_claim_acceptance(self):
         self.assertEqual(gate_exit_code(audit(), False), 0)
 
-    def test_real_baseline_mismatch_blocks_acceptance(self):
+    def test_immutable_legacy_validator_still_blocks_premature_acceptance(self):
         report = audit()
+        self.assertEqual(len(report["cases"]), 19)
+        self.assertTrue(report["mismatches"])
+        self.assertEqual(gate_exit_code(report, True), 2)
+
+    def test_isolated_candidate_meets_all_proposed_rules(self):
+        from p3l_w01_candidate_validator import validate as candidate_validate
+        report = audit(candidate_validate)
+        self.assertEqual(len(report["cases"]), 19)
+        self.assertEqual(report["matches"], 19)
+        self.assertEqual(report["mismatches"], [])
+        self.assertEqual(gate_exit_code(report, True), 0)
+
+    def test_deliberately_incomplete_validator_is_blocked(self):
+        report = audit(lambda records: 1)
         self.assertTrue(report["mismatches"])
         self.assertEqual(gate_exit_code(report, True), 2)
 
@@ -80,17 +99,18 @@ class W01ZeroDriftGateTests(unittest.TestCase):
             with self.subTest(report=report):
                 self.assertEqual(gate_exit_code(report, True), 2)
 
-    def test_cli_writes_evidence_even_when_gate_fails(self):
+    def test_cli_writes_evidence_when_gate_passes(self):
         with tempfile.TemporaryDirectory() as folder:
             path = pathlib.Path(folder) / "report.json"
             command = [sys.executable, str(ROOT / "scripts/p3l_w01_contract_drift.py"),
-                       "--out", str(path), "--require-zero-drift"]
+                       "--out", str(path), "--candidate-validator", "--require-zero-drift"]
             proc = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30)
-            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue(path.exists())
             import json
             report = json.loads(path.read_text(encoding="utf-8"))
-            self.assertTrue(report["mismatches"])
+            self.assertEqual(report["mismatches"], [])
+            self.assertEqual(report["matches"], 19)
             self.assertFalse(report["candidate_verified"])
 
 
