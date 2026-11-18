@@ -262,9 +262,9 @@ def infer(cli, gguf, prompt, model_id="7b"):
     return infer_prepared(cli, gguf, render_prompt(prompt, model_id), model_id)
 
 
-def inference_flags(model_id, *, exact_prompt=False):
+def inference_flags(model_id, *, exact_prompt=False, temperature="0", seed="42"):
     flags = ["--n-predict", "800", "--ctx-size", "3072", "--threads", "4",
-             "--temp", "0", "--seed", "42", "--no-display-prompt", "--simple-io",
+             "--temp", temperature, "--seed", seed, "--no-display-prompt", "--simple-io",
              "--offline", "--log-verbosity", "1", "--color", "off"]
     if exact_prompt or model_id == "granite-code-8b":
         flags.extend(("-no-cnv", "--no-escape"))
@@ -273,10 +273,10 @@ def inference_flags(model_id, *, exact_prompt=False):
     return flags
 
 
-def infer_prepared(cli, gguf, prompt, model_id, *, exact_prompt=False):
+def infer_prepared(cli, gguf, prompt, model_id, *, exact_prompt=False, temperature="0", seed="42"):
     _, binary, weights = verify_paths(model_id, cli, gguf)
     cmd = [str(binary), "--model", str(weights), "--prompt", prompt,
-           *inference_flags(model_id, exact_prompt=exact_prompt)]
+           *inference_flags(model_id, exact_prompt=exact_prompt, temperature=temperature, seed=seed)]
     env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp",
            "LANG": "C.UTF-8", "OMP_NUM_THREADS": "4"}
     started = time.monotonic()

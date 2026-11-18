@@ -1,5 +1,5 @@
 # One CPU attempt with byte-exact ChatML and the public review checklist.
-name: P3L W06 exact prompt and independent replay
+name: P3L W06 ordered public checks and independent replay
 on:
   pull_request:
     types: [opened, synchronize]
@@ -14,7 +14,7 @@ env:
   CUDA_VISIBLE_DEVICES: ""
   PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
 concurrency:
-  group: w06-exact-chatml-http
+  group: w06-ordered-item-check
   cancel-in-progress: true
 jobs:
   offline_w01_w05_preflight:
@@ -22,8 +22,8 @@ jobs:
       github.event.action == 'opened' &&
       github.run_attempt == '1' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'experiment/p3l-w06-exact-chatml-http' &&
-      github.event.pull_request.base.ref == 'experiment/p3l-w06-exact-chatml-verified'
+      github.event.pull_request.head.ref == 'experiment/p3l-w06-ordered-item-check' &&
+      github.event.pull_request.base.ref == 'experiment/p3l-w06-exact-chatml-http'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -91,6 +91,7 @@ jobs:
               '362758aa519c32d5c96e2abf8e5451b40b53a4b366adc1b719b2c7df6e1d7ff9',
               'bf6d4a7622814d0d560990a331efa54e31e629dd9dd4d320efe106b39d2dd73c',
               '38d713942e7ca1f5f58dc9f096652e495f8d4d133fb7aa2364017c295fd3b97b',
+              '6c205ae9df8345978c30a39a8db323163bda800f41beee577eae261d18f44640',
           }
           assert gate['decision'] == 'allow_one_model_call'
           assert gate['model_calls'] == 0 and gate['model_invoked'] is False

@@ -12,16 +12,18 @@ import p3l_w04_one_call_gate as w04
 import p3l_w02_model_handoff as w02
 
 # Source digests independently rejected by W05 in runs 44233044418,
-# 44256635138, and 44264996365 (repeated in 44269883090).
+# 44256635138, 44264996365 (repeated in 44269883090), and 44285978475.
 REJECTED_CANDIDATE_DIGESTS = frozenset({
     "7dac043a9f115a179107ea67cd89e4966dc59c96338429362720e1aaf2ecedbb",
     "b3040620a1e0c136ff81fbe6d2c34ef61d42c5744b1eae2e3e144f90fe7be861",
     "bef7d24b09bbb068d3106d21c22d72a76209e0093e7e1e6c4ccc307a7f6c747f",
+    "b2bc7ecf096ff5d7a94412f9e07cd3736e9213292121726584b676771f18348e",
 })
+INFERENCE_OPTIONS = {"exact_prompt": True, "temperature": "0.35", "seed": "1085"}
 
 
 def inference_config_sha256():
-    return w04.digest_json(p3g.inference_flags("7b", exact_prompt=True))
+    return w04.digest_json(p3g.inference_flags("7b", **INFERENCE_OPTIONS))
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
@@ -40,7 +42,7 @@ def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None):
         raise ValueError("W04 refused one model attempt")
     p3g.check_model(weights,metadata,"7b")
     if infer_fn is None:
-        infer_fn=partial(p3g.infer_prepared, exact_prompt=True)
+        infer_fn=partial(p3g.infer_prepared, **INFERENCE_OPTIONS)
     raw,elapsed=infer_fn(binary,weights,handoff["prompt"],"7b")
     if type(raw) is not str or not 1<=len(raw.encode("utf-8"))<=6000:
         raise ValueError("invalid bounded model response")
