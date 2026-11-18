@@ -107,8 +107,22 @@ def gate_exit_code(report, require_zero_drift=False):
         return 2
     if report.get("matches") != len(rows) or report.get("mismatches") != []:
         return 2
-    if not all(row.get("matches_contract") is True for row in rows):
+    # Do not trust a self-reported matches_contract flag alone: independently
+    # reconcile each decision, rejection type, and unchanged-input evidence.
+    if (report.get("schema") != "p3l-w01-contract-drift-v1"
+            or report.get("candidate_verified") is not False
+            or report.get("merge_authorized") is not False
+            or type(report.get("model_calls")) is not int
+            or report["model_calls"] != 0
+            or report.get("fixed_25_modified") is not False):
         return 2
+    for row, (_, _, expected) in zip(rows, cases()):
+        if (row.get("expected_accept") is not expected
+                or row.get("observed_accept") is not expected
+                or row.get("input_unchanged") is not True
+                or row.get("matches_contract") is not True
+                or row.get("error_type") != (None if expected else "ValueError")):
+            return 2
     return 0
 
 
