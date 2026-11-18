@@ -10,7 +10,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from p3l_w01_contract_drift import audit, gate_exit_code
+from p3l_w01_contract_drift import audit, gate_exit_code, cases
 
 
 class W01ZeroDriftGateTests(unittest.TestCase):
@@ -23,8 +23,17 @@ class W01ZeroDriftGateTests(unittest.TestCase):
         self.assertEqual(gate_exit_code(report, True), 2)
 
     def test_perfect_report_can_pass_only_when_complete(self):
-        report = {"cases": [{"matches_contract": True}], "matches": 1, "mismatches": []}
+        report = {"cases": [{"case": name, "matches_contract": True} for name, _, _ in cases()], "matches": 19, "mismatches": []}
         self.assertEqual(gate_exit_code(report, True), 0)
+
+    def test_incomplete_or_spoofed_case_sets_fail_closed(self):
+        names = [name for name, _, _ in cases()]
+        good = [{"case": name, "matches_contract": True} for name in names]
+        for rows in (good[:1], good[:-1], good[:-1] + [good[0]],
+                     good[:-1] + [{"case": "unrecognized", "matches_contract": True}]):
+            with self.subTest(rows=len(rows)):
+                report = {"cases": rows, "matches": len(rows), "mismatches": []}
+                self.assertEqual(gate_exit_code(report, True), 2)
 
     def test_empty_or_malformed_reports_fail_closed(self):
         for report in ({}, {"cases": [], "matches": 0, "mismatches": []},
