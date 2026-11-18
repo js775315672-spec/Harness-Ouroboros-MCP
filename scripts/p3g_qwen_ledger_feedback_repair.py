@@ -247,6 +247,7 @@ def check_model(gguf, metadata, model_id="7b"):
             or ("sha256" in model and meta.get("sha256") != model["sha256"])
             or sha256_file(gguf) != meta.get("sha256")):
         raise ValueError("official model GGUF provenance mismatch")
+    return meta
 
 
 def render_prompt(task, model_id):
