@@ -80,6 +80,18 @@ def build(root=ROOT):
         "For records failing any rule, raise ValueError. "
         "Retain prior working behavior for undecided whitespace-only fixes. "
         "Do not inspect hidden tests or previous model answers.\n"
+        "Public W01 implementation checklist (all obligations are REQUIRED): "
+        "(1) fixes=[] MUST be valid; a nonempty list containing '' MUST be "
+        "rejected; do not reject a valid empty list. "
+        "(2) Reject len(fixes)>12. "
+        "(3) Every nonempty fixes item must be a string with "
+        "len(item.encode('utf-8'))<=128, NOT merely len(item)<=128. "
+        "(4) The nonblank change must have "
+        "len(change.encode('utf-8'))<=256, NOT merely len(change)<=256. "
+        "(5) Reject NUL, LF, ESC and every C0/C1 code point in both fields. "
+        "Preserve valid Korean text and all original record, commit, "
+        "cycle, URL, checks and immutability rules. This is a public "
+        "contract checklist; do not infer or include hidden tests. \n"
         "Original function follows:\n" + legacy_function(source)
     )
     encoded = prompt.encode("utf-8")
