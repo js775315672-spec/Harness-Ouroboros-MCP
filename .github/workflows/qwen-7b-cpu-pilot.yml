@@ -21,7 +21,10 @@ concurrency:
   cancel-in-progress: true
 jobs:
   qwen_7b_cpu:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != 'experiment/p3l-w06-structured-public-repair')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
