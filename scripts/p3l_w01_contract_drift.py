@@ -100,6 +100,11 @@ def gate_exit_code(report, require_zero_drift=False):
     rows = report.get("cases")
     if not isinstance(rows, list) or not rows:
         return 2
+    expected_names = [name for name, _, _ in cases()]
+    observed_names = [row.get("case") if isinstance(row, dict) else None for row in rows]
+    # A one-row, duplicate, or renamed receipt cannot attest the full contract.
+    if len(rows) != len(expected_names) or observed_names != expected_names:
+        return 2
     if report.get("matches") != len(rows) or report.get("mismatches") != []:
         return 2
     if not all(row.get("matches_contract") is True for row in rows):
