@@ -93,9 +93,25 @@ def audit(validator=validate):
     }
 
 
+def gate_exit_code(report, require_zero_drift=False):
+    """A successful probe is not a successful candidate acceptance gate."""
+    if not require_zero_drift:
+        return 0
+    rows = report.get("cases")
+    if not isinstance(rows, list) or not rows:
+        return 2
+    if report.get("matches") != len(rows) or report.get("mismatches") != []:
+        return 2
+    if not all(row.get("matches_contract") is True for row in rows):
+        return 2
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=pathlib.Path)
+    parser.add_argument("--require-zero-drift", action="store_true",
+                        help="Exit nonzero unless every contract case matches; no model execution")
     args = parser.parse_args()
     report = audit()
     data = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -104,8 +120,8 @@ def main():
         args.out.write_text(data, encoding="utf-8")
     else:
         print(data, end="")
-    # Drift is reported as evidence, not a CI infrastructure failure.
-    return 0
+    # Default is observation-only. Explicit acceptance mode fails closed.
+    return gate_exit_code(report, args.require_zero_drift)
 
 
 if __name__ == "__main__":
