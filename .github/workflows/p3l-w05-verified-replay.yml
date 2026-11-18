@@ -1,0 +1,59 @@
+name: P3L W05 historical independent replay
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - ".github/workflows/p3l-w05-verified-replay.yml"
+      - "scripts/p3l_w05_actions_source.py"
+      - "scripts/p3l_w05_replay_evidence.py"
+      - "tests/test_p3l_w05_*.py"
+permissions:
+  contents: read
+jobs:
+  historical_replay:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Run W05 regression tests at the exact PR head
+        run: python3 -B -m unittest discover -s tests -p 'test_p3l_w05_*.py' -v
+      - name: Check pinned run provenance and replay the rejected candidate in Docker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          result=0
+          python3 -B scripts/p3l_w05_replay_evidence.py \
+            --run-id 44256635138 \
+            --head-sha 6c301b23c64bcccd0e3576ce6c88c6a8f70a2a89 \
+            --artifact-id 14406920689 \
+            --out artifacts/w05-historical/verdict.json || result=$?
+          test "$result" -eq 2
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          directory = Path("artifacts/w05-historical")
+          verdict = json.loads((directory / "verdict.json").read_bytes())
+          origin = json.loads((directory / "provenance.json").read_bytes())
+          assert verdict["test_count"] == 25 and verdict["candidate_passed"] is False
+          assert origin["model_job_id"] == 134641332903
+          assert origin["model_archive_sha256"] == "6e24a2af1b46934a42b789d33cd810b5df44a77b98a775122debd3c720432c9c"
+          assert verdict["raw_response_sha256"] == "0c8e59d17e117538e0249d2b61214b56531b6714c4d047d0780b83936046a013"
+          print("Historical candidate rejected after all 25 frozen tests executed. New model calls: 0.")
+          PY
+      - name: Publish historical replay evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w05-historical-replay
+          path: artifacts/w05-historical/
+          if-no-files-found: warn
+          retention-days: 7
