@@ -41,6 +41,24 @@ class W05ReplayTests(unittest.TestCase):
         with patch.object(w05.p3g,"grade",return_value=grade(False)):
             self.assertFalse(w05.replay(ROOT,sample(),1234)["candidate_passed"])
 
+    def test_final_gate_requires_typed_and_linked_replay(self):
+        report=sample()
+        origin={"head_sha":"a"*40,"model_job_id":100}
+        execution={}
+        with patch.object(w05.p3g,"grade",return_value=grade(True)):
+            verdict=w05.replay(ROOT,report,1234,execution)
+        provenance={**origin,"suite_execution":execution}
+        w05.require_verified_replay(verdict,provenance,report,origin,1234)
+        for field,value in (("test_count",25.0),("run_id",1234.0),
+                            ("diff_sha256","a"*64),("candidate_passed",1)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                w05.require_verified_replay({**verdict,field:value},provenance,report,origin,1234)
+        with self.assertRaises(ValueError):
+            w05.require_verified_replay(verdict,{**provenance,"model_job_id":100.0},report,origin,1234)
+        execution["test_ci_attestation.py"]["exit_code"]=False
+        with self.assertRaises(ValueError):
+            w05.require_verified_replay(verdict,provenance,report,origin,1234)
+
     def test_changed_raw_response_and_runner_are_rejected(self):
         for key,value in (("raw_response","def validate(records):\n    return 2\n"),
                           ("run_id",1235),("merge_authorized",True),

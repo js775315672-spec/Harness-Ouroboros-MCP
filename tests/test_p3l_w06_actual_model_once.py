@@ -12,7 +12,11 @@ class W06AttemptTests(unittest.TestCase):
         with patch.object(w06.subprocess,"run",return_value=Mock(stdout="a"*40)), \
              patch.object(w06.p3g,"check_model"):
             r=w06.execute(ROOT,"a"*40,123,Path("binary"),Path("weights"),Path("metadata"),infer_fn=fn)
-        fn.assert_called_once()
+        prompt = w06.w02.build(ROOT)["prompt"]
+        fn.assert_called_once_with(Path("binary"),Path("weights"),prompt,"7b")
+        self.assertTrue(prompt.startswith("<|im_start|>system\n"))
+        self.assertIn("Return one complete replacement Python function", prompt)
+        self.assertEqual(r["prompt_sha256"], hashlib.sha256(prompt.encode("utf-8")).hexdigest())
         self.assertEqual(r["model_calls"],1)
         self.assertEqual(r["schema"],"p3l-w06-one-shot-output-v1")
         self.assertEqual(len(r["candidate_source_sha256"]),64)

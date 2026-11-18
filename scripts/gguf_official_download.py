@@ -24,9 +24,18 @@ def resolve_license(card):
     return getattr(card, "license", None)
 
 
-def download(model, destination, get_info, get_file):
+def download(model, destination, get_info, get_file, *, revision=None, expected_sha256=None):
     spec = approved_model(model)
-    revision = spec.get("revision")
+    if (revision is None) != (expected_sha256 is None):
+        raise ValueError("a model pin requires both revision and SHA256")
+    if revision is not None and (
+            re.fullmatch(r"[0-9a-f]{40}", revision) is None
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+            or spec.get("revision", revision) != revision
+            or spec.get("sha256", expected_sha256) != expected_sha256):
+        raise ValueError("invalid or conflicting official model pin")
+    revision = spec.get("revision", revision)
+    expected_sha256 = spec.get("sha256", expected_sha256)
     info = get_info(spec["repo"], revision=revision) if revision else get_info(spec["repo"])
     sha = getattr(info, "sha", None)
     license_id = resolve_license(getattr(info, "card_data", None))
@@ -58,7 +67,7 @@ def download(model, destination, get_info, get_file):
         if stream.read(4) != b"GGUF":
             raise ValueError("download did not have GGUF file signature")
     checksum = sha256_file(cache_path)
-    if "sha256" in spec and checksum != spec["sha256"]:
+    if expected_sha256 is not None and checksum != expected_sha256:
         raise ValueError("official model bytes differ from the pinned digest")
     # Large GGUFs are several gigabytes. On the same ephemeral CI volume, a
     # hardlink avoids retaining an unnecessary second full model copy.
@@ -82,6 +91,8 @@ def main():
     parser.add_argument("--model", required=True, choices=MODELS)
     parser.add_argument("--destination", type=Path, default=Path("models"))
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--revision")
+    parser.add_argument("--sha256")
     args = parser.parse_args()
     os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
@@ -91,7 +102,8 @@ def main():
     def get_file(repo, filename, sha):
         return hf_hub_download(
             repo_id=repo, filename=filename, revision=sha, token=False)
-    result = download(args.model, args.destination, get_info, get_file)
+    result = download(args.model, args.destination, get_info, get_file,
+                      revision=args.revision, expected_sha256=args.sha256)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n",
                            encoding="utf-8")

@@ -27,7 +27,7 @@ def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None):
         raise ValueError("W04 refused one model attempt")
     p3g.check_model(weights,metadata,"7b")
     if infer_fn is None:
-        infer_fn=p3g.infer
+        infer_fn=p3g.infer_prepared
     raw,elapsed=infer_fn(binary,weights,handoff["prompt"],"7b")
     if type(raw) is not str or not 1<=len(raw.encode("utf-8"))<=6000:
         raise ValueError("invalid bounded model response")
@@ -64,11 +64,20 @@ def main():
     p.add_argument("--cli",type=Path,required=True)
     p.add_argument("--gguf",type=Path,required=True)
     p.add_argument("--metadata",type=Path,required=True)
+    p.add_argument("--llama-revision",required=True)
     p.add_argument("--out",type=Path,required=True)
     args=p.parse_args()
+    if len(args.llama_revision)!=40 or any(c not in "0123456789abcdef" for c in args.llama_revision):
+        raise ValueError("invalid pinned llama.cpp revision")
     result=execute(w02.ROOT,args.head_sha,args.run_id,args.cli,args.gguf,args.metadata)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(result,ensure_ascii=False,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+    metadata=json.loads(args.metadata.read_bytes())
+    metadata.update(llama_cpp_revision=args.llama_revision,
+                    llama_binary_sha256=p3g.sha256_file(args.cli),
+                    inference_config_sha256=w04.digest_json(p3g.inference_flags("7b")),
+                    prompt_sha256=result["prompt_sha256"])
+    args.metadata.write_text(json.dumps(metadata,sort_keys=True,indent=2)+"\n",encoding="utf-8")
     print("W06 real model completed; output:",result["schema"])
     return 0 if result["schema"]=="p3l-w06-one-shot-output-v1" else 2
 
