@@ -93,9 +93,44 @@ def audit(validator=validate):
     }
 
 
+def gate_exit_code(report, require_zero_drift=False):
+    """A successful probe is not a successful candidate acceptance gate."""
+    if not require_zero_drift:
+        return 0
+    rows = report.get("cases")
+    if not isinstance(rows, list) or not rows:
+        return 2
+    expected_names = [name for name, _, _ in cases()]
+    observed_names = [row.get("case") if isinstance(row, dict) else None for row in rows]
+    # A one-row, duplicate, or renamed receipt cannot attest the full contract.
+    if len(rows) != len(expected_names) or observed_names != expected_names:
+        return 2
+    if report.get("matches") != len(rows) or report.get("mismatches") != []:
+        return 2
+    # Do not trust a self-reported matches_contract flag alone: independently
+    # reconcile each decision, rejection type, and unchanged-input evidence.
+    if (report.get("schema") != "p3l-w01-contract-drift-v1"
+            or report.get("candidate_verified") is not False
+            or report.get("merge_authorized") is not False
+            or type(report.get("model_calls")) is not int
+            or report["model_calls"] != 0
+            or report.get("fixed_25_modified") is not False):
+        return 2
+    for row, (_, _, expected) in zip(rows, cases()):
+        if (row.get("expected_accept") is not expected
+                or row.get("observed_accept") is not expected
+                or row.get("input_unchanged") is not True
+                or row.get("matches_contract") is not True
+                or row.get("error_type") != (None if expected else "ValueError")):
+            return 2
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=pathlib.Path)
+    parser.add_argument("--require-zero-drift", action="store_true",
+                        help="Exit nonzero unless every contract case matches; no model execution")
     args = parser.parse_args()
     report = audit()
     data = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -104,8 +139,8 @@ def main():
         args.out.write_text(data, encoding="utf-8")
     else:
         print(data, end="")
-    # Drift is reported as evidence, not a CI infrastructure failure.
-    return 0
+    # Default is observation-only. Explicit acceptance mode fails closed.
+    return gate_exit_code(report, args.require_zero_drift)
 
 
 if __name__ == "__main__":
