@@ -1,5 +1,5 @@
-# One CPU attempt for the field-local W02 prompt and corrected ChatML system role.
-name: P3L W06 structured public repair and independent replay
+# One CPU attempt clarifying the public UTF-8 lower bound for fixes items.
+name: P3L W06 public item lower bound and independent replay
 on:
   pull_request:
     types: [opened]
@@ -14,15 +14,15 @@ env:
   CUDA_VISIBLE_DEVICES: ""
   PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
 concurrency:
-  group: w06-structured-public-repair
+  group: w06-item-lower-bound
   cancel-in-progress: false
 jobs:
   offline_w01_w05_preflight:
     if: >-
       github.run_attempt == '1' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'experiment/p3l-w06-structured-public-repair' &&
-      github.event.pull_request.base.ref == 'fix/p3l-w05-integrated-evidence'
+      github.event.pull_request.head.ref == 'experiment/p3l-w06-item-lower-bound' &&
+      github.event.pull_request.base.ref == 'experiment/p3l-w06-structured-public-repair'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -41,7 +41,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ledger-next-experiment.yml/runs?branch=experiment%2Fp3l-w06-structured-public-repair&event=pull_request&per_page=100" > "$RUNNER_TEMP/w06-runs.json"
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ledger-next-experiment.yml/runs" \
+            -f branch="$GITHUB_HEAD_REF" -f event=pull_request -F per_page=100 > "$RUNNER_TEMP/w06-runs.json"
           python3 - <<'PY'
           import json
           import os
@@ -73,6 +74,7 @@ jobs:
           assert gate['prompt_sha256'] not in {
               '96185b3e99e89cb87570df68a655536fd81c6399a910fb1ac1e161beecfbedd1',
               '362758aa519c32d5c96e2abf8e5451b40b53a4b366adc1b719b2c7df6e1d7ff9',
+              'bf6d4a7622814d0d560990a331efa54e31e629dd9dd4d320efe106b39d2dd73c',
           }
           assert gate['decision'] == 'allow_one_model_call'
           assert gate['model_calls'] == 0 and gate['model_invoked'] is False
