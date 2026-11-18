@@ -14,15 +14,15 @@ env:
   CUDA_VISIBLE_DEVICES: ""
   PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
 concurrency:
-  group: w06-exact-chatml
+  group: w06-exact-chatml-verified
   cancel-in-progress: false
 jobs:
   offline_w01_w05_preflight:
     if: >-
       github.run_attempt == '1' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'experiment/p3l-w06-exact-chatml' &&
-      github.event.pull_request.base.ref == 'experiment/p3l-w06-item-lower-bound-verified'
+      github.event.pull_request.head.ref == 'experiment/p3l-w06-exact-chatml-verified' &&
+      github.event.pull_request.base.ref == 'experiment/p3l-w06-exact-chatml'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -41,20 +41,34 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ledger-next-experiment.yml/runs" \
-            -f branch="$GITHUB_HEAD_REF" -f event=pull_request -F per_page=100 > "$RUNNER_TEMP/w06-runs.json"
           python3 - <<'PY'
           import json
           import os
-          from pathlib import Path
+          import subprocess
+          from time import sleep
 
-          results = json.loads((Path(os.environ["RUNNER_TEMP"]) / "w06-runs.json").read_bytes())
           run_id = int(os.environ["GITHUB_RUN_ID"])
-          assert type(results["total_count"]) is int and results["total_count"] == 1
-          assert len(results["workflow_runs"]) == 1
-          run = results["workflow_runs"][0]
-          assert type(run["id"]) is int and run["id"] == run_id
-          assert run["head_sha"] == os.environ["REVIEW_SHA"] and run["run_attempt"] == 1
+          branch = os.environ["GITHUB_HEAD_REF"]
+          path = "repos/" + os.environ["GITHUB_REPOSITORY"] + "/actions/workflows/ledger-next-experiment.yml/runs"
+          command = ["gh", "api", "--method", "GET", path,
+                     "-f", f"branch={branch}", "-f", "event=pull_request", "-F", "per_page=100"]
+          for attempt in range(12):
+              results = json.loads(subprocess.check_output(command, timeout=10))
+              count, runs = results["total_count"], results["workflow_runs"]
+              if type(count) is not int or type(runs) is not list or count != len(runs):
+                  raise SystemExit("Actions returned incomplete run history")
+              if count:
+                  run = runs[0]
+                  if (count != 1 or type(run["id"]) is not int or run["id"] != run_id
+                          or run["head_branch"] != branch or run["head_sha"] != os.environ["REVIEW_SHA"]
+                          or type(run["run_attempt"]) is not int or run["run_attempt"] != 1):
+                      raise SystemExit("Duplicate or unexpected Actions run")
+                  print("Verified the only attempt for the exact experiment branch and HEAD")
+                  break
+              if attempt < 11:
+                  sleep(5)
+          else:
+              raise SystemExit("Actions did not index the current run within the preflight budget")
           PY
       - name: Run all W01 to W06 offline tests and Harness safety gates
         run: |
