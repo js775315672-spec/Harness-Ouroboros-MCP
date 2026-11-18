@@ -5,7 +5,10 @@ on:
     paths:
       - ".github/workflows/p3l-w01-contract-drift-evidence.yml"
       - "scripts/p3l_w01_contract_drift.py"
+      - "scripts/p3l_w01_candidate_validator.py"
       - "tests/test_p3l_w01_contract_drift.py"
+      - "tests/test_p3l_w01_zero_drift_gate.py"
+      - "tests/test_p3l_w01_validator_acceptance.py"
   workflow_dispatch:
 permissions:
   contents: read
