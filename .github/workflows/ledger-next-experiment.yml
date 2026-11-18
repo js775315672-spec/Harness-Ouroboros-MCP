@@ -1,0 +1,216 @@
+name: P3L W06 one real Qwen coding attempt and independent replay
+on:
+  pull_request:
+    types: [opened]
+    paths:
+      - ".github/workflows/ledger-next-experiment.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CUDA_VISIBLE_DEVICES: ""
+  PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+concurrency:
+  group: w06-single-experiment-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+jobs:
+  offline_w01_w05_preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout immutable PR commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Run all W01 to W06 offline tests and Harness safety gates
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 -m unittest discover -s tests -p test_p3l_w04_one_call_gate.py -v
+          python3 -m unittest discover -s tests -p test_p3l_w05_replay_evidence.py -v
+          python3 -m unittest discover -s tests -p test_p3l_w06_actual_model_once.py -v
+          python3 -m unittest discover -s tests -v
+          python3 scripts/harness_check.py
+          python3 scripts/governance.py
+          python3 scripts/evaluation.py
+          python3 scripts/p3l_w02_model_handoff.py --out artifacts/p3l-w06/w02.json
+          python3 scripts/p3l_w03_rule_diagnostics.py --out artifacts/p3l-w06/w03.json
+          python3 scripts/p3l_w04_one_call_gate.py --out artifacts/p3l-w06/w04.json
+      - name: Reproduce genuine baseline security failure in disposable Docker
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+          sys.path.insert(0,"scripts")
+          from p3g_qwen_ledger_feedback_repair import grade,TARGET
+          root=Path(".").resolve()
+          original=(root/TARGET).read_text(encoding="utf-8")
+          result=grade(root,original)
+          assert result["status"]=="real_source_patch_failed"
+          assert result["baseline_legacy_green"] is True
+          assert result["baseline_security_red"] is True
+          print("PASS: frozen 25-case baseline failure reproduced; model has not run")
+          PY
+
+  pinned_llama_cpu_build:
+    needs: offline_w01_w05_preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout same commit without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build pinned llama.cpp CPU executable only once
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+          mkdir -p artifacts/w06-build
+          cp vendor/llama.cpp/build/bin/llama-completion artifacts/w06-build/llama-completion
+          cd artifacts/w06-build
+          sha256sum llama-completion > SHA256SUMS
+      - name: Upload pinned binary for this run only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w06-pinned-binary
+          path: artifacts/w06-build/
+          if-no-files-found: error
+          retention-days: 3
+
+  actual_qwen_model:
+    needs: [offline_w01_w05_preflight,pinned_llama_cpu_build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout unchanged reviewed commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Get same-run pinned binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w06-pinned-binary
+          path: artifacts/w06-build/
+      - name: Check exact binary digest and executable boundary
+        run: |
+          set -euo pipefail
+          cd artifacts/w06-build
+          sha256sum -c SHA256SUMS
+          test "$(stat -c %s llama-completion)" -ge 1000000
+          test "$(stat -c %s llama-completion)" -le 100000000
+          chmod 755 llama-completion
+      - name: Download only official Apache-2.0 Qwen 7B GGUF
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          python3 scripts/gguf_official_download.py --model 7b --destination models --report artifacts/w06/model-provenance.json
+      - name: Ask real Qwen for exactly one new ledger patch (no push, no merge)
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          python3 scripts/p3l_w06_actual_model_once.py --head-sha "$REVIEW_SHA" --run-id "$GITHUB_RUN_ID" --cli artifacts/w06-build/llama-completion --gguf models/qwen2.5-coder-7b-instruct-q4_k_m.gguf --metadata artifacts/w06/model-provenance.json --out artifacts/w06/model-output.json
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+      - name: Keep raw model output and provenance on pass or failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w06-raw-model-output
+          path: artifacts/w06/
+          if-no-files-found: warn
+          retention-days: 7
+
+  independent_w05_replay:
+    if: always()
+    needs: [actual_qwen_model]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact original baseline again
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download exact model bytes from previous runner
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w06-raw-model-output
+          path: artifacts/w06-recovered/
+      - name: Independent W05 replay in fresh no-network Docker
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          docker pull python:3.11-slim
+          python3 scripts/p3l_w05_replay_evidence.py --input artifacts/w06-recovered/model-output.json --run-id "$GITHUB_RUN_ID" --out artifacts/w06-replay/verdict.json
+          test -z "$(git status --porcelain --untracked-files=all -- scripts tests configs)"
+      - name: Save independent W05 verdict
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w05-independent-docker-verdict
+          path: artifacts/w06-replay/
+          if-no-files-found: warn
+          retention-days: 7
+
+  strict_model_candidate_gate:
+    if: always()
+    needs: [offline_w01_w05_preflight,pinned_llama_cpu_build,actual_qwen_model,independent_w05_replay]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Download independent replay verdict, no direct model trust
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w05-independent-docker-verdict
+          path: artifacts/w06-final/
+      - name: Require all 25 tests independently and retain review gate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("artifacts/w06-final/verdict.json").read_text(encoding="utf-8"))
+          assert r["schema"]=="p3l-w05-independent-replay-v1"
+          assert r["runner_role"]=="independent_replay"
+          assert r["test_count"]==25
+          assert r["candidate_passed"] is True
+          assert r["independent_replay_completed"] is True
+          assert r["merge_authorized"] is False
+          assert r["promoted"] is False
+          print("PASS: real Qwen patch independently passed 25/25; candidate remains review-only")
+          PY
