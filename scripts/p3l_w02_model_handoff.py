@@ -66,27 +66,22 @@ def build(root=ROOT):
     # W03 diagnostics, frozen holdouts and model-failure source are not sent.
     source = legacy.decode("utf-8")
     task = (
-        "Return the complete Python def validate(records): with the original checks "
-        "and return behavior preserved. Do not mutate records. Change only the "
-        "validation at the existing change and fixes sections in the function below.\n"
+        "Return the complete Python def validate(records):. Preserve the original "
+        "body up to its last return. Immediately before that return, add a separate "
+        "validation pass over all records for the public text rules below. Keep the "
+        "last return and never mutate records.\n"
         "Public W01 implementation checklist (provisional contract):\n"
-        "1. fixes section: keep the list type check and reject len(fixes)>12. "
-        "Then iterate over items. For each item, reject non-strings first and "
-        "explicitly reject equality to the empty string before measuring byte length. "
-        "fixes=[] MUST be valid; a list containing '' MUST be rejected. "
-        "The per-item length must be in the inclusive range 1 through "
-        "128 UTF-8 bytes (1<=len(item.encode('utf-8'))<=128); zero bytes is invalid. "
-        "Reject C0/C1 characters in each item. Preserve the prior behavior "
-        "for a nonempty whitespace-only fixes item.\n"
-        "2. change section: keep the existing string and nonblank checks, enforce "
-        "256 UTF-8 bytes with len(change.encode('utf-8'))<=256, and reject every "
-        "C0/C1 character (ord 0..31 or 127..159, including NUL, LF, ESC). "
-        "Use those same code point ranges for fixes.\n"
-        "3. Preserve valid Korean text and raise ValueError for invalid records. "
-        "Keep the original checks outside the two sections.\n"
-        "Original function:\n" + legacy_function(source) + "\n"
-        "Return only the complete function. Each fixes item must be checked for "
-        "equality to the empty string even when its byte length is below the upper bound."
+        "In the added pass, use a separate if and raise ValueError for each numbered rule.\n"
+        "1. Reject change over 256 UTF-8 bytes. Require len(change.encode('utf-8'))<=256.\n"
+        "2. Reject a C0/C1 character in change (ord 0..31 or 127..159, including NUL, LF, ESC).\n"
+        "3. Reject len(fixes)>12. fixes=[] MUST be valid.\n"
+        "4. For each individual fixes item, a list containing '' MUST be rejected. "
+        "Compare the actual item to the empty string. Keep whitespace-only nonempty items.\n"
+        "5. For each fixes item require len(item.encode('utf-8'))<=128, i.e. up to 128 UTF-8 bytes.\n"
+        "6. Reject a C0/C1 character in any fixes item using the same ranges as change.\n"
+        "Preserve valid Korean text. Check all six guards and keep their ValueErrors "
+        "separate. Return only Python code for the complete function.\n"
+        "Original function:\n" + legacy_function(source)
     )
     prompt = format_chatml(
         task,

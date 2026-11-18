@@ -12,14 +12,16 @@ import p3l_w04_one_call_gate as w04
 import p3l_w02_model_handoff as w02
 
 # Source digests independently rejected by W05 in runs 44233044418,
-# 44256635138, 44264996365 (repeated in 44269883090), and 44285978475.
+# 44256635138, 44264996365 (repeated in 44269883090), 44285978475,
+# and 44287350233.
 REJECTED_CANDIDATE_DIGESTS = frozenset({
     "7dac043a9f115a179107ea67cd89e4966dc59c96338429362720e1aaf2ecedbb",
     "b3040620a1e0c136ff81fbe6d2c34ef61d42c5744b1eae2e3e144f90fe7be861",
     "bef7d24b09bbb068d3106d21c22d72a76209e0093e7e1e6c4ccc307a7f6c747f",
     "b2bc7ecf096ff5d7a94412f9e07cd3736e9213292121726584b676771f18348e",
+    "ec528fbde8e7c63d0e904054aed565ae01d9f1ee9bfa7a6c42811e828182dd74",
 })
-INFERENCE_OPTIONS = {"exact_prompt": True, "temperature": "0.35", "seed": "1085"}
+INFERENCE_OPTIONS = {"exact_prompt": True, "temperature": "0", "seed": "1085"}
 
 
 def inference_config_sha256():
