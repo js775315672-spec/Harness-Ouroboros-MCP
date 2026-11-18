@@ -14,6 +14,7 @@ import re
 import p3g_qwen_ledger_feedback_repair as p3g
 import p3l_w04_one_call_gate as w04
 from p3l_w05_actions_source import read_model_archive, read_replay_archive
+from p3l_w06_actual_model_once import inference_config_sha256
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -142,7 +143,7 @@ def main():
         files, replay_job_id, replay_archive_sha256 = read_replay_archive(
             args.run_id,args.head_sha,args.verify_replay_artifact_id)
         reconstruct(w04.w02.ROOT,report,args.run_id)
-        if origin.get("inference_config_sha256") != w04.digest_json(p3g.inference_flags("7b")):
+        if origin.get("inference_config_sha256") != inference_config_sha256():
             raise ValueError("missing or mismatched exact inference configuration")
         require_verified_replay(files["verdict.json"],files["provenance.json"],report,origin,args.run_id)
         args.out.parent.mkdir(parents=True,exist_ok=True)

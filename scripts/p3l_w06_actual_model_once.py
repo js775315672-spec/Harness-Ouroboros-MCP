@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """W06: a single real Qwen model attempt on the W02 contract, review only."""
 import argparse
+from functools import partial
 import hashlib
 import json
 from pathlib import Path
@@ -9,6 +10,18 @@ import subprocess
 import p3g_qwen_ledger_feedback_repair as p3g
 import p3l_w04_one_call_gate as w04
 import p3l_w02_model_handoff as w02
+
+# Source digests independently rejected by W05 in runs 44233044418,
+# 44256635138, and 44264996365 (repeated in 44269883090).
+REJECTED_CANDIDATE_DIGESTS = frozenset({
+    "7dac043a9f115a179107ea67cd89e4966dc59c96338429362720e1aaf2ecedbb",
+    "b3040620a1e0c136ff81fbe6d2c34ef61d42c5744b1eae2e3e144f90fe7be861",
+    "bef7d24b09bbb068d3106d21c22d72a76209e0093e7e1e6c4ccc307a7f6c747f",
+})
+
+
+def inference_config_sha256():
+    return w04.digest_json(p3g.inference_flags("7b", exact_prompt=True))
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
@@ -27,7 +40,7 @@ def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None):
         raise ValueError("W04 refused one model attempt")
     p3g.check_model(weights,metadata,"7b")
     if infer_fn is None:
-        infer_fn=p3g.infer_prepared
+        infer_fn=partial(p3g.infer_prepared, exact_prompt=True)
     raw,elapsed=infer_fn(binary,weights,handoff["prompt"],"7b")
     if type(raw) is not str or not 1<=len(raw.encode("utf-8"))<=6000:
         raise ValueError("invalid bounded model response")
@@ -51,6 +64,9 @@ def execute(root, review_sha, run_id, binary, weights, metadata, infer_fn=None):
         patched,diff=p3g.patch_original(original,replacement)
         receipt["candidate_source_sha256"]=sha(patched.encode("utf-8"))
         receipt["diff_sha256"]=sha(diff.encode("utf-8"))
+        if receipt["candidate_source_sha256"] in REJECTED_CANDIDATE_DIGESTS:
+            receipt["schema"]="p3l-w06-duplicate-rejected-v1"
+            receipt["static_rejection"]="candidate source already rejected by independent W05"
     except (ValueError,SyntaxError) as exc:
         # Preserve original response, do not fabricate a valid patch.
         receipt["schema"]="p3l-w06-static-rejected-v1"
@@ -75,7 +91,7 @@ def main():
     metadata=json.loads(args.metadata.read_bytes())
     metadata.update(llama_cpp_revision=args.llama_revision,
                     llama_binary_sha256=p3g.sha256_file(args.cli),
-                    inference_config_sha256=w04.digest_json(p3g.inference_flags("7b")),
+                    inference_config_sha256=inference_config_sha256(),
                     prompt_sha256=result["prompt_sha256"])
     args.metadata.write_text(json.dumps(metadata,sort_keys=True,indent=2)+"\n",encoding="utf-8")
     print("W06 real model completed; output:",result["schema"])
