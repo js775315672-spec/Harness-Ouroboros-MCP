@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      p3l_review_candidate:
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -16,6 +21,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Check out the pinned W07 candidate
+        if: inputs.p3l_review_candidate
+        uses: ./.github/actions/p3l-w07-checkout
       - name: Python regression tests
         run: python3 -m unittest discover -s tests -v
       - name: Eight governance gates
@@ -58,7 +66,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: verification-timing
+          name: ${{ inputs.p3l_review_candidate && 'w07-candidate-ci-evidence' || 'verification-timing' }}
           path: |
             artifacts/verification-timing.json
             artifacts/handoff-runtime.json
@@ -66,5 +74,6 @@ jobs:
             artifacts/model-request.json
             artifacts/autonomous-loop-dry-run.json
             artifacts/ci-execution-receipt.json
+            ${{ inputs.p3l_review_candidate && format('{0}/w07-candidate.json', runner.temp) || '' }}
           if-no-files-found: ignore
           retention-days: 7

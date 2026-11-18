@@ -1,0 +1,8 @@
+{
+  "snapshot": "8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc",
+  "baseline": "f2c8c5d37c7f4fe79a658cc25a6b0ec126972578",
+  "candidate": "3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267",
+  "candidate_source_sha256": "b7ef9c2c369469942f31aa1b96b8c8256c488c549db7635a162d8da177c9008e",
+  "w05_run_id": 44288613606,
+  "commit_object_base64": "dHJlZSAwODYzZGYxYmU1YzMzNjQxNWY4ZWQyYTVmY2Q3ZDE1ZTMxZmZlYTE2CnBhcmVudCBmMmM4YzVkMzdjN2Y0ZmU3OWE2NThjYzI1YTZiMGVjMTI2OTcyNTc4CmF1dGhvciBQM0wgVzA3IHJldmlldyA8dzA3QGV4YW1wbGUuaW52YWxpZD4gMTc5NDk2MDAwMCArMDAwMApjb21taXR0ZXIgUDNMIFcwNyByZXZpZXcgPHcwN0BleGFtcGxlLmludmFsaWQ+IDE3OTQ5NjAwMDAgKzAwMDAKClcwNyBkcnkgcnVuOiBtb2RlbC1nZW5lcmF0ZWQgdmFsaWRhdGUK"
+}

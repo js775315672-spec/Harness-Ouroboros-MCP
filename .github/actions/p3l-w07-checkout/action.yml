@@ -1,0 +1,62 @@
+name: Check out the reviewed W07 candidate
+description: Reconstruct a pinned Git commit from its published review snapshot
+outputs:
+  baseline:
+    description: Verified parent commit
+    value: ${{ steps.restore.outputs.baseline }}
+  candidate:
+    description: Verified candidate commit
+    value: ${{ steps.restore.outputs.candidate }}
+runs:
+  using: composite
+  steps:
+    - id: restore
+      shell: bash
+      env:
+        GIT_NO_REPLACE_OBJECTS: '1'
+      run: |
+        python3 -B - <<'PY'
+        import base64
+        import hashlib
+        import json
+        import os
+        from pathlib import Path
+        import re
+        import subprocess
+
+        def git(*args, data=None):
+            return subprocess.check_output(["git", *args], input=data, timeout=90)
+
+        def require(condition, reason):
+            if not condition:
+                raise SystemExit(reason)
+
+        manifest = json.loads(Path(".github/p3l/w07-candidate.json").read_bytes())
+        snapshot, baseline, candidate = (manifest[k] for k in ("snapshot", "baseline", "candidate"))
+        require(all(re.fullmatch(r"[0-9a-f]{40}", sha) for sha in (snapshot, baseline, candidate)),
+                "Expected full Git commit IDs")
+        commit = base64.b64decode(manifest["commit_object_base64"], validate=True)
+        git("fetch", "--no-tags", "--depth=2", "origin", snapshot)
+        restored = git("hash-object", "-t", "commit", "-w", "--stdin", data=commit).decode().strip()
+        require(restored == candidate, "Candidate commit does not match the reviewed SHA")
+        lineage = git("show", "-s", "--format=%P%n%T", candidate).decode().splitlines()
+        snapshot_tree = git("rev-parse", snapshot + "^{tree}").decode().strip()
+        require(lineage == [baseline, snapshot_tree], "Candidate parent or snapshot tree differs")
+        target = "scripts/development_ledger.py"
+        change = git("diff-tree", "--no-commit-id", "--no-renames", "-r", "--name-status", baseline, candidate)
+        require(change.decode().splitlines() == [f"M\t{target}"], "Candidate changed an unreviewed path")
+        for revision in (baseline, candidate):
+            mode = git("ls-tree", revision, "--", target).split(maxsplit=1)[0]
+            require(mode == b"100644", "Candidate ledger must be a regular source file")
+        digest = hashlib.sha256(git("show", f"{candidate}:{target}")).hexdigest()
+        require(digest == manifest["candidate_source_sha256"], "Candidate source SHA-256 differs")
+        git("checkout", "--detach", candidate)
+        require(git("rev-parse", "HEAD").decode().strip() == candidate, "Incorrect checkout")
+        require(hashlib.sha256(Path(target).read_bytes()).hexdigest() == digest, "Checkout source SHA-256 differs")
+        receipt = {k: manifest[k] for k in ("snapshot", "baseline", "candidate", "candidate_source_sha256", "w05_run_id")}
+        receipt["candidate_tree"] = snapshot_tree
+        Path(os.environ["RUNNER_TEMP"], "w07-candidate.json").write_text(json.dumps(receipt, indent=2) + "\n")
+        print(json.dumps(receipt, sort_keys=True))
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+            output.write(f"baseline={baseline}\ncandidate={candidate}\n")
+        PY
