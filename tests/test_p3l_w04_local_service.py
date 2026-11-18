@@ -239,6 +239,21 @@ class SharedAdmissionTests(unittest.TestCase):
         self.request.assert_called_once()
         self.infer.assert_not_called()
 
+    def test_lease_expiring_during_shared_claim_blocks_inference(self):
+        def delayed_claim(*args):
+            result = self.request_ref(*args)
+            self.now = 121
+            return result
+
+        self.request.side_effect = delayed_claim
+        registry = self.registry("expired.sqlite3")
+        with serving(registry, shared_budget=self.budget(123)) as port:
+            with self.assertRaisesRegex(AttemptBlocked, "HTTP 409"):
+                self.attempt(port, 123)
+        self.assertEqual(registry.status(self.inputs)["state"], "UNVERIFIED")
+        self.assertEqual(len(self.provider), 1)
+        self.infer.assert_not_called()
+
     def test_w06_cli_uses_shared_admission_before_stub_inference(self):
         metadata, lease_path, out = (self.root / name for name in ("metadata", "lease", "receipt"))
         metadata.write_text(json.dumps(MODEL), encoding="utf-8")

@@ -86,6 +86,9 @@ class _RegistryHandler(BaseHTTPRequestHandler):
                 if shared is not None:
                     # Either store may be spent if the provider or acknowledgement fails.
                     shared.record()
+                    status = registry.status(shared.inputs)
+                    if status is None or status["state"] != "STARTED":
+                        raise AttemptBlocked("lease expired before shared admission completed")
                     result["shared"] = True
             else:
                 self._reply(404, {"error": "unknown registry route"})
