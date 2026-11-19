@@ -1,0 +1,78 @@
+name: Hydra ledger cross-run consumer
+on:
+  pull_request:
+    types: [opened]
+    paths: [.github/workflows/hydra-cross-run-consume.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  claim:
+    if: github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'work/hydra-cross-run-consume' || github.head_ref == 'work/hydra-cross-run-replay') && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      admitted: ${{ steps.claim.outputs.admitted }}
+    steps:
+      - name: Verify publisher and claim the exact ledger
+        id: claim
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/44504284222" | jq -e '.head_sha == "1d90163295e03062cf5ea9c29d4e0f784a0004cf" and .workflow_id == 423681314 and .head_branch == "work/hydra-cross-run-publish" and .event == "pull_request" and .run_attempt == 1 and .status == "completed" and .conclusion == "success"'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14518732157" | jq -e '.workflow_run.id == 44504284222 and .name == "paused-hydra-ledger" and .expired == false and .digest == "sha256:6af61bbe3684d240a06e6165bf58b470467775e1d4c33ac19b90bbd61bdb15c9"'
+          ref="refs/heads/rehearsal/hydra-ledger-44504284222"
+          if gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="$ref" -f sha="$REVIEW_HEAD" > "$RUNNER_TEMP/claim.json"; then
+            jq -e --arg ref "$ref" --arg head "$REVIEW_HEAD" '.ref == $ref and .object.sha == $head and .object.type == "commit"' "$RUNNER_TEMP/claim.json"
+            echo 'admitted=true' >> "$GITHUB_OUTPUT"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/${ref#refs/}" | jq -e --arg ref "$ref" --arg head "$REVIEW_HEAD" '.ref == $ref and .object.sha == $head and .object.type == "commit"'
+            echo 'admitted=false' >> "$GITHUB_OUTPUT"
+            echo 'LEDGER ALREADY CLAIMED'
+          fi
+  second:
+    needs: claim
+    if: needs.claim.outputs.admitted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: verifier
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: adb1d414f94bedeef31487d9d1618094b781c967
+          path: candidate
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: paused-hydra-ledger
+          run-id: 44504284222
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}
+      - name: Verify the ledger before resuming on a new runner
+        working-directory: candidate
+        shell: bash
+        env:
+          LEDGER_SHA: d1a3c9d184b4027e0d4cbe259c57cef3e54ea394c815878960d833fc6b790749
+        run: |
+          printf '%s  %s\n' "$LEDGER_SHA" "$RUNNER_TEMP/hydra.sqlite" | sha256sum -c -
+          printf '%s  %s\n' '4b939fadcecd5b81a35d50cc3ee647a096a6aace7f9f7dabb7bd7decd5ac4e63' "$RUNNER_TEMP/approval.json" | sha256sum -c -
+          cmd=(python3 -B ../verifier/scripts/p3l_hydra_intake.py --approval "$RUNNER_TEMP/approval.json" --ledger "$RUNNER_TEMP/hydra.sqlite")
+          origin=(--run 44497835184 --job 135469460234)
+          if "${cmd[@]}" execute --task second "${origin[@]}" > "$RUNNER_TEMP/paused.log" 2>&1; then exit 1; fi
+          grep -F 'Hydra dispatch is paused' "$RUNNER_TEMP/paused.log"
+          docker pull python:3.11-slim
+          "${cmd[@]}" resume
+          "${cmd[@]}" execute --task first "${origin[@]}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d["executed"] and d["reason"]=="slot already spent"'
+          "${cmd[@]}" execute --task second "${origin[@]}" | tee "$RUNNER_TEMP/second.log"
+          grep -F '"executed": true' "$RUNNER_TEMP/second.log"
+          "${cmd[@]}" execute --task second "${origin[@]}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d["executed"] and d["reason"]=="slot already spent"'
+          echo 'CROSS-RUN REPLAY BLOCKED 2/2'
