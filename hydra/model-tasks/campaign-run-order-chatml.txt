@@ -1,0 +1,5 @@
+<|im_start|>system
+Return exactly one Python comparison expression. No markdown.<|im_end|>
+<|im_start|>user
+Write a condition that is true if started_at is earlier than or equal to previous_started_at. Both variables are timezone-aware datetime values. Use only the two variable names and a single comparison operator.<|im_end|>
+<|im_start|>assistant
