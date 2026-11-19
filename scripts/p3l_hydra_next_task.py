@@ -35,7 +35,7 @@ def select(runs, jobs_by_run):
     if not failures:
         return {"decision": "no_unresolved_failure", "proposal": None}
     run, job, kind = min(failures, key=lambda item: (TASKS[item[2]][0], -item[0]["id"], item[1]["name"]))
-    identity = f"{run['id']}:{job['id']}"
+    identity = f"{run['head_sha']}:{job['name']}"
     proposal = {
         "id": "hydra-problem-" + hashlib.sha256(identity.encode()).hexdigest()[:20],
         "task": TASKS[kind][1], "job_name": job["name"],
