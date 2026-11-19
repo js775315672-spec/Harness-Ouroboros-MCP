@@ -1,0 +1,15 @@
+{
+  "schema": "hydra-nine-cycle-checkpoint-v1",
+  "campaign": "hydra-nine-cycle",
+  "requested": 9,
+  "completed": [
+    {
+      "sequence": 1,
+      "run": 44555655395,
+      "job": 135670975791,
+      "head": "d7ad2ead9029243861747fc95e9c5a3bdd802ef2",
+      "task": "memory-replay-44554721377",
+      "model_result_run": 44554721377
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+name: Hydra campaign continuity
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/hydra-campaign-continuity.yml, scripts/p3l_hydra_campaign_continuity.py, hydra/memory/campaign.json]
+  push:
+    branches: [main]
+    paths: [.github/workflows/hydra-campaign-continuity.yml, scripts/p3l_hydra_campaign_continuity.py, hydra/memory/campaign.json]
+  workflow_run:
+    workflows: [Hydra standing approved tasks]
+    branches: [main]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-campaign-continuity'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify previous cycle and compute the next sequence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/p3l_hydra_campaign_continuity.py
+      - name: Prove failed or mismatched predecessor cannot advance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from p3l_hydra_campaign_continuity import next_sequence, fetch
+          data=json.loads(Path("hydra/memory/campaign.json").read_bytes())
+          for suffix, key, value in [("/44555655395", "conclusion", "failure"),
+                                     ("/135670975791", "head_sha", "0"*40),
+                                     ("/44554721377", "conclusion", "failure")]:
+              def fake(path):
+                  record=fetch(path)
+                  return {**record, key:value} if path.endswith(suffix) else record
+              try:
+                  next_sequence(data, fake)
+              except ValueError:
+                  pass
+              else:
+                  raise AssertionError("unverified predecessor advanced")
+          print("CONTINUITY NEGATIVE 3/3")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-campaign-continuity
+          path: ${{ runner.temp }}/campaign-continuity.json
+          if-no-files-found: error
