@@ -1,0 +1,10 @@
+<|im_start|>system
+Generate one Python boolean expression. Use both inputs. Do not write Markdown, function calls, or attributes.<|im_end|>
+<|im_start|>user
+Create the exception condition for a cancelled worker. Inputs: conclusion is a string status; match is an object for a worker and None for the admission job. The exception condition evaluates true only when the status is cancelled and there is a worker. Examples:
+cancelled + worker => True
+cancelled + None => False
+success + worker => False
+skipped + worker => False
+Combine one string equality check on conclusion and one identity check on match with and. Output just this exception condition. The harness preserves the existing selector condition separately.<|im_end|>
+<|im_start|>assistant

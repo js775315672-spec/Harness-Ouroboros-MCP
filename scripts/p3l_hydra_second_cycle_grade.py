@@ -58,7 +58,7 @@ def proposal_digest(raw):
     return hashlib.sha256(data).hexdigest()
 
 
-def verify(checkout, raw):
+def verify(checkout, raw, *, exception_only=False):
     head = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
     if head != BASE:
         raise ValueError("unexpected grading checkout HEAD")
@@ -74,7 +74,8 @@ def verify(checkout, raw):
     original = (checkout / TARGET).read_text(encoding="utf-8")
     if original.count(OLD) != 1:
         raise ValueError("unexpected selector replacement anchor")
-    candidate = original.replace(OLD, value)
+    replacement = f'{OLD} and not ({value})' if exception_only else value
+    candidate = original.replace(OLD, replacement)
     with tempfile.TemporaryDirectory(prefix="hydra-second-cycle-") as folder:
         root = Path(folder)
         root.chmod(0o755)
