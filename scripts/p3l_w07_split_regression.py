@@ -31,13 +31,14 @@ def cases(suite):
 def run_side(root, historical):
     if git(root, "rev-parse", "HEAD") != (HISTORICAL if historical else CANDIDATE):
         raise ValueError("wrong W07 regression checkout")
+    sys.path[:0] = [str(root), str(root / "scripts"), str(root / "tests")]
     tests = list(cases(unittest.defaultTestLoader.discover(str(root / "tests"))))
     ids = {test.id() for test in tests}
     selected = [test for test in tests
                 if (test.id().split(".", 1)[0] in HISTORICAL_MODULES) == historical]
     expected = 66 if historical else 692
     if len(tests) != 758 or len(ids) != 758 or len(selected) != expected:
-        raise ValueError("unexpected W07 test inventory")
+        raise ValueError(f"unexpected W07 test inventory: {len(tests)=}, {len(ids)=}, {len(selected)=}, {expected=}; imports={unittest.defaultTestLoader.errors}")
     result = unittest.TextTestRunner(verbosity=1).run(unittest.TestSuite(selected))
     return 0 if result.wasSuccessful() and result.testsRun == expected and not result.skipped else 1
 
