@@ -1,5 +1,6 @@
 """Verify completed campaign receipts before preparing the next sequence."""
 import base64
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -23,6 +24,7 @@ def next_sequence(checkpoint, read):
     if not 0 < len(completed) <= LIMIT:
         raise ValueError("unexpected verified cycle count")
     runs, models, tasks = set(), set(), set()
+    previous_started_at = None
     for sequence, row in enumerate(completed, 1):
         if (row["sequence"] != sequence or row["run"] in runs or row["model_result_run"] in models
                 or row["task"] in tasks or row["run"] == row["model_result_run"]):
@@ -53,6 +55,12 @@ def next_sequence(checkpoint, read):
         if (model["id"] != row["model_result_run"] or model["repository"]["full_name"] != REPO
                 or model["status"] != "completed" or model["conclusion"] != "success"):
             raise ValueError("campaign predecessor lacks exact successful model evidence")
+        started_at = datetime.fromisoformat(run["run_started_at"].replace("Z", "+00:00"))
+        if started_at.utcoffset() is None:
+            raise ValueError("production run start time lacks a timezone")
+        if previous_started_at is not None and (started_at <= previous_started_at):
+            raise ValueError("production runs are out of order")
+        previous_started_at = started_at
         runs.add(row["run"])
         models.add(row["model_result_run"])
         tasks.add(row["task"])
