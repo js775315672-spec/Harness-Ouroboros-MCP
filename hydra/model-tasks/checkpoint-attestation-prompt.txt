@@ -1,0 +1,7 @@
+Add one Python unittest to tests/test_resumable_task_queue.py.
+
+Cover rejection of a successful-looking GitHub Actions result from the wrong workflow across a checkpoint restart. Use a temporary directory and offline GitHub fixtures. Create and save the queue, reload it, and call advance with the wrong-workflow result. Assert that the call raises ValueError and that reloading the checkpoint still returns the original state. Then advance with the approved Harness workflow result, save using the previous integrity token, and reload to verify exactly one attested task and one generation increment.
+
+Use the public queue helpers and the existing test fixture conventions. Keep existing tests and production code unchanged. Return only the new Python test method for ResumableQueueTests. Do not access the network.
+
+Name the new method test_checkpoint_rejects_wrong_attestation. The module already provides tempfile, Path, TASKS, REPO, COMMIT, new_queue, load, save, advance, evidence, and github_ok. github_ok(sha) returns a fixture callable, and evidence() uses sha = "b" * 40 by default. save(path, record, expected_integrity=old["integrity"]) writes an updated checkpoint. The record exposes generation, index, events, and integrity. You may use dict, a nested helper named writer_fixture, with, and unittest assertions. Reuse github_ok via a named local helper if needed. Do not add imports, a class, or extra methods.

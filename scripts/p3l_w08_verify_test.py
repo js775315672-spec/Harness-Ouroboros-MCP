@@ -17,7 +17,6 @@ from p3l_w07_revision_isolation import CANDIDATE_COMMIT, git
 TARGET = Path("tests/test_resumable_task_queue.py")
 QUEUE = Path("scripts/resumable_task_queue.py")
 METHOD = "test_concurrent_checkpoint_cas"
-CASE = f"test_resumable_task_queue.ResumableQueueTests.{METHOD}"
 STALE_CHECK = b'elif load(path)["integrity"] != expected_integrity:'
 IMPORTS = {
     "concurrent.futures": {"ThreadPoolExecutor"},
@@ -35,13 +34,13 @@ SYNTAX = (
     ast.FunctionDef, ast.arguments, ast.arg, ast.ImportFrom, ast.alias, ast.With,
     ast.withitem, ast.Assign, ast.Expr, ast.Call, ast.keyword, ast.Name, ast.Load,
     ast.Store, ast.Attribute, ast.Constant, ast.BinOp, ast.Div, ast.Mult, ast.Subscript,
-    ast.Tuple, ast.List, ast.Try, ast.ExceptHandler, ast.Return, ast.Raise, ast.If,
+    ast.Tuple, ast.List, ast.Dict, ast.Try, ast.ExceptHandler, ast.Return, ast.Raise, ast.If,
     ast.Compare, ast.Eq, ast.NotEq, ast.Is, ast.IsNot, ast.UnaryOp, ast.Not, ast.Pass,
     ast.Assert, ast.BoolOp, ast.And,
 )
 
 
-def check_method(method):
+def check_method(method, *, extra_calls=()):
     for node in ast.walk(method):
         if not isinstance(node, SYNTAX):
             raise ValueError("unsupported syntax in W08 test")
@@ -61,7 +60,7 @@ def check_method(method):
         if isinstance(node, ast.Call) and (
             not isinstance(node.func, (ast.Attribute, ast.Name))
             or isinstance(node.func, ast.Name)
-            and node.func.id not in CALLS and not node.func.id.startswith("writer_")
+            and node.func.id not in CALLS and node.func.id not in extra_calls and not node.func.id.startswith("writer_")
         ):
             raise ValueError("unsupported call in W08 test")
 
@@ -79,7 +78,7 @@ def unwrap_proposal(raw):
     return body
 
 
-def append_test(original, proposal):
+def append_test(original, proposal, *, method_name=METHOD, extra_calls=()):
     if not 1 <= len(proposal) <= 6000:
         raise ValueError("invalid W08 proposal size")
     source = textwrap.dedent(proposal.decode("utf-8")).strip()
@@ -88,11 +87,11 @@ def append_test(original, proposal):
         raise ValueError("expected a single W08 test method")
     method = nodes[0]
     args = method.args
-    if (method.name != METHOD or method.decorator_list or method.returns is not None
+    if (method.name != method_name or method.decorator_list or method.returns is not None
             or [arg.arg for arg in args.args] != ["self"] or args.args[0].annotation is not None
             or args.posonlyargs or args.kwonlyargs or args.vararg or args.kwarg or args.defaults):
         raise ValueError("invalid W08 test signature")
-    check_method(method)
+    check_method(method, extra_calls=extra_calls)
     marker = b'\n\nif __name__ == "__main__":'
     if original.count(marker) != 1:
         raise ValueError("reviewed test module entry point changed")
@@ -102,10 +101,19 @@ def append_test(original, proposal):
     return combined
 
 
-def verify(root, proposal):
-    if git(root, "rev-parse", "HEAD").decode().strip() != CANDIDATE_COMMIT:
+def verify(root, proposal, *, checkpoint_attestation=False):
+    base = CANDIDATE_COMMIT
+    method, anchor, replacement = METHOD, STALE_CHECK, b"elif False:"
+    extra_calls = ()
+    if checkpoint_attestation:
+        base = "bb1a446473dfcd150c5161461c14a9420835d60b"
+        method = "test_checkpoint_rejects_wrong_attestation"
+        anchor = b'data.get("name") != "Harness safety checks"'
+        replacement = b"False"
+        extra_calls = ("dict",)
+    if git(root, "rev-parse", "HEAD").decode().strip() != base:
         raise ValueError("W08 requires the exact reviewed checkout")
-    archive = git(root, "archive", "--format=zip", CANDIDATE_COMMIT, "scripts", "tests")
+    archive = git(root, "archive", "--format=zip", base, "scripts", "tests")
     with tempfile.TemporaryDirectory(prefix="w08-test-") as directory:
         root = Path(directory)
         root.chmod(0o755)
@@ -115,11 +123,11 @@ def verify(root, proposal):
             path.chmod(0o755 if path.is_dir() else 0o644)
         target = root / TARGET
         normalized = unwrap_proposal(proposal)
-        candidate = append_test(target.read_bytes(), normalized)
+        candidate = append_test(target.read_bytes(), normalized, method_name=method, extra_calls=extra_calls)
         target.write_bytes(candidate)
         queue = root / QUEUE
         original = queue.read_bytes()
-        if original.count(STALE_CHECK) != 1:
+        if original.count(anchor) != 1:
             raise ValueError("pinned mutation anchor changed")
 
         def run(args):
@@ -128,17 +136,17 @@ def verify(root, proposal):
 
         clean = run(["-m", "unittest", "discover", "-s", "tests", "-p", TARGET.name, "-v"])
         if (clean.returncode != 0 or not re.search(r"(?m)^Ran 7 tests? ", clean.stderr)
-                or not re.search(rf"(?m)^{METHOD} .* \.\.\. ok$", clean.stderr)):
+                or not re.search(rf"(?m)^{method} .* \.\.\. ok$", clean.stderr)):
             raise ValueError("candidate must pass all seven tests in Docker")
-        mutant = original.replace(STALE_CHECK, b"elif False:")
+        mutant = original.replace(anchor, replacement)
         queue.write_bytes(mutant)
         altered = run(["-c", "import sys,unittest;sys.path.insert(0,'tests');unittest.main(module=None)",
-                       "-v", CASE])
+                       "-v", f"test_resumable_task_queue.ResumableQueueTests.{method}"])
         if (altered.returncode != 1 or not re.search(r"(?m)^Ran 1 test ", altered.stderr)
-                or not re.search(rf"(?m)^FAIL: {METHOD} ", altered.stderr)
+                or not re.search(rf"(?m)^FAIL: {method} ", altered.stderr)
                 or "FAILED (failures=1)" not in altered.stderr):
-            raise ValueError("the proposed test must fail by assertion on the stale-writer mutant")
-    return {"base_sha": CANDIDATE_COMMIT, "target": TARGET.as_posix(),
+            raise ValueError("the proposed test must fail by assertion on the selected mutant")
+    return {"base_sha": base, "target": TARGET.as_posix(),
             "proposal_sha256": hashlib.sha256(proposal).hexdigest(),
             "normalized_proposal_sha256": hashlib.sha256(normalized).hexdigest(),
             "candidate_sha256": hashlib.sha256(candidate).hexdigest(),
@@ -150,10 +158,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkout", type=Path, required=True)
     parser.add_argument("--proposal", type=Path, required=True)
+    parser.add_argument("--checkpoint-attestation", action="store_true")
     args = parser.parse_args()
     with args.proposal.open("rb") as stream:
         proposal = stream.read(6001)
-    print(json.dumps(verify(args.checkout, proposal), sort_keys=True))
+    print(json.dumps(verify(args.checkout, proposal, checkpoint_attestation=args.checkpoint_attestation), sort_keys=True))
 
 
 if __name__ == "__main__":
