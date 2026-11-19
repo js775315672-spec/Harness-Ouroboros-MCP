@@ -1,4 +1,4 @@
-name: W08 one-shot model experiment
+name: W08 revised one-shot model experiment
 on:
   pull_request:
     types: [opened]
@@ -10,7 +10,7 @@ permissions:
   actions: read
 jobs:
   preflight:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.base_ref == 'work/p3l-w08-worker-boundary' && github.head_ref == 'run/p3l-w08-checkpoint-cas' && github.run_attempt == '1'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.base_ref == 'work/p3l-w08-live-review' && github.head_ref == 'run/p3l-w08-checkpoint-cas-revised' && github.run_attempt == '1'
     uses: ./.github/workflows/p3l-w08-w07-preflight.yml
   pinned_llama_cpu_build:
     needs: preflight
@@ -65,6 +65,7 @@ jobs:
     timeout-minutes: 3
     permissions:
       contents: write
+      actions: read
     outputs:
       grant_sha: ${{ steps.claim.outputs.grant_sha }}
     env:
@@ -80,7 +81,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          gh api repos/"$GITHUB_REPOSITORY"/actions/runs/44456878364 | jq -e '.head_sha == "d348a9686f0c78283f0812cab6a5318bbe29976b" and .head_branch == "run/p3l-w08-checkpoint-cas" and .run_attempt == 1 and .conclusion == "failure"' >/dev/null
+          gh api repos/"$GITHUB_REPOSITORY"/actions/runs/44456878364/jobs | jq -e '([.jobs[] | select(.id == 135335194545 and .name == "worker" and .conclusion == "success")] | length == 1) and ([.jobs[] | select(.id == 135336096929 and .name == "independent" and .conclusion == "failure")] | length == 1)' >/dev/null
           PYTHONPATH=scripts python3 -B - <<'PY'
           import os
           from pathlib import Path

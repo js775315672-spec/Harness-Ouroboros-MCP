@@ -7,7 +7,7 @@ from pathlib import Path
 
 from p3l_w08_verify_test import CANDIDATE_COMMIT, TARGET, verify
 
-PROMPT_SHA256 = "087f309b155a815e53c6f8ffd99a0d793ca50eceded93edf31347b0810d65a7f"
+PROMPT_SHA256 = "161c5f557342bf1c2404b96a7da614f933228d7cbd728e6a5c2f30f10fb149fa"
 PROPOSAL_LIMIT = 6000
 
 
