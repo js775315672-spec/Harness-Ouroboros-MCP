@@ -2,24 +2,10 @@
   "enabled": true,
   "approvals": [
     {
-      "id": "initial-fast-lane",
-      "suite": "fast-lane",
-      "head": "adb1d414f94bedeef31487d9d1618094b781c967",
-      "branch": "experiment/hydra-approved-push-intake",
-      "workflow": ".github/workflows/hydra-approved-push.yml",
-      "workflow_id": 423641070,
-      "run": 44497835184,
-      "job": 135469460234
-    },
-    {
-      "id": "initial-completion-ledger",
-      "suite": "completion-ledger",
-      "head": "adb1d414f94bedeef31487d9d1618094b781c967",
-      "branch": "experiment/hydra-approved-push-intake",
-      "workflow": ".github/workflows/hydra-approved-push.yml",
-      "workflow_id": 423641070,
-      "run": 44497835184,
-      "job": 135469460234
+      "id": "checkpoint-replay-44515315325",
+      "suite": "checkpoint-model-replay",
+      "head": "68996cf2c1c5df3f7682fcb17822564a978f956c",
+      "model_result_run": 44515315325
     }
   ]
 }
