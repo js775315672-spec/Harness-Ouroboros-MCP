@@ -112,6 +112,38 @@ class CompletionRehearsalTests(unittest.TestCase):
         reopened = CompletionRegistry(path, self.plan, approved_tasks=(task,))
         self.assertFalse(reopened.consume(task, self.event, observed_head=head))
 
+    def test_next_generation_requires_the_reserved_workers_verified_result(self):
+        first = "w05_receipt_gate"
+        second = "next_generation"
+        self.plan["max_parallel"] = 1
+        self.plan["tasks"].append({**self.plan["tasks"][2], "key": second, "deps": [first]})
+        scope = (first, second)
+        path = self.path.with_name("generations.sqlite3")
+        registry = CompletionRegistry(path, self.plan, approved_tasks=scope)
+        self.assertEqual(registry.complete(self.event, self.verify)["reserved"], [first])
+        head = self.event["head"]
+        self.assertTrue(registry.consume(first, self.event, observed_head=head, completion=(12, 23)))
+        restarted = CompletionRegistry(path, self.plan, approved_tasks=scope)
+        self.assertFalse(restarted.consume(first, self.event, observed_head=head, completion=(12, 23)))
+        done = {"task": first, "head": head, "run_id": 12, "job_id": 23}
+        with self.assertRaisesRegex(ValueError, "running task"):
+            restarted.complete({**done, "job_id": 99}, self.verify)
+        with self.assertRaisesRegex(ValueError, "not independently verified"):
+            restarted.complete(done, lambda e: {**self.verify(e), "passed": False})
+        self.assertEqual(restarted.complete(done, self.verify)["reserved"], [second])
+        self.assertEqual(restarted.complete(done, self.verify)["reserved"], [])
+        self.assertTrue(restarted.consume(second, done, observed_head=head, completion=(13, 24)))
+        last = {"task": second, "head": head, "run_id": 13, "job_id": 24}
+        self.assertEqual(restarted.complete(last, self.verify)["reserved"], [])
+
+    def test_reservation_without_a_started_worker_cannot_report_completion(self):
+        task = "w05_receipt_gate"
+        registry = CompletionRegistry(self.path.with_name("not-started.sqlite3"), self.plan,
+                                      approved_tasks=(task,))
+        self.assertEqual(registry.complete(self.event, self.verify)["reserved"], [task])
+        with self.assertRaisesRegex(ValueError, "running task"):
+            registry.complete({**self.event, "task": task, "job_id": 99}, self.verify)
+
 
 if __name__ == "__main__":
     unittest.main()
