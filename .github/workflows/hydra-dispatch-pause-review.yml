@@ -1,0 +1,20 @@
+name: Hydra dispatch pause review
+on:
+  pull_request:
+    paths:
+      - .github/workflows/hydra-dispatch-pause-review.yml
+      - scripts/p3l_hydra_completion_rehearsal.py
+      - tests/test_p3l_hydra_dispatch_pause.py
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-dispatch-pause'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
