@@ -1,0 +1,23 @@
+name: Hydra model task baseline review
+on:
+  pull_request:
+    paths: [.github/workflows/hydra-model-task-baseline.yml, hydra/model-tasks/checkpoint-attestation.txt]
+permissions:
+  contents: read
+jobs:
+  baseline:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-model-task-attestation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify untouched baseline and hash public task
+        shell: bash
+        run: |
+          git diff --exit-code bb1a446473dfcd150c5161461c14a9420835d60b HEAD -- scripts tests
+          sha256sum hydra/model-tasks/checkpoint-attestation.txt
+          python3 -B -m unittest discover -s tests -p test_resumable_task_queue.py -v
