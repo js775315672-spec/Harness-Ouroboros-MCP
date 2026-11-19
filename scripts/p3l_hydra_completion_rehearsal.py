@@ -7,18 +7,50 @@ from p3l_hydra_fast_lane_gate import SHA64, select_lanes
 
 
 class CompletionRegistry:
-    def __init__(self, path, plan):
+    def __init__(self, path, plan, *, approved_tasks=None):
         proposal = select_lanes(plan)
+        self.approved_tasks = None
+        if approved_tasks is not None:
+            known = {task["key"] for task in plan["tasks"]}
+            if (type(approved_tasks) not in (list, tuple)
+                    or any(type(key) is not str or key not in known for key in approved_tasks)
+                    or len(set(approved_tasks)) != len(approved_tasks)):
+                raise ValueError("invalid approved task scope")
+            self.approved_tasks = tuple(sorted(approved_tasks))
         self.path = path
         with closing(sqlite3.connect(path, timeout=10)) as db, db:
             db.execute("CREATE TABLE IF NOT EXISTS plan (id INTEGER PRIMARY KEY, sha TEXT, data TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS receipts (run_id INTEGER, job_id INTEGER, "
                        "task TEXT UNIQUE, sha TEXT, PRIMARY KEY (run_id, job_id))")
+            db.execute("CREATE TABLE IF NOT EXISTS approval (id INTEGER PRIMARY KEY, scope TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS reservations (task TEXT PRIMARY KEY, "
+                       "run_id INTEGER, job_id INTEGER)")
             db.execute("INSERT OR IGNORE INTO plan VALUES (1, ?, ?)",
                        (proposal["input_sha256"], json.dumps(plan)))
             actual, = db.execute("SELECT sha FROM plan WHERE id=1").fetchone()
             if actual != proposal["input_sha256"]:
                 raise ValueError("rehearsal database belongs to a different input plan")
+            scope = json.dumps(self.approved_tasks)
+            db.execute("INSERT OR IGNORE INTO approval VALUES (1, ?)", (scope,))
+            if db.execute("SELECT scope FROM approval WHERE id=1").fetchone() != (scope,):
+                raise ValueError("rehearsal database belongs to a different approval scope")
+
+    def _reserve(self, db, plan, event):
+        existing = {key for key, in db.execute("SELECT task FROM reservations")}
+        view = {**plan, "tasks": [dict(task) for task in plan["tasks"]]}
+        for task in view["tasks"]:
+            if task["key"] in existing:
+                task["state"] = "running"
+            elif task["state"] == "pending" and task["key"] not in self.approved_tasks:
+                task["state"] = "blocked"
+        capacity = plan["max_parallel"] - sum(task["state"] == "running" for task in view["tasks"])
+        if capacity <= 0:
+            return []
+        view["max_parallel"] = capacity
+        reserved = select_lanes(view)["eligible"]
+        db.executemany("INSERT INTO reservations VALUES (?, ?, ?)",
+                       [(key, event["run_id"], event["job_id"]) for key in reserved])
+        return reserved
 
     def complete(self, event, independently_verify):
         if (type(event) is not dict or set(event) != {"task", "head", "run_id", "job_id"}
@@ -43,7 +75,10 @@ class CompletionRegistry:
             if prior is not None:
                 if prior != (event["task"], proof["sha256"]):
                     raise ValueError("completion identity already has a different receipt")
-                return {"accepted": False, "eligible": []}
+                replay = {"accepted": False, "eligible": []}
+                if self.approved_tasks is not None:
+                    replay["reserved"] = []
+                return replay
             task = next((item for item in plan["tasks"] if item["key"] == event["task"]), None)
             if task is None or task["state"] != "running":
                 raise ValueError("completion does not identify a running task")
@@ -53,4 +88,7 @@ class CompletionRegistry:
             db.execute("INSERT INTO receipts VALUES (?, ?, ?, ?)",
                        (event["run_id"], event["job_id"], event["task"], proof["sha256"]))
             db.execute("UPDATE plan SET data=? WHERE id=1", (json.dumps(plan),))
-            return {"accepted": True, "eligible": eligible}
+            result = {"accepted": True, "eligible": eligible}
+            if self.approved_tasks is not None:
+                result["reserved"] = self._reserve(db, plan, event)
+            return result

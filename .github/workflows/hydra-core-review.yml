@@ -1,7 +1,7 @@
 name: Hydra core review
 on:
   pull_request:
-    branches: [main]
+    branches: [main, review/hydra-core-main]
     paths:
       - ".github/workflows/hydra-core-review.yml"
       - "scripts/p3l_hydra*.py"
