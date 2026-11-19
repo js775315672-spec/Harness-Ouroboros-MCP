@@ -1,0 +1,17 @@
+name: Hydra approved push producer rehearsal
+on:
+  push:
+    branches: [experiment/hydra-approved-push-intake]
+    paths: [hydra/approved-fixture.json]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify approved intake fixture
+        run: python3 -B -c 'import json; from pathlib import Path; assert json.loads(Path("hydra/approved-fixture.json").read_text()) == {"task":"first","kind":"offline-rehearsal"}'
