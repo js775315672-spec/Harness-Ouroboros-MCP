@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admit:
-    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout' || github.head_ref == 'review/hydra-model-handoff' || github.head_ref == 'review/hydra-model-handoff-replay' || github.head_ref == 'review/hydra-selector-handoff' || github.head_ref == 'review/hydra-selector-handoff-replay' || github.head_ref == 'review/hydra-identity-handoff' || github.head_ref == 'review/hydra-identity-handoff-replay' || github.head_ref == 'review/hydra-memory-handoff' || github.head_ref == 'review/hydra-memory-handoff-replay' || github.head_ref == 'review/hydra-continuity-handoff' || github.head_ref == 'review/hydra-continuity-handoff-replay' || github.head_ref == 'review/hydra-order-handoff' || github.head_ref == 'review/hydra-order-handoff-replay')))
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout' || github.head_ref == 'review/hydra-model-handoff' || github.head_ref == 'review/hydra-model-handoff-replay' || github.head_ref == 'review/hydra-selector-handoff' || github.head_ref == 'review/hydra-selector-handoff-replay' || github.head_ref == 'review/hydra-identity-handoff' || github.head_ref == 'review/hydra-identity-handoff-replay' || github.head_ref == 'review/hydra-memory-handoff' || github.head_ref == 'review/hydra-memory-handoff-replay' || github.head_ref == 'review/hydra-continuity-handoff' || github.head_ref == 'review/hydra-continuity-handoff-replay' || github.head_ref == 'review/hydra-order-handoff' || github.head_ref == 'review/hydra-order-handoff-replay' || github.head_ref == 'review/hydra-campaign-checkpoint-handoff')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -64,8 +64,14 @@ jobs:
           CANDIDATE_TARGET: ${{ matrix.task.candidate_target }}
         run: |
           test "$(git rev-parse HEAD)" = "$HEAD"
+          docker_args=(-B -m unittest discover -s tests -p "$SUITE" -v)
           case "$SUITE" in
             test_p3l_hydra_fast_lane_gate.py|test_p3l_hydra_completion_rehearsal.py) ;;
+            campaign-checkpoint)
+              test "$CANDIDATE_TARGET" = hydra/memory/campaign.json
+              printf '%s  %s\n' "$CANDIDATE_SHA" "$CANDIDATE_TARGET" | sha256sum -c -
+              docker_args=(-B -c 'import json; from pathlib import Path; c=json.loads(Path("hydra/memory/campaign.json").read_bytes()); rows=c["completed"]; assert c["schema"]=="hydra-nine-cycle-checkpoint-v1" and c["requested"]==9; assert [x["sequence"] for x in rows]==[1,2,3]; assert [x["run"] for x in rows]==[44555655395,44560093173,44565309602]; print("CAMPAIGN CHECKPOINT 3/3")')
+              ;;
             test_resumable_task_queue.py|test_p3l_hydra_cancelled_worker.py|test_p3l_hydra_proposal_identity.py|test_p3l_hydra_cycle_memory.py|test_p3l_hydra_predecessor_binding.py)
               case "$SUITE:$CANDIDATE_TARGET" in
                 test_resumable_task_queue.py:tests/test_resumable_task_queue.py|test_p3l_hydra_cancelled_worker.py:scripts/p3l_hydra_next_task.py|test_p3l_hydra_proposal_identity.py:scripts/p3l_hydra_next_task.py|test_p3l_hydra_cycle_memory.py:scripts/p3l_hydra_cycle_memory.py|test_p3l_hydra_predecessor_binding.py:scripts/p3l_hydra_campaign_continuity.py) ;;
@@ -78,8 +84,10 @@ jobs:
           docker pull python:3.11-slim
           root=$(mktemp -d "$RUNNER_TEMP/hydra.XXXXXXXX")
           chmod 755 "$root"
-          git archive HEAD scripts tests | tar -x -C "$root"
+          archive_paths=(scripts tests)
+          if [[ "$SUITE" == campaign-checkpoint ]]; then archive_paths+=(hydra/memory/campaign.json); fi
+          git archive HEAD "${archive_paths[@]}" | tar -x -C "$root"
           docker run --rm --pull=never --network=none --read-only --cap-drop=ALL \
             --security-opt=no-new-privileges --user=65534:65534 --memory=256m --cpus=1 --pids-limit=64 \
             --tmpfs=/tmp:rw,nosuid,nodev,size=16m --mount "type=bind,src=$root,dst=/work,readonly" -w /work \
-            python:3.11-slim python -B -m unittest discover -s tests -p "$SUITE" -v
+            python:3.11-slim python "${docker_args[@]}"
