@@ -1,0 +1,21 @@
+<|im_start|>system
+Complete a public Python unittest scaffold. Output only the complete method, from def onward. Keep existing lines. Replace each TODO with Python. Do not add imports or Markdown.<|im_end|>
+<|im_start|>user
+The test module already imports tempfile and Path and provides the named queue helpers and fixtures. writer_fixture intentionally changes only the workflow name. Do not rewrite the fixture or add variables. Fill the checkpoints described by the three TODO comments. Read through the method before returning it and ensure every variable is defined.
+
+def test_checkpoint_rejects_wrong_attestation(self):
+    def writer_fixture(url):
+        return {"status": "completed", "conclusion": "success", "html_url": CI, "repository": {"full_name": REPO}, "event": "push", "head_sha": "b" * 40, "name": "Unapproved workflow", "path": ".github/workflows/harness.yml"}
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "checkpoint.json"
+        initial = new_queue(TASKS, REPO, COMMIT)
+        save(path, initial)
+        old = load(path)
+        # TODO: call advance(old, evidence(), fetch=writer_fixture) inside self.assertRaises(ValueError)
+        # TODO: assert the persisted checkpoint equals initial
+        advanced = advance(old, evidence(), fetch=github_ok("b" * 40))
+        save(path, advanced, expected_integrity=old["integrity"])
+        restored = load(path)
+        # TODO: assert generation and index equal 1 and the first event is attested
+<|im_end|>
+<|im_start|>assistant

@@ -1,0 +1,227 @@
+name: Hydra scaffold checkpoint model
+on:
+  pull_request:
+    types: [opened]
+    paths: [.github/workflows/hydra-checkpoint-model-revised.yml]
+permissions:
+  contents: read
+jobs:
+  coordinator:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.base_ref == 'review/hydra-checkpoint-budget' && github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'run/hydra-checkpoint-model-scaffold' || github.head_ref == 'review/hydra-checkpoint-scaffold-budget') && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: write
+    outputs:
+      live: ${{ steps.claim.outputs.live }}
+      grant: ${{ steps.claim.outputs.grant }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Consume exact single-call budget and verify replay
+        id: claim
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIVE: ${{ github.head_ref == 'run/hydra-checkpoint-model-scaffold' }}
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          printf '%s  %s\n' '317997a19a470aa15ce84d3d98673a9c946d92ba2b3014e07a027909e5c3bb76' hydra/model-tasks/checkpoint-attestation-scaffold-chatml.txt | sha256sum -c -
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          from p3l_w04_github_claim import create_once, github
+          live = os.environ["LIVE"] == "true"
+          head = os.environ["REVIEW_HEAD"]
+          prompt = "317997a19a470aa15ce84d3d98673a9c946d92ba2b3014e07a027909e5c3bb76"
+          ref = ("refs/heads/hydra-model/started/" if live else "refs/heads/rehearsal/hydra-model/") + prompt
+          request = lambda *args: github(os.environ["GH_TOKEN"], *args)
+          created, status, winner = create_once(ref, head, request)
+          if not created or winner != head:
+              raise SystemExit("single-call budget already spent")
+          if not live:
+              replay, _, replay_head = create_once(ref, head, request)
+              if replay or replay_head != head:
+                  raise SystemExit("rehearsal replay was not blocked")
+              print("BUDGET REPLAY BLOCKED")
+          grant = dict(run=os.environ["GITHUB_RUN_ID"], head=head, prompt=prompt, live=live, ref=ref)
+          data = json.dumps(grant, sort_keys=True).encode()
+          (Path(os.environ["RUNNER_TEMP"]) / "grant.json").write_bytes(data)
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as out:
+              out.write(f"live={str(live).lower()}\ngrant={hashlib.sha256(data).hexdigest()}\n")
+          print(json.dumps(grant))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-checkpoint-grant
+          path: ${{ runner.temp }}/grant.json
+          if-no-files-found: error
+  pinned_llama_cpu_build:
+    needs: coordinator
+    if: needs.coordinator.outputs.live == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      binary_sha: ${{ steps.digest.outputs.sha }}
+    env:
+      PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout same commit without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build pinned llama.cpp CPU executable only once
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+          mkdir -p artifacts/w06-build
+          cp vendor/llama.cpp/build/bin/llama-completion artifacts/w06-build/llama-completion
+          cd artifacts/w06-build
+          sha256sum llama-completion > SHA256SUMS
+      - name: Record binary SHA for dependent jobs
+        id: digest
+        run: |
+          hash=$(sha256sum artifacts/w06-build/llama-completion)
+          printf 'sha=%s\n' "${hash%% *}" >> "$GITHUB_OUTPUT"
+      - name: Upload pinned binary for this run only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w08-pinned-binary
+          path: artifacts/w06-build/
+          if-no-files-found: error
+          retention-days: 3
+
+  worker:
+    needs: [coordinator, pinned_llama_cpu_build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      GRANT_SHA: ${{ needs.coordinator.outputs.grant }}
+      BINARY_SHA: ${{ needs.pinned_llama_cpu_build.outputs.binary_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hydra-checkpoint-grant
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w08-pinned-binary
+          path: artifacts/w06-build
+      - name: Download only official Apache-2.0 Qwen 7B GGUF
+        timeout-minutes: 9
+        env:
+          HF_HUB_DISABLE_XET: "1"
+          HF_HUB_DOWNLOAD_TIMEOUT: "60"
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          timeout --kill-after=10s 8m python3 -u scripts/gguf_official_download.py --model 7b --destination models \
+            --revision 13fb94bfda8c8cf22497dc57b78f391a9acb426a \
+            --sha256 509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c \
+            --report artifacts/w08/model-provenance.json
+      - name: Invoke pinned Qwen once
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          chmod 755 artifacts/w06-build/llama-completion
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          from p3g_qwen_ledger_feedback_repair import check_model, infer_prepared, sha256_file
+          from p3l_w06_actual_model_once import INFERENCE_OPTIONS
+          root = Path(os.environ["RUNNER_TEMP"])
+          grant = (root / "grant.json").read_bytes()
+          expected = dict(run=os.environ["GITHUB_RUN_ID"], head=os.environ["REVIEW_HEAD"],
+                          prompt="317997a19a470aa15ce84d3d98673a9c946d92ba2b3014e07a027909e5c3bb76", live=True, ref="refs/heads/hydra-model/started/317997a19a470aa15ce84d3d98673a9c946d92ba2b3014e07a027909e5c3bb76")
+          assert hashlib.sha256(grant).hexdigest() == os.environ["GRANT_SHA"] and json.loads(grant) == expected
+          binary = Path("artifacts/w06-build/llama-completion")
+          assert sha256_file(binary) == os.environ["BINARY_SHA"]
+          weights = Path("models/qwen2.5-coder-7b-instruct-q4_k_m.gguf")
+          check_model(weights, Path("artifacts/w08/model-provenance.json"), "7b")
+          prompt = Path("hydra/model-tasks/checkpoint-attestation-scaffold-chatml.txt").read_bytes()
+          assert hashlib.sha256(prompt).hexdigest() == expected["prompt"]
+          print("MODEL_CALL_STARTED", flush=True)
+          raw, _ = infer_prepared(binary, weights, prompt.decode(), "7b", **INFERENCE_OPTIONS)
+          proposal = raw.encode()
+          (root / "proposal.py").write_bytes(proposal)
+          (root / "model.json").write_text(json.dumps({**expected, "binary_sha256": os.environ["BINARY_SHA"],
+              "grant_sha256": os.environ["GRANT_SHA"], "model_revision": "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+              "weights_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+              "proposal_sha256": hashlib.sha256(proposal).hexdigest()}))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-checkpoint-model
+          path: |
+            ${{ runner.temp }}/proposal.py
+            ${{ runner.temp }}/model.json
+          if-no-files-found: error
+  independent:
+    needs: [worker, coordinator, pinned_llama_cpu_build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      GRANT_SHA: ${{ needs.coordinator.outputs.grant }}
+      BINARY_SHA: ${{ needs.pinned_llama_cpu_build.outputs.binary_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: bb1a446473dfcd150c5161461c14a9420835d60b
+          path: candidate
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hydra-checkpoint-model
+          path: ${{ runner.temp }}
+      - name: Independently grade bound Qwen output
+        run: |
+          docker pull python:3.11-slim
+          PYTHONPATH=harness/scripts python3 -B - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          from p3l_w08_verify_test import verify
+          root = Path(os.environ["RUNNER_TEMP"])
+          raw = (root / "proposal.py").read_bytes()
+          record = json.loads((root / "model.json").read_bytes())
+          expected = dict(run=os.environ["GITHUB_RUN_ID"], head=os.environ["REVIEW_HEAD"],
+                          prompt="317997a19a470aa15ce84d3d98673a9c946d92ba2b3014e07a027909e5c3bb76", live=True, ref="refs/heads/hydra-model/started/317997a19a470aa15ce84d3d98673a9c946d92ba2b3014e07a027909e5c3bb76",
+                          binary_sha256=os.environ["BINARY_SHA"], grant_sha256=os.environ["GRANT_SHA"],
+                          model_revision="13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+                          weights_sha256="509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+                          proposal_sha256=hashlib.sha256(raw).hexdigest())
+          assert record == expected
+          result = verify(Path("candidate"), raw, checkpoint_attestation=True)
+          (root / "grade.json").write_text(json.dumps({"receipt": record, "grade": result}, sort_keys=True))
+          print(json.dumps(result, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-checkpoint-independent-grade
+          path: ${{ runner.temp }}/grade.json
+          if-no-files-found: error
