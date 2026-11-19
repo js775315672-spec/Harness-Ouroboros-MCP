@@ -30,7 +30,8 @@ def verify_grade_archive(raw, artifact, receipt, grade):
                 or members[0].file_size > 64_000):
             raise ValueError("unexpected independent grade ZIP contents")
         observed = json.loads(archive.read(members[0]))
-    if observed != {"receipt": receipt, "grade": grade}:
+    expected = {"receipt": receipt, "grade": grade}
+    if json.dumps(observed, sort_keys=True) != json.dumps(expected, sort_keys=True):
         raise ValueError("independent grade ZIP differs from ledger receipt")
 
 

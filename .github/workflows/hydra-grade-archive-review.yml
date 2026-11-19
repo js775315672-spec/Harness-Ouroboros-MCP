@@ -46,6 +46,13 @@ jobs:
           else:
               raise AssertionError("mismatched ledger grade was accepted")
 
+          try:
+              hydra.verify_grade_archive(raw, artifact, {**result["receipt"], "live": 1}, result["grade"])
+          except ValueError as error:
+              assert "differs from ledger" in str(error)
+          else:
+              raise AssertionError("type-mismatched ledger receipt was accepted")
+
           original = hydra.request
           def read_spent(method, route):
               assert method == "GET"
@@ -56,5 +63,5 @@ jobs:
               assert hydra.claim(approval, "hydra-ledger/spent") is None
           finally:
               hydra.request = original
-          print("GRADE INTEGRITY 4/4")
+          print("GRADE INTEGRITY 5/5")
           PY
