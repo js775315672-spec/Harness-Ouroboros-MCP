@@ -74,7 +74,8 @@ def main():
                 return subprocess.run(command, cwd=cwd, **options)
             return run(30, root=root, runner=run_step, report_path=args.cycles)
         finally:
-            git(root, "worktree", "remove", str(checkout))
+            # Tests can leave untracked receipts in this temporary worktree.
+            git(root, "worktree", "remove", "--force", str(checkout))
 
 
 if __name__ == "__main__":
