@@ -127,7 +127,9 @@ def main():
     if desired:
         current = event(args.phase)
         binding = (run, current["job_id"])
-        if args.phase == "first" and WORKFLOW == ".github/workflows/hydra-recovery-pilot.yml":
+        if args.phase == "first" and WORKFLOW in {
+            ".github/workflows/hydra-recovery-pilot.yml", ".github/workflows/hydra-shared-recovery.yml"
+        }:
             interrupt_before_commit(args.database, done, binding)
         if not registry.consume(args.phase, done, observed_head=head, completion=binding):
             raise ValueError("generation execution already spent")
