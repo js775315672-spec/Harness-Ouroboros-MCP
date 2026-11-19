@@ -1,0 +1,93 @@
+name: Hydra approved recovery pilot
+on:
+  pull_request:
+    paths:
+      - .github/workflows/hydra-recovery-pilot.yml
+      - scripts/p3l_hydra_generation_rehearsal.py
+      - scripts/p3l_hydra_completion_rehearsal.py
+      - tests/test_p3l_hydra_completion_rehearsal.py
+permissions:
+  contents: read
+  actions: read
+env:
+  HYDRA_WORKFLOW: .github/workflows/hydra-recovery-pilot.yml
+  REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+jobs:
+  source:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-recovery-pilot' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEW_HEAD }}
+          persist-credentials: false
+      - name: Run exact Hydra tests
+        run: python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
+  first:
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      state_sha: ${{ steps.attempt.outputs.state_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEW_HEAD }}
+          persist-credentials: false
+      - run: docker pull python:3.11-slim
+      - name: Execute first approved generation
+        id: attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/p3l_hydra_generation_rehearsal.py first "$RUNNER_TEMP/generation.sqlite3"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-state-first
+          path: ${{ runner.temp }}/generation.sqlite3
+          if-no-files-found: error
+  second:
+    needs: first
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      state_sha: ${{ steps.attempt.outputs.state_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEW_HEAD }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hydra-state-first
+          path: ${{ runner.temp }}
+      - run: docker pull python:3.11-slim
+      - name: Resume and execute second approved generation
+        id: attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_STATE_SHA: ${{ needs.first.outputs.state_sha }}
+        run: python3 -B scripts/p3l_hydra_generation_rehearsal.py second "$RUNNER_TEMP/generation.sqlite3"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-state-second
+          path: ${{ runner.temp }}/generation.sqlite3
+          if-no-files-found: error
+  close:
+    needs: second
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEW_HEAD }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hydra-state-second
+          path: ${{ runner.temp }}
+      - name: Verify second generation completion
+        id: attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_STATE_SHA: ${{ needs.second.outputs.state_sha }}
+        run: python3 -B scripts/p3l_hydra_generation_rehearsal.py close "$RUNNER_TEMP/generation.sqlite3"
