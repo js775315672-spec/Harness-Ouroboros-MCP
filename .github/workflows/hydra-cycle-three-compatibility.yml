@@ -1,0 +1,63 @@
+name: Hydra cycle three compatibility
+on:
+  pull_request:
+    branches: [review/hydra-campaign-cycle-two-accepted]
+    paths: [.github/workflows/hydra-cycle-three-compatibility.yml, scripts/p3l_hydra_campaign_continuity.py]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  independent:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-campaign-cycle-three-candidate' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: bc7b511295fd6a68452789effd725f0253e49c6a
+          path: original
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 7a09f106473cb623066af3566e971c77201c0eb5
+          path: harness
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hydra-checkpoint-model
+          run-id: 44562246674
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}
+      - name: Bind the exact candidate to the existing Qwen output
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          PYTHONPATH=harness/scripts python3 -B - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          from p3l_hydra_run_order_grade import CASES
+          from p3l_w08_verify_test import unwrap_proposal
+          target = Path("scripts/p3l_hydra_campaign_continuity.py")
+          raw = (Path(os.environ["RUNNER_TEMP"]) / "proposal.py").read_bytes()
+          original = (Path("original") / target).read_bytes()
+          if hashlib.sha256(raw).hexdigest() != "d36ef91ca86e312b5a90b951222743aaaf5f5b0e8bf96150190a52518a1b12bd" or hashlib.sha256(original).hexdigest() != "9aa615eedbbe662b647f044ca06fb431d45f03b1f56abd17bd5eff8196e56bb7":
+              raise SystemExit("Original candidate or Qwen output SHA mismatch")
+          old = original.decode()
+          start = old.index("        started_at = ")
+          stop = old.index("        runs.add", start)
+          guarded = old[:start] + "        if len(completed) > 1:\n" + "".join("    " + line for line in old[start:stop].splitlines(keepends=True)) + old[stop:]
+          if target.read_bytes() != guarded.encode() or ("(" + unwrap_proposal(raw).decode().strip() + ")") not in guarded:
+              raise SystemExit("Candidate differs from the reviewed compatibility change")
+          Path("cycle_three_cases.py").write_text(CASES)
+          print("Candidate SHA256", hashlib.sha256(target.read_bytes()).hexdigest())
+          PY
+      - name: Independently verify existing and new regressions
+        run: |
+          docker pull python:3.11-slim
+          docker run --rm --network none -v "$PWD:/workspace:ro" -w /workspace -e PYTHONPATH=/workspace/scripts python:3.11-slim \
+            sh -ec 'python -B cycle_three_cases.py && python -B -m unittest discover -s tests -p test_p3l_hydra_predecessor_binding.py -v'
