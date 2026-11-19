@@ -1,0 +1,100 @@
+name: Hydra nine-cycle final audit
+on:
+  pull_request:
+    branches: [review/hydra-campaign-cycle-nine-candidate]
+    paths: [.github/workflows/hydra-nine-final-audit.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-nine-final-audit' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: beee8e646e17af12bc07a06445c044ef0bfa2e33
+          persist-credentials: false
+      - name: Verify the complete chain and exact execution slots
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import base64, hashlib, json, os, subprocess
+          from datetime import datetime
+          from pathlib import Path
+          from p3l_hydra_campaign_continuity import REPO, fetch, next_sequence
+          checkpoint=json.loads(Path("hydra/memory/campaign.json").read_bytes())
+          checkpoint["completed"].extend([
+              dict(sequence=4,run=44588843880,job=135789212875,head="04aa0873a78d86a13018350ff9d6deb124872acb",
+                   task="campaign-memory-replay-44586167242",model_result_run=44586167242),
+              dict(sequence=5,run=44594970266,job=135810779067,head="009a51cf8da6c01d8b762e8caf8c1af570ef780a",
+                   task="continuity-replay-44591454500",model_result_run=44591454500),
+              dict(sequence=6,run=44600196766,job=135829291115,head="795b62642316d915bc0fb52d52858de466ac2140",
+                   task="grade-artifact-replay-44597582618",model_result_run=44597582618),
+          ])
+          checkpoint["completed"].extend([
+              dict(sequence=7,run=44606221168,job=135850602275,head="669ba2845dbafe7e300ac01b3d27231b3e60cb03",
+                   task="grade-artifact-replay-44602759555",model_result_run=44602759555),
+              dict(sequence=8,run=44611368845,job=135868659645,head="8ca7260d10537caafed55241737857af3aedbc33",
+                   task="continuity-replay-44608817357",model_result_run=44608817357),
+          ])
+          checkpoint["completed"].append(dict(sequence=9,run=44615721117,job=135883829631,
+              head="068cbd75f70a272094f22cfea27dc1e44fc9b0de",task="continuity-replay-44613839140",model_result_run=44613839140))
+          paths={}
+          def read(path):
+              if path not in paths:
+                  paths[path]=fetch(path)
+              return paths[path]
+          receipt=next_sequence(checkpoint,read)
+          if (receipt["completed"],receipt["next_sequence"],receipt["previous_run"]) != (9,None,44615721117):
+              raise SystemExit("chain is not exactly complete")
+          root=f"repos/{REPO}"
+          rows=[]
+          def duration(start,end):
+              return int((datetime.fromisoformat(end.replace("Z","+00:00"))-datetime.fromisoformat(start.replace("Z","+00:00"))).total_seconds())
+          for row in checkpoint["completed"]:
+              run=read(f"{root}/actions/runs/{row['run']}")
+              worker=read(f"{root}/actions/jobs/{row['job']}")
+              manifest=read(f"{root}/contents/hydra/approvals.json?ref={row['head']}")
+              approval,=[a for a in json.loads(base64.b64decode(manifest["content"]))["approvals"] if a["id"]==row["task"]]
+              key=hashlib.sha256(row["task"].encode()).hexdigest()
+              slot=read(f"{root}/git/ref/heads/hydra-ledger/spent/{key}")
+              if slot["object"]["sha"] != approval["head"]:
+                  raise SystemExit("standing slot differs from the approved candidate")
+              jobs=read(f"{root}/actions/runs/{row['run']}/attempts/1/jobs")["jobs"]
+              if [j["id"] for j in jobs if j["name"].startswith("Worker ")] != [row["job"]]:
+                  raise SystemExit("expected exactly one production worker")
+              mid=row["model_result_run"]
+              model=read(f"{root}/actions/runs/{mid}")
+              if model["run_attempt"] != 1:
+                  raise SystemExit("model run had more than one attempt")
+              model_jobs=read(f"{root}/actions/runs/{mid}/attempts/1/jobs")["jobs"]
+              original,=[j for j in model_jobs if j["name"]=="worker"]
+              invoked,=[s for s in original["steps"] if s["name"]=="Invoke pinned Qwen once"]
+              if original["conclusion"]!="success" or invoked["conclusion"]!="success":
+                  raise SystemExit("exact one-shot model worker did not succeed")
+              log=subprocess.check_output(["gh","api","--allow-escape-sequences",f"{root}/actions/jobs/{original['id']}/logs"],timeout=30)
+              if sum(line.rstrip().endswith(b"MODEL_CALL_STARTED") and b"print(" not in line for line in log.splitlines()) != 1:
+                  raise SystemExit("one runtime model invocation marker required")
+              grade_run=44603716265 if row["sequence"]==7 else mid
+              grade_jobs=read(f"{root}/actions/runs/{grade_run}/attempts/1/jobs")["jobs"]
+              judge,=[j for j in grade_jobs if j["name"]=="independent" and j["conclusion"]=="success"]
+              rows.append({**row,"candidate_head":approval["head"],"model_worker":original["id"],
+                  "independent_run":grade_run,"independent_job":judge["id"],"model_calls":1,
+                  "production_seconds":duration(run["run_started_at"],worker["completed_at"]),
+                  "worker_seconds":duration(worker["started_at"],worker["completed_at"]),
+                  "model_worker_seconds":duration(original["started_at"],original["completed_at"]),
+                  "independent_seconds":duration(judge["started_at"],judge["completed_at"])})
+          if len({r["model_result_run"] for r in rows})!=9 or len({r["run"] for r in rows})!=9:
+              raise SystemExit("duplicate campaign run")
+          report={"checkpoint":receipt,"rows":rows,"campaign_completed":9,"live_model_independent_passes":9}
+          Path(os.environ["RUNNER_TEMP"],"final-audit.json").write_text(json.dumps(report,indent=2)+"\n")
+          print(json.dumps(receipt,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-nine-final-audit
+          path: ${{ runner.temp }}/final-audit.json
+          if-no-files-found: error
