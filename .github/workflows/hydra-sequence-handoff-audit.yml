@@ -1,0 +1,26 @@
+name: Hydra sequence handoff audit
+on:
+  pull_request:
+    paths: [.github/workflows/hydra-sequence-handoff-audit.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-sequence-handoff-audit'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Read the failed admission log
+        run: |
+          gh api --allow-escape-sequences "repos/$GITHUB_REPOSITORY/actions/jobs/135804832073/logs" > "$RUNNER_TEMP/admit.log"
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          log = (Path(os.environ["RUNNER_TEMP"]) / "admit.log").read_text(errors="replace")
+          errors = re.findall(r"(?:ValueError|KeyError|HTTPError|CalledProcessError|JSONDecodeError): [^\r\n]+", log)
+          if not errors:
+              raise SystemExit("Admission exception unavailable")
+          print(repr(errors[-1]))
+          PY
