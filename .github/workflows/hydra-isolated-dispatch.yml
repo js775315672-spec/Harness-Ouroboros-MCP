@@ -66,6 +66,8 @@ jobs:
               if task["key"] == "w05_receipt_gate":
                   task["key"] = "hydra_followup_probe"
                   task["paths"] = ["tests/test_p3l_hydra_fast_lane_gate.py"]
+              task["deps"] = ["hydra_followup_probe" if key == "w05_receipt_gate" else key
+                              for key in task["deps"]]
           registry = CompletionRegistry(Path(os.environ["RUNNER_TEMP"]) / "events.sqlite3", plan,
                                         approved_tasks=("hydra_followup_probe",))
           event = {"task": "w01_contract", "head": head, "run_id": run_id, "job_id": source[0]}
