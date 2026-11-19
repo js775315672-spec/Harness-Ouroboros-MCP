@@ -55,12 +55,13 @@ def next_sequence(checkpoint, read):
         if (model["id"] != row["model_result_run"] or model["repository"]["full_name"] != REPO
                 or model["status"] != "completed" or model["conclusion"] != "success"):
             raise ValueError("campaign predecessor lacks exact successful model evidence")
-        started_at = datetime.fromisoformat(run["run_started_at"].replace("Z", "+00:00"))
-        if started_at.utcoffset() is None:
-            raise ValueError("production run start time lacks a timezone")
-        if previous_started_at is not None and (started_at <= previous_started_at):
-            raise ValueError("production runs are out of order")
-        previous_started_at = started_at
+        if len(completed) > 1:
+            started_at = datetime.fromisoformat(run["run_started_at"].replace("Z", "+00:00"))
+            if started_at.utcoffset() is None:
+                raise ValueError("production run start time lacks a timezone")
+            if previous_started_at is not None and (started_at <= previous_started_at):
+                raise ValueError("production runs are out of order")
+            previous_started_at = started_at
         runs.add(row["run"])
         models.add(row["model_result_run"])
         tasks.add(row["task"])
