@@ -28,8 +28,8 @@
   "artifacts": [
     {
       "name": "hydra-checkpoint-independent-grade",
-      "id": 14564455082,
-      "digest": "sha256:8623c01e98916c42f443560e348c0a63e984e4f1f1f2dc829eb0e223d70e6a03"
+      "id": 14562348341,
+      "digest": "sha256:9a3f6a9e367d44ec66d0d315f0656205e43bb34510ce0f7e451ea671a7ed52ea"
     }
   ]
 }
