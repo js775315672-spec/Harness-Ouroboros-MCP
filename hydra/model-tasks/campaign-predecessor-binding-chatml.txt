@@ -1,0 +1,5 @@
+<|im_start|>system
+Return one raw Python boolean expression. No assignment, calls, Markdown, or explanation.<|im_end|>
+<|im_start|>user
+The predecessor validation retrieves an exact production approval entry and a checkpoint row. Write the rejection condition: reject when the approval entry's model_result_run differs from the checkpoint row's model_result_run. Both dictionaries, entry and row, have the key "model_result_run". Use only dictionary subscripts and one inequality comparison. Return the expression only.<|im_end|>
+<|im_start|>assistant
