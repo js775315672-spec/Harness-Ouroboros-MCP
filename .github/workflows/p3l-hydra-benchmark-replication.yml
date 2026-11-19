@@ -1,0 +1,76 @@
+name: Hydra matched CPU replication
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p3l-hydra-benchmark-replication.yml"
+permissions:
+  contents: read
+jobs:
+  sample:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/p3l-hydra-benchmark-replication'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [first, second, third]
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Measure both modes on this runner
+        shell: bash
+        run: python3 -B scripts/p3l_hydra_matched_cpu.py | tee "$RUNNER_TEMP/hydra-matched-cpu.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-replication-${{ matrix.sample }}
+          path: ${{ runner.temp }}/hydra-matched-cpu.json
+          if-no-files-found: error
+          retention-days: 7
+  compare:
+    needs: sample
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: hydra-replication-*
+          path: ${{ runner.temp }}/replication
+      - name: Compare three independent matched measurements
+        run: |
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from statistics import median
+          temp = Path(os.environ["RUNNER_TEMP"])
+          reports = [json.loads(p.read_bytes()) for p in sorted(
+                     (temp / "replication").glob("hydra-replication-*/hydra-matched-cpu.json"))]
+          if len(reports) != 3 or len({report["runner"] for report in reports}) != 3:
+              raise SystemExit("expected three independent Linux runners")
+          if any((r["head"] != os.environ["REVIEW_HEAD"] or r["run_id"] != int(os.environ["GITHUB_RUN_ID"])
+                  or r["trials_per_mode"] != 6 or r["tests_per_trial"] != 17 or r["logical_cpu_count"] != 2
+                  or r["model_calls"] != 0 or r["test_source_sha256"] != reports[0]["test_source_sha256"])
+                 for r in reports):
+              raise SystemExit("replication inputs or evidence differ")
+          outcome = {"runner_speedups": [r["wall_speedup_serial_over_parallel"] for r in reports],
+                     "wall_speedup_median": median(r["wall_speedup_serial_over_parallel"] for r in reports),
+                     "two_lane_cpu_increase_runners": sum(r["median_child_cpu_seconds"]["2"]
+                       > r["median_child_cpu_seconds"]["1"] for r in reports),
+                     "tests_per_trial": 17, "paired_trials": 18, "model_calls": 0,
+                     "reports": reports}
+          raw = json.dumps(outcome, sort_keys=True)
+          (temp / "hydra-replication.json").write_text(raw + "\n", encoding="utf-8")
+          print(raw)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-replication-verdict
+          path: ${{ runner.temp }}/hydra-replication.json
+          if-no-files-found: error
+          retention-days: 7
