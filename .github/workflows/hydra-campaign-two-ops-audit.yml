@@ -1,0 +1,36 @@
+name: Hydra campaign two production audit
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/hydra-campaign-two-ops-audit.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-campaign-two-ops-audit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Independently verify the exact main execution and worker
+        shell: bash
+        run: |
+          workflow="repos/$GITHUB_REPOSITORY/actions/workflows/hydra-standing.yml"
+          source=$(gh api "$workflow/runs?head_sha=98a50941c19b847f1a00e7937e716f39ebf63b3d&branch=main&event=push&per_page=100")
+          run=$(jq -ce '.workflow_runs | map(select(.head_sha=="98a50941c19b847f1a00e7937e716f39ebf63b3d" and .event=="push" and .head_branch=="main" and .run_attempt==1)) | if length==1 then .[0] else error("expected exactly one production push") end' <<< "$source")
+          jq -e '.status=="completed" and .conclusion=="success" and .repository.full_name=="js775315672-spec/Harness-Ouroboros-MCP"' <<< "$run"
+          id=$(jq -r .id <<< "$run")
+          jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/attempts/1/jobs")
+          worker=$(jq -ce --argjson id "$id" '.jobs | map(select(.run_id==$id and .head_sha=="98a50941c19b847f1a00e7937e716f39ebf63b3d" and .name=="Worker continuity-replay-44558947017" and .conclusion=="success")) | if length==1 then .[0] else error("expected one successful approved worker") end' <<< "$jobs")
+          job=$(jq -r .id <<< "$worker")
+          gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs" > "$RUNNER_TEMP/worker.log"
+          grep -F 'scripts/p3l_hydra_campaign_continuity.py: OK' "$RUNNER_TEMP/worker.log"
+          grep -F 'Ran 2 tests' "$RUNNER_TEMP/worker.log"
+          jq -nc --argjson run "$run" --argjson job "$worker" '{production_run:$run.id,production_head:$run.head_sha,worker_job:$job.id,workflow_seconds:(($run.updated_at|fromdateiso8601)-($run.run_started_at|fromdateiso8601)),worker_seconds:(($job.completed_at|fromdateiso8601)-($job.started_at|fromdateiso8601)),passed:2}' | tee "$RUNNER_TEMP/campaign-two-audit.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: campaign-two-audit
+          path: ${{ runner.temp }}/campaign-two-audit.json
+          if-no-files-found: error
