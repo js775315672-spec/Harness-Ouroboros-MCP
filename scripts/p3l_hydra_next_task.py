@@ -27,7 +27,7 @@ def select(runs, jobs_by_run):
             match = WORKER.fullmatch(name)
             if name != "admit" and match is None:
                 continue
-            if conclusion not in {"success", "failure", "timed_out"}:
+            if conclusion not in {"success", "failure", "timed_out"} and not (conclusion == 'cancelled' and match is not None):
                 continue
             if name not in latest:
                 latest[name] = run, job, ("admit" if match is None else "worker")
