@@ -1,8 +1,11 @@
 """Independently check a one-line Hydra selector proposal in an offline container."""
 import ast
 import hashlib
+import io
+import json
 import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
 
 from disposable_regression_compare import _docker_command
@@ -34,8 +37,31 @@ print("SECOND CYCLE REGRESSION 8/8")
 """
 
 
+def proposal_digest(raw):
+    if len(raw) > 32_000 or hashlib.sha256(raw).hexdigest() != "1e6f018d34ec964b7c124b030fac5912871f24c69ae0efb4d438ab3e86c1b7ed":
+        raise ValueError("unexpected proposal archive digest")
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        members = archive.infolist()
+        if len(members) != 1 or members[0].filename != "proposal.json" or members[0].file_size > 4096:
+            raise ValueError("unexpected proposal archive member")
+        data = archive.read(members[0])
+    expected = {
+        "head": "12a384f5c6f21588cd55413957f693eacab2ec66",
+        "id": "hydra-problem-4e6bedd9950af20fff1f",
+        "job_id": 135570224389, "model_calls": 0, "run_id": 44527038293,
+        "state": "proposed", "target": TARGET.as_posix(),
+        "task": "Handle cancelled approved workers in Hydra next-task selection.",
+        "url": "https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44527038293/job/135570224389",
+    }
+    if json.dumps(json.loads(data), sort_keys=True) != json.dumps(expected, sort_keys=True):
+        raise ValueError("proposal does not match the reviewed task")
+    return hashlib.sha256(data).hexdigest()
+
+
 def verify(checkout, raw):
-    assert subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip() == BASE
+    head = subprocess.check_output(["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True).strip()
+    if head != BASE:
+        raise ValueError("unexpected grading checkout HEAD")
     value = unwrap_proposal(raw).decode().strip()
     if "\n" in value or len(value) > 300:
         raise ValueError("expected one bounded expression")
@@ -46,7 +72,8 @@ def verify(checkout, raw):
         if isinstance(node, ast.Constant) and node.value not in (None, "success", "failure", "timed_out", "cancelled", "skipped"):
             raise ValueError("unexpected predicate literal")
     original = (checkout / TARGET).read_text(encoding="utf-8")
-    assert original.count(OLD) == 1
+    if original.count(OLD) != 1:
+        raise ValueError("unexpected selector replacement anchor")
     candidate = original.replace(OLD, value)
     with tempfile.TemporaryDirectory(prefix="hydra-second-cycle-") as folder:
         root = Path(folder)
