@@ -1,0 +1,5 @@
+<|im_start|>system
+Return raw Python only. Write exactly one unittest method using the supplied public contract.<|im_end|>
+<|im_start|>user
+Add test_checkpoint_rejects_wrong_attestation(self) to ResumableQueueTests. No imports. Use an offline fixture whose fields match github_ok("b" * 40) except name. The fixture can be a nested def writer_fixture(url) returning a literal dictionary. Use CI, REPO, "push", "completed", "success", and path ".github/workflows/harness.yml". Create a temporary directory; build the record with new_queue(TASKS, REPO, COMMIT), save(path, state), then load(path). advance(old, evidence(), fetch=writer_fixture) must raise ValueError; assert load(path) equals the original record. Then advance(old, evidence(), fetch=github_ok("b" * 40)) and save(path, new_state, expected_integrity=old["integrity"]). Reload and assert generation == 1, index == 1, and events[0]["attested"] is true. Use Path, tempfile.TemporaryDirectory, self.assertRaises, self.assertEqual, self.assertTrue. No network. Start with def and return only this method.<|im_end|>
+<|im_start|>assistant
