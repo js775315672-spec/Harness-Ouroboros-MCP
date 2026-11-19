@@ -1,0 +1,5 @@
+Add one Python unittest to tests/test_resumable_task_queue.py.
+
+Cover rejection of a successful-looking GitHub Actions result from the wrong workflow across a checkpoint restart. Use a temporary directory and offline GitHub fixtures. Create and save the queue, reload it, and call advance with the wrong-workflow result. Assert that the call raises ValueError and that reloading the checkpoint still returns the original state. Then advance with the approved Harness workflow result, save using the previous integrity token, and reload to verify exactly one attested task and one generation increment.
+
+Use the public queue helpers and the existing test fixture conventions. Keep existing tests and production code unchanged. Return only the new Python test method for ResumableQueueTests. Do not access the network.
