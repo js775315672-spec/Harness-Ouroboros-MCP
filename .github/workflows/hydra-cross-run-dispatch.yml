@@ -1,0 +1,51 @@
+name: Hydra shared execution slot rehearsal
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - ".github/workflows/hydra-cross-run-dispatch.yml"
+      - "scripts/p3l_hydra_shared_dispatch.py"
+permissions:
+  contents: read
+jobs:
+  claim:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-cross-run-dispatch' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      admitted: ${{ steps.slot.outputs.admitted }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - id: slot
+        name: Record the verified origin's create-only rehearsal slot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 -B scripts/p3l_hydra_shared_dispatch.py
+  execute:
+    needs: claim
+    if: needs.claim.outputs.admitted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Run the fixed approved task offline
+        run: |
+          set -euo pipefail
+          docker pull python:3.11-slim
+          root=$(mktemp -d)
+          chmod 755 "$root"
+          git archive HEAD scripts tests | tar -x -C "$root"
+          docker run --rm --pull=never --network=none --read-only --cap-drop=ALL \
+            --security-opt=no-new-privileges --user=65534:65534 --memory=256m --cpus=1 --pids-limit=64 \
+            --tmpfs=/tmp:rw,nosuid,nodev,size=16m --mount "type=bind,src=$root,dst=/work,readonly" -w /work \
+            python:3.11-slim python -B -m unittest discover -s tests -p test_p3l_hydra_fast_lane_gate.py -v
