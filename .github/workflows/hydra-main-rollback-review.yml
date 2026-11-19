@@ -1,0 +1,43 @@
+name: Hydra main candidate rollback review
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/hydra-main-rollback-review.yml]
+permissions:
+  contents: read
+jobs:
+  review:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-main-rollback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      APPROVED_BASE: 73613e819bf889edfe469438269bff77c757d307
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      PR_BASE: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEW_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the exact candidate
+        shell: bash
+        run: |
+          test "$PR_BASE" = "$APPROVED_BASE"
+          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          git merge-base --is-ancestor "$APPROVED_BASE" "$REVIEW_HEAD"
+          python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
+      - name: Rehearse compare-and-swap rollback
+        shell: bash
+        run: |
+          probe=refs/heads/rehearsal/hydra-rollback
+          git update-ref "$probe" "$APPROVED_BASE"
+          git update-ref "$probe" "$REVIEW_HEAD" "$APPROVED_BASE"
+          if git update-ref "$probe" "$APPROVED_BASE" "$APPROVED_BASE"; then
+            exit 1
+          fi
+          test "$(git rev-parse "$probe")" = "$REVIEW_HEAD"
+          git update-ref "$probe" "$APPROVED_BASE" "$REVIEW_HEAD"
+          test "$(git rev-parse "$probe")" = "$APPROVED_BASE"
+          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          echo 'ROLLBACK 3/3 selected candidate, rejected stale rollback, restored exact base'
