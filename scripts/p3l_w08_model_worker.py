@@ -4,7 +4,7 @@ import os
 import re
 
 from p3l_w04_attempt_registry import AttemptBlocked
-from p3l_w04_github_claim import create_once
+from p3l_w04_github_claim import create_once, verified_ref
 from p3l_w05_actions_source import LLAMA_REVISION, QWEN_REVISION, QWEN_WEIGHTS_SHA256
 from p3l_w07_revision_isolation import git
 from p3l_w08_attempt_rehearsal import CONTRACT_SHA
@@ -30,7 +30,12 @@ def claim_budget(inputs, run_id, binary_sha, request, *, approved_head, rehearsa
     if (type(run_id) is not int or run_id < 1 or type(binary_sha) is not str
             or re.fullmatch(r"[0-9a-f]{64}", binary_sha) is None):
         raise AttemptBlocked("invalid W08 coordinator execution identity")
-    prefix = "refs/heads/rehearsal/w08-model/" if rehearsal else "refs/heads/p3l-w08/started/"
+    prefix = "refs/heads/rehearsal/w08-model/" if rehearsal else "refs/heads/p3l-w08/revised-attempt-2/"
+    if not rehearsal:
+        original_ref = "refs/heads/p3l-w08/started/" + inputs.semantic_key
+        status, body = request("GET", "/ref/" + original_ref.removeprefix("refs/"))
+        if status != 200 or verified_ref(body, original_ref) != "d348a9686f0c78283f0812cab6a5318bbe29976b":
+            raise AttemptBlocked("original W08 budget record does not match the rejected attempt")
     ref = prefix + inputs.semantic_key
     created, _, _ = create_once(ref, inputs.head_sha, request)
     if not created:

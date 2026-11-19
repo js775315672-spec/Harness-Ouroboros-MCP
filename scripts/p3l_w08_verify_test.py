@@ -65,6 +65,19 @@ def check_method(method):
             raise ValueError("unsupported call in W08 test")
 
 
+def unwrap_proposal(raw):
+    """Allow one exact Python envelope while retaining the raw model evidence."""
+    if not 1 <= len(raw) <= 6000:
+        raise ValueError("invalid W08 proposal size")
+    lines = raw.strip().splitlines(keepends=True)
+    if lines[0].rstrip(b"\r\n") != b"```python" or lines[-1].rstrip(b"\r\n") != b"```":
+        return raw
+    body = b"".join(lines[1:-1])
+    if not body.strip() or any(line.lstrip().startswith(b"```") for line in lines[1:-1]):
+        raise ValueError("invalid W08 Python envelope")
+    return body
+
+
 def append_test(original, proposal):
     if not 1 <= len(proposal) <= 6000:
         raise ValueError("invalid W08 proposal size")
@@ -100,7 +113,8 @@ def verify(root, proposal):
         for path in root.rglob("*"):
             path.chmod(0o755 if path.is_dir() else 0o644)
         target = root / TARGET
-        candidate = append_test(target.read_bytes(), proposal)
+        normalized = unwrap_proposal(proposal)
+        candidate = append_test(target.read_bytes(), normalized)
         target.write_bytes(candidate)
         queue = root / QUEUE
         original = queue.read_bytes()
@@ -125,6 +139,7 @@ def verify(root, proposal):
             raise ValueError("the proposed test must fail by assertion on the stale-writer mutant")
     return {"base_sha": CANDIDATE_COMMIT, "target": TARGET.as_posix(),
             "proposal_sha256": hashlib.sha256(proposal).hexdigest(),
+            "normalized_proposal_sha256": hashlib.sha256(normalized).hexdigest(),
             "candidate_sha256": hashlib.sha256(candidate).hexdigest(),
             "mutant_sha256": hashlib.sha256(mutant).hexdigest(),
             "normal_test_count": 7, "mutant_assertion_failures": 1}
