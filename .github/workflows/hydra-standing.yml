@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admit:
-    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout')))
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout' || github.head_ref == 'review/hydra-model-handoff' || github.head_ref == 'review/hydra-model-handoff-replay')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -60,10 +60,14 @@ jobs:
         env:
           HEAD: ${{ matrix.task.head }}
           SUITE: ${{ matrix.task.suite }}
+          CANDIDATE_SHA: ${{ matrix.task.candidate_sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$HEAD"
           case "$SUITE" in
             test_p3l_hydra_fast_lane_gate.py|test_p3l_hydra_completion_rehearsal.py) ;;
+            test_resumable_task_queue.py)
+              printf '%s  %s\n' "$CANDIDATE_SHA" tests/test_resumable_task_queue.py | sha256sum -c -
+              ;;
             *) exit 1 ;;
           esac
           docker pull python:3.11-slim
