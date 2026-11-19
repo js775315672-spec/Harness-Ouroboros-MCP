@@ -37,6 +37,7 @@ SYNTAX = (
     ast.Store, ast.Attribute, ast.Constant, ast.BinOp, ast.Div, ast.Mult, ast.Subscript,
     ast.Tuple, ast.List, ast.Try, ast.ExceptHandler, ast.Return, ast.Raise, ast.If,
     ast.Compare, ast.Eq, ast.NotEq, ast.Is, ast.IsNot, ast.UnaryOp, ast.Not, ast.Pass,
+    ast.Assert, ast.BoolOp, ast.And,
 )
 
 
