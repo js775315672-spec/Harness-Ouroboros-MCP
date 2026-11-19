@@ -1,15 +1,36 @@
 <|im_start|>system
-You write a single raw Python unittest method under the user's API and syntax contract.<|im_end|>
+Complete the Python unittest outline. Return raw Python only.<|im_end|>
 <|im_start|>user
-Return raw Python. The first nonblank line must be def test_concurrent_checkpoint_cas(self): and the last line must be part of its body. Do not emit Markdown fences.
-Write exactly that new unittest method. Test the existing checkpoint stale-generation guard. Use this API exactly:
-- base = new_queue(TASKS, REPO, COMMIT); save(path, base) creates the checkpoint.
-- evidence(sha=...) and github_ok(sha) produce public offline receipts. first = advance(base, evidence(sha=...), fetch=github_ok(...)) returns a complete next record. Produce first and second from the same base with distinct 40-character SHAs.
-- Both writers pass expected_integrity=base["integrity"], never a Git SHA. Save first, then attempt second after first commits. Use bounded ThreadPoolExecutor, Barrier or Event to coordinate; allowed local imports are from concurrent.futures import ThreadPoolExecutor and from threading import Barrier, Event. Use helper names writer_first and writer_second.
-- Assert the second attempt raises ValueError with stale checkpoint generation. Assert load(path) equals first and path.with_name("queue.json.lock").exists() is false.
-- Use tempfile.TemporaryDirectory() from the existing imports. Do not construct dictionary records, call open, call json.load, read the implementation, access Path.name, or build the lock path with string addition. Preserve the existing test file and queue implementation.
+Complete this public test outline. Return exactly one test_concurrent_checkpoint_cas(self) method. Start with def. Replace every TODO with Python statements. Use only shown APIs and assertions. Do not use assertIn, assertRaises, exception attributes or direct file reads. The two writer threads must use one original integrity token. The second waits until the first save completed and then attempts a different record. Use timeout=5 for Event waits and timeout=10 for future results.
 
+def test_concurrent_checkpoint_cas(self):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "queue.json"
+        base = new_queue(TASKS, REPO, COMMIT)
+        save(path, base)
+        committed = Event()
+        first = advance(base, evidence(sha="b"*40), fetch=github_ok("b"*40))
+        second = advance(base, evidence(sha="c"*40), fetch=github_ok("c"*40))
+
+        def writer_first():
+            # TODO save first with expected_integrity=base["integrity"], THEN call committed.set()
+
+        def writer_second():
+            # TODO require committed.wait(timeout=5) with self.assertTrue, THEN save second with the same original integrity
+
+        with ThreadPoolExecutor(2) as pool:
+            one = pool.submit(writer_first)
+            two = pool.submit(writer_second)
+            one.result(timeout=10)
+            # TODO use 'with self.assertRaisesRegex(ValueError, "stale checkpoint generation"):' around two.result(timeout=10)
+
+        # TODO assert load(path) equals first and path.with_name("queue.json.lock").exists() is false
+
+API: save(path, complete_record, expected_integrity=...). Use assertEqual, assertTrue, assertRaisesRegex and assertFalse only.
 Existing public fixtures:
+
 """Resumable queue tests; all CI attestations are offline fixtures."""
 import json
 from pathlib import Path
@@ -41,33 +62,5 @@ def github_ok(sha):
 
 
 
-Public save implementation:
-def save(path, record, expected_integrity=None):
-    validate(record)
-    path = Path(path).absolute()
-    if path.is_symlink():
-        raise ValueError("symlink checkpoint forbidden")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lock = path.with_name(path.name + ".lock")
-    lock_fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        if expected_integrity is None:
-            if path.exists():
-                raise ValueError("refusing to replace existing checkpoint")
-        elif load(path)["integrity"] != expected_integrity:
-            raise ValueError("stale checkpoint generation")
-        fd, temp = tempfile.mkstemp(prefix=".queue-", dir=path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(record, stream, sort_keys=True, ensure_ascii=False, indent=2)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temp, path)
-        finally:
-            if os.path.exists(temp):
-                os.unlink(temp)
-    finally:
-        os.close(lock_fd)
-        os.unlink(lock)<|im_end|>
+<|im_end|>
 <|im_start|>assistant
