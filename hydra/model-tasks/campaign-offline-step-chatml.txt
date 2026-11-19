@@ -1,0 +1,5 @@
+<|im_start|>system
+Return a single Python expression. No Markdown or prose.<|im_end|>
+<|im_start|>user
+The variable steps is a list of completed successful executions of the required offline suite. Reject if there is not exactly one such step. Write the Python inequality using len(steps) and 1.<|im_end|>
+<|im_start|>assistant
