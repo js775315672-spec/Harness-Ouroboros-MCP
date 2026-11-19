@@ -24,6 +24,8 @@ def main():
     admit = commands.add_parser("admit")
     admit.add_argument("--run", type=int, required=True)
     admit.add_argument("--job", type=int, required=True)
+    delivery = commands.add_parser("workflow-run")
+    delivery.add_argument("--event", type=Path, required=True)
     commands.add_parser("pause")
     commands.add_parser("resume")
     args = parser.parse_args()
@@ -33,13 +35,36 @@ def main():
         raise ValueError("approved operation is limited to two lanes")
     producer = approval["producer"]
     registry = CompletionRegistry(args.ledger, plan, approved_tasks=approval["tasks"])
-    if args.command != "admit":
+    if args.command in {"pause", "resume"}:
         paused = args.command == "pause"
         registry.set_paused(paused)
         print(json.dumps({"paused": paused}))
         return
 
-    event = dict(task=producer["task"], head=plan["head_sha"], run_id=args.run, job_id=args.job)
+    if args.command == "workflow-run":
+        payload = json.loads(args.event.read_bytes())
+        run = payload["workflow_run"]
+        if (payload.get("action") != "completed"
+                or payload.get("repository", {}).get("full_name") != REPOSITORY
+                or run.get("head_sha") != plan["head_sha"]
+                or run.get("head_branch") != producer["branch"]
+                or run.get("workflow_id") != producer["workflow_id"]
+                or run.get("event") != "push" or run.get("conclusion") != "success"
+                or type(run.get("id")) is not int or not 0 < run["id"] <= 2**63 - 1):
+            raise ValueError("completion event does not match operator approval")
+        run_id = run["id"]
+        page = fetch(f"repos/{REPOSITORY}/actions/runs/{run_id}/attempts/1/jobs?per_page=100")
+        jobs = page["jobs"]
+        if len(jobs) != page.get("total_count"):
+            raise ValueError("incomplete producer job list")
+        matches = [job["id"] for job in jobs if job["name"] == producer["job"]]
+        if len(matches) != 1:
+            raise ValueError("producer must have exactly one approved job")
+        job_id = matches[0]
+    else:
+        run_id, job_id = args.run, args.job
+
+    event = dict(task=producer["task"], head=plan["head_sha"], run_id=run_id, job_id=job_id)
 
     def verify(item):
         return verify_completion(item, repository=REPOSITORY, workflow=producer["workflow"],
