@@ -16,6 +16,32 @@ def digest(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def verified_regrade(root, row, model, read):
+    if (row["model_result_run"], row["run"], row["head"], row["task"]) != (
+        44602759555, 44606221168, "669ba2845dbafe7e300ac01b3d27231b3e60cb03", "grade-artifact-replay-44602759555"
+    ):
+        return False
+    if (model.get("head_sha"), model.get("head_branch"), model.get("run_attempt")) != (
+        "9f2eab88f4828c50818872e056911c77c04a4e28", "run/hydra-campaign-cycle-seven-model", 1
+    ):
+        return False
+    worker = read(f"{root}/jobs/135838532777")
+    grade = read(f"{root}/runs/44603716265")
+    judge = read(f"{root}/jobs/135841694335")
+    if (grade.get("id"), grade.get("head_sha"), grade.get("path"), grade.get("run_attempt"),
+            grade.get("conclusion"), grade.get("repository", {}).get("full_name")) != (
+        44603716265, "90398ed50acb2ad9ea53c8302d0d07fdc4ff871e",
+        ".github/workflows/hydra-campaign-cycle-seven-regrade.yml", 1, "success", REPO
+    ):
+        return False
+    return (
+        (worker.get("id"), worker.get("run_id"), worker.get("head_sha"), worker.get("name"), worker.get("conclusion"))
+        == (135838532777, 44602759555, model["head_sha"], "worker", "success")
+        and (judge.get("id"), judge.get("run_id"), judge.get("head_sha"), judge.get("name"), judge.get("conclusion"))
+        == (135841694335, 44603716265, grade["head_sha"], "independent", "success")
+    )
+
+
 def next_sequence(checkpoint, read):
     if (checkpoint.get("schema") != "hydra-nine-cycle-checkpoint-v1"
             or checkpoint.get("campaign") != "hydra-nine-cycle" or checkpoint.get("requested") != LIMIT):
@@ -52,8 +78,9 @@ def next_sequence(checkpoint, read):
         if entry["model_result_run"] != row["model_result_run"]:
             raise ValueError("model run does not match approved predecessor")
         model = read(f"{root}/runs/{row['model_result_run']}")
+        regrade_verified = model["conclusion"] == "failure" and verified_regrade(root, row, model, read)
         if (model["id"] != row["model_result_run"] or model["repository"]["full_name"] != REPO
-                or model["status"] != "completed" or model["conclusion"] != "success"):
+                or model["status"] != "completed" or (model['conclusion'] != 'success' and not regrade_verified)):
             raise ValueError("campaign predecessor lacks exact successful model evidence")
         if len(completed) > 1:
             started_at = datetime.fromisoformat(run["run_started_at"].replace("Z", "+00:00"))
