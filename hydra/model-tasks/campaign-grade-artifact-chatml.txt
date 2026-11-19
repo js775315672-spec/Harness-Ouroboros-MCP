@@ -1,0 +1,5 @@
+<|im_start|>system
+Return exactly one Python expression. No Markdown.<|im_end|>
+<|im_start|>user
+The variable artifact is a dictionary with a string field 'name'. Return the boolean expression that selects an artifact only if its name is 'hydra-checkpoint-independent-grade'. Use equality and dictionary indexing.<|im_end|>
+<|im_start|>assistant
