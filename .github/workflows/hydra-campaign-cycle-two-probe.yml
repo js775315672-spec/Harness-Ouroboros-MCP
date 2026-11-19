@@ -1,0 +1,86 @@
+name: Hydra campaign cycle two probe
+on:
+  pull_request:
+    branches: [review/hydra-campaign-continuity]
+    paths: [.github/workflows/hydra-campaign-cycle-two-probe.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  probe:
+    name: Worker unrelated-predecessor-evidence
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'experiment/hydra-campaign-cycle-two-probe' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Detect unrelated successful model evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import copy, json
+          from pathlib import Path
+          from p3l_hydra_campaign_continuity import fetch, next_sequence
+          original=json.loads(Path("hydra/memory/campaign.json").read_bytes())
+          if next_sequence(original, fetch)["next_sequence"] != 2:
+              raise RuntimeError("campaign predecessor is not verified")
+          modified=copy.deepcopy(original)
+          modified["completed"][0]["model_result_run"]=44551642849
+          try:
+              next_sequence(modified, fetch)
+          except ValueError:
+              pass
+          else:
+              raise AssertionError("unrelated successful model run was credited to the predecessor")
+          PY
+  propose:
+    needs: probe
+    if: failure() && needs.probe.result == 'failure' && github.head_ref == 'experiment/hydra-campaign-cycle-two-probe'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Retrieve the actual failure and propose its successor task
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          from p3l_hydra_next_task import REPO, fetch
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          root = f"repos/{REPO}/actions"
+          run = fetch(f"{root}/runs/{run_id}")
+          assert run["head_sha"] == os.environ["APPROVED_HEAD"]
+          assert run["head_branch"] == "experiment/hydra-campaign-cycle-two-probe"
+          assert run["event"] == "pull_request" and run["run_attempt"] == 1
+          assert run["path"] == ".github/workflows/hydra-campaign-cycle-two-probe.yml"
+          jobs = fetch(f"{root}/runs/{run_id}/attempts/1/jobs")["jobs"]
+          job, = [j for j in jobs if j["name"] == "Worker unrelated-predecessor-evidence"]
+          assert job["run_id"] == run_id and job["status"] == "completed" and job["conclusion"] == "failure"
+          step, = [s for s in job["steps"] if s["name"] == "Detect unrelated successful model evidence"]
+          assert step["conclusion"] == "failure"
+          identity = hashlib.sha256(f"{run_id}:{job['id']}".encode()).hexdigest()[:20]
+          task = dict(id="hydra-problem-"+identity, state="proposed", model_calls=0,
+                      task="Require a campaign predecessor model run to match the accepted production receipt.",
+                      target="scripts/p3l_hydra_campaign_continuity.py", run_id=run_id,
+                      job_id=job["id"], head=run["head_sha"],
+                      url=f"https://github.com/{REPO}/actions/runs/{run_id}/job/{job['id']}")
+          Path(os.environ["RUNNER_TEMP"], "proposal.json").write_text(json.dumps(task, sort_keys=True))
+          print(json.dumps(task, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-campaign-cycle-two-proposal
+          path: ${{ runner.temp }}/proposal.json
+          if-no-files-found: error
