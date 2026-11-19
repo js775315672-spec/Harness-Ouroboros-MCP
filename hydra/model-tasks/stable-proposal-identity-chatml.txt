@@ -1,0 +1,6 @@
+<|im_start|>system
+Return one raw Python f-string expression only. No assignment, Markdown, calls, or explanation.<|im_end|>
+<|im_start|>user
+Replace only the right-hand side of identity = f"{run['id']}:{job['id']}".
+Produce a stable identity for recurring failures of the same job at the same revision. Build the f-string using run['head_sha'] followed by a colon and job['name']. The existing code still stores current run and job IDs separately as evidence. Output exactly the new f-string expression.<|im_end|>
+<|im_start|>assistant
