@@ -1,0 +1,80 @@
+name: Hydra GitHub completion rehearsal
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/hydra-github-completion.yml"
+      - "scripts/p3l_hydra_github_completion.py"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-github-completion' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Run exact Hydra core suite
+        run: python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
+  accept:
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify live GitHub provenance and reserve approved successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          from p3l_hydra_completion_rehearsal import CompletionRegistry
+          from p3l_hydra_github_completion import verify_completion
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          head = os.environ["REVIEW_HEAD"]
+          if subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() != head:
+              raise SystemExit("consumer checkout mismatch")
+          def fetch(path):
+              return json.loads(subprocess.check_output(["gh", "api", path], timeout=15))
+          jobs = fetch(f"repos/{repo}/actions/runs/{run_id}/attempts/1/jobs")["jobs"]
+          source = [job["id"] for job in jobs if job["name"] == "source"]
+          if len(source) != 1:
+              raise SystemExit("missing exact source job")
+          plan = json.loads(Path("tests/fixtures/p3l_hydra_fast_lane_plan.json").read_bytes())
+          plan["head_sha"] = head
+          for task in plan["tasks"]:
+              task["base_sha"] = head
+          plan["tasks"][0].update(state="running", evidence_sha=None)
+          registry = CompletionRegistry(Path(os.environ["RUNNER_TEMP"]) / "events.sqlite3", plan,
+                                        approved_tasks=("w05_receipt_gate",))
+          event = {"task": "w01_contract", "head": head, "run_id": run_id, "job_id": source[0]}
+          def verify(item, step="Run exact Hydra core suite"):
+              return verify_completion(item, repository=repo,
+                  workflow=".github/workflows/hydra-github-completion.yml", job_name="source",
+                  required_step=step, fetch=fetch)
+          try:
+              registry.complete(event, lambda item: verify(item, step="Unexpected step"))
+          except ValueError:
+              pass
+          else:
+              raise SystemExit("wrong evidence was accepted")
+          accepted = registry.complete(event, verify)
+          duplicate = registry.complete(event, verify)
+          if accepted["reserved"] != ["w05_receipt_gate"] or duplicate["accepted"] or duplicate["reserved"]:
+              raise SystemExit("incorrect approved successor reservation")
+          print(json.dumps({"head": head, "run_id": run_id, "job_id": source[0],
+                            "reserved": accepted["reserved"], "replay_blocked": True,
+                            "wrong_step_blocked": True, "executions": 0}, sort_keys=True))
+          PY
