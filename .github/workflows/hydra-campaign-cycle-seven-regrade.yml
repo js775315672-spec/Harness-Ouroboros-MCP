@@ -1,0 +1,53 @@
+name: Regrade the existing Hydra grade size output
+on:
+  pull_request:
+    branches: [review/hydra-campaign-cycle-seven-budget]
+    paths: [.github/workflows/hydra-campaign-cycle-seven-regrade.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  independent:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-campaign-cycle-seven-regrade' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 768132073f9b4f28567277f5eb224c7b3604d55b
+          path: candidate
+          persist-credentials: false
+      - name: Independently grade the existing Qwen output
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          docker pull python:3.11-slim
+          root="repos/$GITHUB_REPOSITORY/actions"
+          gh api "$root/artifacts/14568421996" | jq -e '.name=="hydra-checkpoint-model" and .workflow_run.id==44602759555 and .workflow_run.head_branch=="run/hydra-campaign-cycle-seven-model" and .expired==false'
+          gh api "$root/artifacts/14568421996/zip" > "$RUNNER_TEMP/model.zip"
+          printf '%s  %s\n' '0e8ef34afcd13212a7affa5ebc7f5aab8fe485434ceee8e27f3adaf71d4e3fc6' "$RUNNER_TEMP/model.zip" | sha256sum -c -
+          PYTHONPATH=harness/scripts python3 -B - <<'PY'
+          import hashlib,json,os,zipfile
+          from pathlib import Path
+          from p3l_hydra_grade_size_grade import verify
+          root = Path(os.environ["RUNNER_TEMP"])
+          with zipfile.ZipFile(root / "model.zip") as archive:
+              assert sorted(archive.namelist()) == ["model.json","proposal.py"]
+              raw = archive.read("proposal.py")
+              receipt=json.loads(archive.read("model.json"))
+          assert receipt["run"]=="44602759555" and receipt["head"]=="9f2eab88f4828c50818872e056911c77c04a4e28" and receipt["live"] is True
+          assert hashlib.sha256(raw).hexdigest()==receipt["proposal_sha256"]=="4cf032b4b8dfbc8479dfac12667e6d6027af66f85e71cb374821fff0c9759177"
+          grade=verify(Path("candidate"),raw)
+          print(json.dumps(grade,sort_keys=True))
+          (root/"grade.json").write_text(json.dumps(dict(receipt=receipt,grade=grade),sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-checkpoint-independent-grade
+          path: ${{ runner.temp }}/grade.json
+          if-no-files-found: error

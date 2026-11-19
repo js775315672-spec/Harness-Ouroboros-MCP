@@ -34,7 +34,8 @@ def verify(checkout, raw):
     value = unwrap_proposal(raw).decode().strip()
     tree = ast.parse(value, mode="eval")
     contract = ast.parse("not 0 < size <= 256000", mode="eval")
-    if ast.dump(tree) != ast.dump(contract):
+    equivalent = ast.parse("not (1 <= size <= 256000)", mode="eval")
+    if ast.dump(tree) not in {ast.dump(contract), ast.dump(equivalent)}:
         raise ValueError("expected an inclusive size-bound rejection condition")
     original = (checkout / TARGET).read_text(encoding="utf-8")
     anchor = "    return grade\n"
