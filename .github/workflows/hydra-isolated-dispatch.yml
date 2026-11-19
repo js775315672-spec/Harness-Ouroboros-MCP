@@ -1,0 +1,115 @@
+name: Hydra isolated dispatch rehearsal
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/hydra-isolated-dispatch.yml"
+      - "scripts/p3l_hydra_completion_rehearsal.py"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-isolated-dispatch' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Run exact Hydra core suite
+        run: python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
+  accept:
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Prepare the isolated test image
+        run: docker pull python:3.11-slim
+      - name: Verify live evidence and run one isolated approved successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from concurrent.futures import ThreadPoolExecutor
+          import io
+          import tarfile
+          import subprocess
+          from p3l_hydra_completion_rehearsal import CompletionRegistry
+          from p3l_hydra_github_completion import verify_completion
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          head = os.environ["REVIEW_HEAD"]
+          if subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() != head:
+              raise SystemExit("consumer checkout mismatch")
+          def fetch(path):
+              return json.loads(subprocess.check_output(["gh", "api", path], timeout=15))
+          jobs = fetch(f"repos/{repo}/actions/runs/{run_id}/attempts/1/jobs")["jobs"]
+          source = [job["id"] for job in jobs if job["name"] == "source"]
+          if len(source) != 1:
+              raise SystemExit("missing exact source job")
+          plan = json.loads(Path("tests/fixtures/p3l_hydra_fast_lane_plan.json").read_bytes())
+          plan["head_sha"] = head
+          for task in plan["tasks"]:
+              task["base_sha"] = head
+          plan["tasks"][0].update(state="running", evidence_sha=None)
+          for task in plan["tasks"]:
+              if task["key"] == "w05_receipt_gate":
+                  task["key"] = "hydra_followup_probe"
+                  task["paths"] = ["tests/test_p3l_hydra_fast_lane_gate.py"]
+              task["deps"] = ["hydra_followup_probe" if key == "w05_receipt_gate" else key
+                              for key in task["deps"]]
+          registry = CompletionRegistry(Path(os.environ["RUNNER_TEMP"]) / "events.sqlite3", plan,
+                                        approved_tasks=("hydra_followup_probe",))
+          event = {"task": "w01_contract", "head": head, "run_id": run_id, "job_id": source[0]}
+          def verify(item, step="Run exact Hydra core suite"):
+              return verify_completion(item, repository=repo,
+                  workflow=".github/workflows/hydra-isolated-dispatch.yml", job_name="source",
+                  required_step=step, fetch=fetch)
+          try:
+              registry.complete(event, lambda item: verify(item, step="Unexpected step"))
+          except ValueError:
+              pass
+          else:
+              raise SystemExit("wrong evidence was accepted")
+          accepted = registry.complete(event, verify)
+          duplicate = registry.complete(event, verify)
+          if accepted["reserved"] != ["hydra_followup_probe"] or duplicate["accepted"] or duplicate["reserved"]:
+              raise SystemExit("incorrect approved successor reservation")
+          root = Path(os.environ["RUNNER_TEMP"]) / "offline"
+          root.mkdir(mode=0o755)
+          snapshot = subprocess.check_output(["git", "archive", "HEAD", "scripts", "tests"], timeout=20)
+          with tarfile.open(fileobj=io.BytesIO(snapshot)) as archive:
+              archive.extractall(root, filter="data")
+          def execute(_):
+              if not registry.consume("hydra_followup_probe", event, observed_head=head):
+                  return None
+              command = ["docker", "run", "--rm", "--pull=never", "--network=none", "--read-only",
+                         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65534:65534",
+                         "--pids-limit=64", "--memory=256m", "--cpus=1", "--tmpfs=/tmp:rw,nosuid,nodev,size=16m",
+                         "--mount", f"type=bind,src={root},dst=/work,readonly", "-w", "/work",
+                         "python:3.11-slim", "python", "-B", "-m", "unittest", "discover",
+                         "-s", "tests", "-p", "test_p3l_hydra_fast_lane_gate.py"]
+              result = subprocess.run(command, capture_output=True, text=True, timeout=45, check=False,
+                                      env={k:v for k,v in os.environ.items() if k not in {"GH_TOKEN","GITHUB_TOKEN"}})
+              if result.returncode or "Ran 7 tests" not in result.stderr:
+                  raise SystemExit("isolated successor failed: " + result.stderr[-2000:])
+              print(result.stderr, end="")
+              return 7
+          with ThreadPoolExecutor(2) as pool:
+              outcomes = list(pool.map(execute, range(2)))
+          if outcomes.count(7) != 1 or outcomes.count(None) != 1 or execute(None) is not None:
+              raise SystemExit("successor did not execute exactly once")
+          print(json.dumps({"head": head, "run_id": run_id, "source_job_id": source[0],
+                            "reserved": accepted["reserved"], "replay_blocked": True,
+                            "tests": 7, "executions": 1, "model_calls": 0}, sort_keys=True))
+          PY

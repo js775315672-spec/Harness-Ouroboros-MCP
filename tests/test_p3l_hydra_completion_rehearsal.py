@@ -1,0 +1,149 @@
+"""Check completion deduplication, evidence and plan identity in a disposable database."""
+from concurrent.futures import ThreadPoolExecutor
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "scripts"))
+from p3l_hydra_completion_rehearsal import CompletionRegistry
+
+
+class CompletionRehearsalTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.path = Path(temp.name) / "completion.sqlite3"
+        self.plan = json.loads((HERE / "fixtures/p3l_hydra_fast_lane_plan.json").read_bytes())
+        self.plan["tasks"][0].update(state="running", evidence_sha=None)
+        self.event = {"task": "w01_contract", "head": self.plan["head_sha"], "run_id": 11, "job_id": 22}
+        self.registry = CompletionRegistry(self.path, self.plan)
+
+    @staticmethod
+    def verify(event):
+        return {**event, "passed": True, "sha256": "c" * 64}
+
+    def test_racing_delivery_and_reopen_only_admit_one_completion(self):
+        with ThreadPoolExecutor(2) as pool:
+            results = list(pool.map(lambda _: self.registry.complete(self.event, self.verify), range(2)))
+        self.assertCountEqual(results, [
+            {"accepted": True, "eligible": ["w06_public_probe", "w05_receipt_gate"]},
+            {"accepted": False, "eligible": []},
+        ])
+        reopened = CompletionRegistry(self.path, self.plan)
+        self.assertFalse(reopened.complete(self.event, self.verify)["accepted"])
+        with self.assertRaisesRegex(ValueError, "different receipt"):
+            reopened.complete(self.event, lambda e: {**self.verify(e), "sha256": "d" * 64})
+
+    def test_wrong_evidence_and_stale_head_do_not_unlock_dependencies(self):
+        with self.assertRaisesRegex(ValueError, "not independently verified"):
+            self.registry.complete(self.event, lambda e: {**self.verify(e), "job_id": 23})
+        with self.assertRaisesRegex(ValueError, "not independently verified"):
+            self.registry.complete(self.event, lambda e: {**self.verify(e), "passed": False})
+        with self.assertRaisesRegex(ValueError, "stale"):
+            self.registry.complete({**self.event, "head": "f" * 40}, self.verify)
+        self.assertTrue(self.registry.complete(self.event, self.verify)["accepted"])
+
+    def test_existing_database_does_not_accept_a_different_plan(self):
+        with self.assertRaisesRegex(ValueError, "different input plan"):
+            CompletionRegistry(self.path, {**self.plan, "max_parallel": 1})
+
+    def test_only_approved_successor_is_reserved_once(self):
+        scope = ("w05_receipt_gate",)
+        path = self.path.with_name("approved.sqlite3")
+        registry = CompletionRegistry(path, self.plan, approved_tasks=scope)
+        with ThreadPoolExecutor(2) as pool:
+            results = list(pool.map(lambda _: registry.complete(self.event, self.verify), range(2)))
+        self.assertCountEqual([result["reserved"] for result in results], [["w05_receipt_gate"], []])
+        reopened = CompletionRegistry(path, self.plan, approved_tasks=scope)
+        self.assertEqual(reopened.complete(self.event, self.verify)["reserved"], [])
+        with self.assertRaisesRegex(ValueError, "different approval scope"):
+            CompletionRegistry(path, self.plan, approved_tasks=(*scope, "w06_public_probe"))
+
+    def test_reserved_slot_blocks_a_second_completion_from_overbooking(self):
+        anchor, _, later, _ = self.plan["tasks"]
+        later.update(state="running", deps=[])
+        blocked_path = self.plan["tasks"][1]["paths"]
+        self.plan["tasks"] += [
+            {**anchor, "key": "after_later", "state": "pending", "paths": blocked_path,
+             "deps": [later["key"]]},
+        ]
+        registry = CompletionRegistry(self.path.with_name("capacity.sqlite3"), self.plan,
+                                      approved_tasks=("w06_public_probe", "after_later"))
+        self.assertEqual(registry.complete(self.event, self.verify)["reserved"], ["w06_public_probe"])
+        later_event = {**self.event, "task": later["key"], "job_id": 23}
+        self.assertEqual(registry.complete(later_event, self.verify)["reserved"], [])
+
+    def test_zero_approved_successors_and_failed_evidence(self):
+        registry = CompletionRegistry(self.path.with_name("empty.sqlite3"), self.plan, approved_tasks=())
+        with self.assertRaisesRegex(ValueError, "not independently verified"):
+            registry.complete(self.event, lambda e: {**self.verify(e), "passed": False})
+        result = registry.complete(self.event, self.verify)
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["reserved"], [])
+
+    def test_running_task_counts_toward_parallel_limit(self):
+        self.plan["max_parallel"] = 1
+        running = self.plan["tasks"][2]
+        running.update(state="running", deps=[])
+        registry = CompletionRegistry(self.path.with_name("one-slot.sqlite3"), self.plan,
+                                      approved_tasks=("w06_public_probe",))
+        self.assertEqual(registry.complete(self.event, self.verify)["reserved"], [])
+        final_event = {**self.event, "task": running["key"], "job_id": 23}
+        self.assertEqual(registry.complete(final_event, self.verify)["reserved"], ["w06_public_probe"])
+
+    def test_one_execution_ticket_survives_process_restart(self):
+        path = self.path.with_name("dispatch.sqlite3")
+        task = "w05_receipt_gate"
+        registry = CompletionRegistry(path, self.plan, approved_tasks=(task,))
+        registry.complete(self.event, self.verify)
+        head = self.event["head"]
+        with self.assertRaisesRegex(ValueError, "outside the fixed approval"):
+            registry.consume("w06_public_probe", self.event, observed_head=head)
+        with self.assertRaisesRegex(ValueError, "HEAD differs"):
+            registry.consume(task, self.event, observed_head="f" * 40)
+        with self.assertRaisesRegex(ValueError, "verified reservation"):
+            registry.consume(task, {**self.event, "job_id": 99}, observed_head=head)
+        with ThreadPoolExecutor(2) as pool:
+            outcomes = list(pool.map(lambda _: registry.consume(task, self.event, observed_head=head), range(2)))
+        self.assertCountEqual(outcomes, [True, False])
+        reopened = CompletionRegistry(path, self.plan, approved_tasks=(task,))
+        self.assertFalse(reopened.consume(task, self.event, observed_head=head))
+
+    def test_next_generation_requires_the_reserved_workers_verified_result(self):
+        first = "w05_receipt_gate"
+        second = "next_generation"
+        self.plan["max_parallel"] = 1
+        self.plan["tasks"].append({**self.plan["tasks"][2], "key": second, "deps": [first]})
+        scope = (first, second)
+        path = self.path.with_name("generations.sqlite3")
+        registry = CompletionRegistry(path, self.plan, approved_tasks=scope)
+        self.assertEqual(registry.complete(self.event, self.verify)["reserved"], [first])
+        head = self.event["head"]
+        self.assertTrue(registry.consume(first, self.event, observed_head=head, completion=(12, 23)))
+        restarted = CompletionRegistry(path, self.plan, approved_tasks=scope)
+        self.assertFalse(restarted.consume(first, self.event, observed_head=head, completion=(12, 23)))
+        done = {"task": first, "head": head, "run_id": 12, "job_id": 23}
+        with self.assertRaisesRegex(ValueError, "running task"):
+            restarted.complete({**done, "job_id": 99}, self.verify)
+        with self.assertRaisesRegex(ValueError, "not independently verified"):
+            restarted.complete(done, lambda e: {**self.verify(e), "passed": False})
+        self.assertEqual(restarted.complete(done, self.verify)["reserved"], [second])
+        self.assertEqual(restarted.complete(done, self.verify)["reserved"], [])
+        self.assertTrue(restarted.consume(second, done, observed_head=head, completion=(13, 24)))
+        last = {"task": second, "head": head, "run_id": 13, "job_id": 24}
+        self.assertEqual(restarted.complete(last, self.verify)["reserved"], [])
+
+    def test_reservation_without_a_started_worker_cannot_report_completion(self):
+        task = "w05_receipt_gate"
+        registry = CompletionRegistry(self.path.with_name("not-started.sqlite3"), self.plan,
+                                      approved_tasks=(task,))
+        self.assertEqual(registry.complete(self.event, self.verify)["reserved"], [task])
+        with self.assertRaisesRegex(ValueError, "running task"):
+            registry.complete({**self.event, "task": task, "job_id": 99}, self.verify)
+
+
+if __name__ == "__main__":
+    unittest.main()

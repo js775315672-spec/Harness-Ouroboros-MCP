@@ -1,0 +1,54 @@
+{
+  "schema": "p3l-hydra-fast-lanes-v1",
+  "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "max_parallel": 2,
+  "tasks": [
+    {
+      "key": "w01_contract",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "passed",
+      "deps": [],
+      "paths": [
+        "scripts/p3l_w01_candidate_validator.py"
+      ],
+      "evidence_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "key": "w06_public_probe",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "pending",
+      "deps": [
+        "w01_contract"
+      ],
+      "paths": [
+        "tests/test_p3l_w06_public_contract_lint.py"
+      ],
+      "evidence_sha": null
+    },
+    {
+      "key": "w05_receipt_gate",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "pending",
+      "deps": [
+        "w01_contract"
+      ],
+      "paths": [
+        "tests/test_p3l_w05_replay_evidence.py"
+      ],
+      "evidence_sha": null
+    },
+    {
+      "key": "w06_live_model",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "blocked",
+      "deps": [
+        "w06_public_probe",
+        "w05_receipt_gate"
+      ],
+      "paths": [
+        "scripts/development_ledger.py"
+      ],
+      "evidence_sha": null
+    }
+  ]
+}
