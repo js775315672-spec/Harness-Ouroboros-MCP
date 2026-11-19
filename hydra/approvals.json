@@ -1,5 +1,4 @@
 {
-  "enabled": true,
   "approvals": [
     {
       "id": "checkpoint-replay-44515315325",
@@ -7,5 +6,6 @@
       "head": "68996cf2c1c5df3f7682fcb17822564a978f956c",
       "model_result_run": 44515315325
     }
-  ]
+  ],
+  "enabled": true
 }
