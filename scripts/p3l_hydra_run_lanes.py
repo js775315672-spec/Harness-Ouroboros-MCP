@@ -35,8 +35,8 @@ def run_suite(key):
 
 def identity():
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], timeout=10).decode().strip()
-    if head != os.environ["GITHUB_SHA"]:
-        raise ValueError("runner checkout differs from the workflow SHA")
+    if head != os.environ["REVIEW_HEAD"]:
+        raise ValueError("runner checkout differs from the PR HEAD")
     return head, int(os.environ["GITHUB_RUN_ID"])
 
 
