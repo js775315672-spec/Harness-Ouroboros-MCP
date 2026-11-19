@@ -1,0 +1,55 @@
+{
+  "schema": "hydra-model-result-v1",
+  "task": "stable-proposal-identity",
+  "source_run": 44551180471,
+  "proposal": "hydra-problem-cc6aa17df7b516bfb56a",
+  "run": 44551642849,
+  "independent_job": 135657850156,
+  "source_pr": 171,
+  "candidate_pr": 172,
+  "candidate_commit": "3ad1af369896ed82f1904e2ea98d7ae041d27f9c",
+  "verdict": "accepted_independent",
+  "model_calls": 1,
+  "receipt": {
+    "binary_sha256": "76f4fb11d626bddcb10edb6ee4a28aaea8ad8a089a21a5c171f26566ce62ded4",
+    "grant_sha256": "41c5ca6e8b4466f7a02a348e531c1f7a67cd5119e028472fe48b5c88257f617b",
+    "head": "e586e5d2a8d511409c1bcbb163e17bde9f261296",
+    "live": true,
+    "model_revision": "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+    "prompt": "5173558263636cd9d1b6ed10e6e84aeb57a01cbb622273e16c893786cade2f8a",
+    "proposal_sha256": "e01e90073e3bc1d9bec95aeb5ea1adb0cf51769523d64e0a2e38a31f679b245a",
+    "proposal_task_sha256": "780c02af6109a7913dbf39dbb69c72f29383947e7a598bea1eef221b3ffcbebf",
+    "ref": "refs/heads/hydra-model/started/5173558263636cd9d1b6ed10e6e84aeb57a01cbb622273e16c893786cade2f8a",
+    "run": "44551642849",
+    "weights_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c"
+  },
+  "grade": {
+    "base_sha": "5160e12527ff58f644ec5bd91cd3efdc82acc628",
+    "candidate_sha256": "b9827af6c825243d7b6fe8f1798a1a8c61a3694d68b7d2ec365cbfb40d7b7f8d",
+    "passed": 6,
+    "proposal_sha256": "e01e90073e3bc1d9bec95aeb5ea1adb0cf51769523d64e0a2e38a31f679b245a",
+    "target": "scripts/p3l_hydra_next_task.py"
+  },
+  "artifacts": [
+    {
+      "id": 14544146796,
+      "name": "hydra-checkpoint-model",
+      "digest": "sha256:e88988fb1eabac3eb3e886ae895304e103bffc04307256e561e27051c105ca3b"
+    },
+    {
+      "id": 14543252209,
+      "name": "hydra-checkpoint-grant",
+      "digest": "sha256:d0556d9158bcc9b2feee19486a3f7fe331aea868f5a85b81a0fdc5a461c01fae"
+    },
+    {
+      "id": 14542203551,
+      "name": "p3l-w08-pinned-binary",
+      "digest": "sha256:c4fd76d2e23f2cda55e7fb0cf0b47c20b5d15affeb163dc232078748466d1f0f"
+    },
+    {
+      "id": 14542114129,
+      "name": "hydra-checkpoint-independent-grade",
+      "digest": "sha256:2b80edefe75532f0646dfd30df28270078b6d2142c6fa917bcb783ef57a79c74"
+    }
+  ]
+}
