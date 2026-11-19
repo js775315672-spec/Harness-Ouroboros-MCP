@@ -1,11 +1,11 @@
 {
+  "enabled": true,
   "approvals": [
     {
-      "id": "checkpoint-replay-44515315325",
-      "suite": "checkpoint-model-replay",
-      "head": "68996cf2c1c5df3f7682fcb17822564a978f956c",
-      "model_result_run": 44515315325
+      "id": "selector-replay-44549065362",
+      "suite": "selector-model-replay",
+      "head": "b7cd3806088a65cead03c78b12dc800ce6a60f98",
+      "model_result_run": 44549065362
     }
-  ],
-  "enabled": true
+  ]
 }

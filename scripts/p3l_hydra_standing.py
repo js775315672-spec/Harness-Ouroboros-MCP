@@ -14,7 +14,8 @@ from p3l_hydra_shared_dispatch import REPO, record_head, request
 
 SUITES = {"fast-lane": "test_p3l_hydra_fast_lane_gate.py",
           "completion-ledger": "test_p3l_hydra_completion_rehearsal.py",
-          "checkpoint-model-replay": "test_resumable_task_queue.py"}
+          "checkpoint-model-replay": "test_resumable_task_queue.py",
+          "selector-model-replay": "test_p3l_hydra_cancelled_worker.py"}
 
 
 def fetch(path):
@@ -37,27 +38,36 @@ def verify_grade_archive(raw, artifact, receipt, grade):
 
 def model_result_proof(approval):
     run = approval["model_result_run"]
-    if type(run) is not int or run <= 0 or approval["id"] != f"checkpoint-replay-{run}":
+    selector = approval["suite"] == "selector-model-replay"
+    family = "selector" if selector else "checkpoint"
+    target = "scripts/p3l_hydra_next_task.py" if selector else "tests/test_resumable_task_queue.py"
+    prefix = "cancelled-worker" if selector else "checkpoint-attestation"
+    if type(run) is not int or run <= 0 or approval["id"] != f"{family}-replay-{run}":
         raise ValueError("invalid approved model replay")
-    result = json.loads(Path(f"hydra/model-results/checkpoint-attestation-{run}.json").read_bytes())
+    result = json.loads(Path(f"hydra/model-results/{prefix}-{run}.json").read_bytes())
     receipt, grade = result["receipt"], result["grade"]
     if (result["schema"] != "hydra-model-result-v1" or result["run"] != run
             or result["verdict"] != "accepted_independent" or result["model_calls"] != 1
             or receipt["run"] != str(run) or receipt["live"] is not True
             or result["candidate_commit"] != approval["head"] or not SHA40.fullmatch(approval["head"])
-            or grade["target"] != "tests/test_resumable_task_queue.py"
+            or grade["target"] != target
             or grade["proposal_sha256"] != receipt["proposal_sha256"]
             or not SHA64.fullmatch(grade["candidate_sha256"])
-            or grade["normal_test_count"] != 7 or grade["mutant_assertion_failures"] != 3):
+            or (selector and (
+                type(grade.get("passed")) is not int or grade["passed"] != 8
+                or grade.get("base_sha") != "ab2fcda4ad04491623aa287598cef727496d83a9"
+                or receipt.get("proposal_task_sha256") != "e412a21bc82b6934432ea7fac7741bc4bf0feab90578a1637db2daac17f43730"))
+            or (not selector and (grade["normal_test_count"] != 7 or grade["mutant_assertion_failures"] != 3))):
         raise ValueError("model receipt does not authorize this exact test replay")
     metadata = fetch(f"repos/{REPO}/actions/runs/{run}")
-    if (metadata.get("workflow_id") != 423749758
-            or metadata.get("head_branch") != "run/hydra-checkpoint-model-scaffold"
+    if (metadata.get("workflow_id") != (423972341 if selector else 423749758)
+            or metadata.get("head_branch") != ("run/hydra-second-cycle-exception" if selector else "run/hydra-checkpoint-model-scaffold")
             or metadata.get("status") != "completed" or metadata.get("conclusion") != "success"):
         raise ValueError("model source did not complete with independent success")
     proof = verify_completion(
         dict(task=approval["id"], head=receipt["head"], run_id=run, job_id=result["independent_job"]),
-        repository=REPO, workflow=".github/workflows/hydra-checkpoint-model-revised.yml",
+        repository=REPO, workflow=(".github/workflows/hydra-second-cycle-exception.yml" if selector
+                                   else ".github/workflows/hydra-checkpoint-model-revised.yml"),
         job_name="independent", required_step="Independently grade bound Qwen output", fetch=fetch)
     artifact, = [item for item in result["artifacts"] if item["name"] == "hydra-checkpoint-independent-grade"]
     live = fetch(f"repos/{REPO}/actions/artifacts/{int(artifact['id'])}")
@@ -68,7 +78,7 @@ def model_result_proof(approval):
     raw = subprocess.check_output(["gh", "api", f"repos/{REPO}/actions/artifacts/{int(artifact['id'])}/zip"],
                                   timeout=30)
     verify_grade_archive(raw, artifact, receipt, grade)
-    return proof, grade["candidate_sha256"]
+    return proof, grade["candidate_sha256"], target
 
 
 def claim(approval, namespace):
@@ -87,8 +97,9 @@ def claim(approval, namespace):
     if existing != 404:
         raise ValueError(f"execution ledger lookup failed ({existing})")
     candidate_sha = ""
-    if approval["suite"] == "checkpoint-model-replay":
-        proof, candidate_sha = model_result_proof(approval)
+    candidate_target = ""
+    if approval["suite"] in {"checkpoint-model-replay", "selector-model-replay"}:
+        proof, candidate_sha, candidate_target = model_result_proof(approval)
     else:
         event = dict(task=task, head=head, run_id=approval["run"], job_id=approval["job"])
         proof = verify_completion(event, repository=REPO, workflow=approval["workflow"],
@@ -105,7 +116,7 @@ def claim(approval, namespace):
     if status != 201 or record_head(body, ref) != head:
         raise ValueError(f"execution ledger rejected claim ({status})")
     print(json.dumps({"task": task, "status": "spent", "ref": ref, "proof": proof["sha256"]}))
-    return {"task": task, "head": head, "suite": suite, "candidate_sha": candidate_sha}
+    return {"task": task, "head": head, "suite": suite, "candidate_sha": candidate_sha, "candidate_target": candidate_target}
 
 
 def main():
