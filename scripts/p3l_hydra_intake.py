@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from p3l_hydra_completion_rehearsal import CompletionRegistry
@@ -24,6 +25,7 @@ def main():
     admit = commands.add_parser("admit")
     admit.add_argument("--run", type=int, required=True)
     admit.add_argument("--job", type=int, required=True)
+    commands.add_parser("poll")
     delivery = commands.add_parser("workflow-run")
     delivery.add_argument("--event", type=Path, required=True)
     commands.add_parser("pause")
@@ -41,8 +43,24 @@ def main():
         print(json.dumps({"paused": paused}))
         return
 
-    if args.command == "workflow-run":
-        payload = json.loads(args.event.read_bytes())
+    if args.command in {"poll", "workflow-run"}:
+        if args.command == "poll":
+            workflow_id = producer["workflow_id"]
+            if type(workflow_id) is not int or workflow_id <= 0:
+                raise ValueError("invalid approved producer workflow ID")
+            query = urlencode({"event": "push", "branch": producer["branch"],
+                               "head_sha": plan["head_sha"], "status": "success", "per_page": 100})
+            page = fetch(f"repos/{REPOSITORY}/actions/workflows/{workflow_id}/runs?{query}")
+            runs = page["workflow_runs"]
+            if len(runs) != page.get("total_count") or len(runs) > 1:
+                raise ValueError("ambiguous approved producer run")
+            if not runs:
+                print(json.dumps({"accepted": False, "reserved": [], "reason": "no completed producer"}))
+                return
+            payload = {"action": "completed", "repository": {"full_name": REPOSITORY},
+                       "workflow_run": runs[0]}
+        else:
+            payload = json.loads(args.event.read_bytes())
         run = payload["workflow_run"]
         if (payload.get("action") != "completed"
                 or payload.get("repository", {}).get("full_name") != REPOSITORY

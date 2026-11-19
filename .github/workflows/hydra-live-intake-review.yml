@@ -1,0 +1,69 @@
+name: Hydra live intake and rollback review
+on:
+  pull_request:
+    paths: [.github/workflows/hydra-live-intake-review.yml, scripts/p3l_hydra_intake.py]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-live-intake'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
+      - name: Verify intake from the actual push receipt
+        shell: bash
+        run: |
+          export PYTHONPATH=scripts
+          export APPROVAL="$RUNNER_TEMP/approval.json"
+          export LEDGER="$RUNNER_TEMP/hydra.sqlite"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from p3l_hydra_generation_rehearsal import make_plan
+          from p3l_hydra_intake import fetch
+          head = 'adb1d414f94bedeef31487d9d1618094b781c967'
+          plan = make_plan(head)
+          approval = dict(plan=plan, tasks=['first'], producer=dict(
+              task='source', workflow='.github/workflows/hydra-approved-push.yml',
+              job='source', step='Verify approved intake fixture',
+              branch='experiment/hydra-approved-push-intake', workflow_id=423641070))
+          Path(os.environ['APPROVAL']).write_text(json.dumps(approval))
+          repo = 'js775315672-spec/Harness-Ouroboros-MCP'
+          run = fetch(f'repos/{repo}/actions/runs/44497835184')
+          event = dict(action='completed', repository=dict(full_name=repo), workflow_run=run)
+          Path(os.environ['RUNNER_TEMP'], 'event.json').write_text(json.dumps(event))
+          event['action'] = 'requested'
+          Path(os.environ['RUNNER_TEMP'], 'bad-event.json').write_text(json.dumps(event))
+          PY
+          cmd=(python3 -B scripts/p3l_hydra_intake.py --approval "$APPROVAL" --ledger "$LEDGER")
+          event=(poll)
+          if "${cmd[@]}" workflow-run --event "$RUNNER_TEMP/bad-event.json" > "$RUNNER_TEMP/bad.log" 2>&1; then exit 1; fi
+          grep -F 'completion event does not match operator approval' "$RUNNER_TEMP/bad.log"
+          "${cmd[@]}" pause
+          if "${cmd[@]}" "${event[@]}" > "$RUNNER_TEMP/blocked.log" 2>&1; then exit 1; fi
+          grep -F 'Hydra dispatch is paused' "$RUNNER_TEMP/blocked.log"
+          "${cmd[@]}" resume
+          "${cmd[@]}" "${event[@]}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["accepted"] and d["reserved"] == ["first"]; print("APPROVED RESERVATION 1/1")'
+          "${cmd[@]}" "${event[@]}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d["accepted"] and d["reserved"] == []; print("DUPLICATE BLOCKED 1/1")'
+      - name: Rehearse rollback of this exact reviewed commit
+        shell: bash
+        env:
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          baseline=73613e819bf889edfe469438269bff77c757d307
+          ref=refs/heads/rehearsal/hydra-live-intake-rollback
+          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          git merge-base --is-ancestor "$baseline" "$REVIEW_HEAD"
+          git update-ref "$ref" "$baseline"
+          git update-ref "$ref" "$REVIEW_HEAD" "$baseline"
+          if git update-ref "$ref" "$baseline" "$baseline"; then exit 1; fi
+          test "$(git rev-parse "$ref")" = "$REVIEW_HEAD"
+          git update-ref "$ref" "$baseline" "$REVIEW_HEAD"
+          test "$(git rev-parse "$ref")" = "$baseline"
+          echo 'ROLLBACK 3/3'
