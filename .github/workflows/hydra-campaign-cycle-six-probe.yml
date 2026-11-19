@@ -1,0 +1,96 @@
+name: Hydra campaign cycle six receipt audit
+on:
+  pull_request:
+    branches: [review/hydra-campaign-cycle-five-candidate]
+    paths: [.github/workflows/hydra-campaign-cycle-six-probe.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  probe:
+    name: Worker incorrect-grade-artifact-receipt
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'experiment/hydra-campaign-cycle-six-probe' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: c237af9ae5c91141309ee3c10f92094779dda072
+          path: failed
+          persist-credentials: false
+      - name: Verify five actual predecessors
+        id: predecessors
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from p3l_hydra_campaign_continuity import fetch, next_sequence
+          c=json.loads(Path("hydra/memory/campaign.json").read_bytes())
+          c["completed"].extend([
+              dict(sequence=4, run=44588843880, job=135789212875, head="04aa0873a78d86a13018350ff9d6deb124872acb",
+                   task="campaign-memory-replay-44586167242", model_result_run=44586167242),
+              dict(sequence=5, run=44594970266, job=135810779067, head="009a51cf8da6c01d8b762e8caf8c1af570ef780a",
+                   task="continuity-replay-44591454500", model_result_run=44591454500),
+          ])
+          if next_sequence(c, fetch)["next_sequence"] != 6:
+              raise SystemExit("unverified campaign predecessors")
+          PY
+      - name: Reproduce the grade archive association failure
+        id: reproduce
+        working-directory: failed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from p3l_hydra_standing import model_result_proof
+          approval, = json.loads(Path("hydra/approvals.json").read_bytes())["approvals"]
+          try:
+              model_result_proof(approval)
+          except ValueError as error:
+              if str(error) != "independent grade artifact provenance differs":
+                  raise
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                  out.write("confirmed=true\n")
+              raise
+          else:
+              raise SystemExit("expected provenance failure did not reproduce")
+          PY
+      - name: Propose remediation from the observed failure
+        if: failure() && steps.predecessors.outcome == 'success' && steps.reproduce.outputs.confirmed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          from p3l_hydra_next_task import REPO, fetch
+          run_id=int(os.environ["GITHUB_RUN_ID"])
+          root=f"repos/{REPO}/actions"
+          run=fetch(f"{root}/runs/{run_id}")
+          if run["head_sha"] != os.environ["APPROVED_HEAD"] or run["run_attempt"] != 1:
+              raise SystemExit("unexpected proposal source")
+          jobs=fetch(f"{root}/runs/{run_id}/attempts/1/jobs")["jobs"]
+          job,=[j for j in jobs if j["name"]=="Worker incorrect-grade-artifact-receipt"]
+          identity=hashlib.sha256(f"{run_id}:{job['id']}".encode()).hexdigest()[:20]
+          proposal=dict(id="hydra-problem-"+identity, state="proposed", model_calls=0,
+                        task="Select the unique independent grade archive by name, run and digest before constructing a model receipt.",
+                        target="scripts/p3l_hydra_grade_artifact.py", run_id=run_id, job_id=job["id"],
+                        head=run["head_sha"], url=f"https://github.com/{REPO}/actions/runs/{run_id}/job/{job['id']}")
+          Path(os.environ["RUNNER_TEMP"],"proposal.json").write_text(json.dumps(proposal,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: failure() && steps.reproduce.outputs.confirmed == 'true'
+        with:
+          name: hydra-campaign-cycle-six-proposal
+          path: ${{ runner.temp }}/proposal.json
+          if-no-files-found: error
