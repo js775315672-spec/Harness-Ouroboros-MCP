@@ -1,0 +1,106 @@
+name: Hydra campaign cycle nine probe
+on:
+  pull_request:
+    branches: [review/hydra-campaign-cycle-eight-candidate]
+    paths: [.github/workflows/hydra-campaign-cycle-nine-probe.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  probe:
+    name: Worker required-worker-step
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'experiment/hydra-campaign-cycle-nine-probe' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Detect incomplete required worker step evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import json
+          from pathlib import Path
+          from p3l_hydra_campaign_continuity import fetch, next_sequence
+          checkpoint=json.loads(Path("hydra/memory/campaign.json").read_bytes())
+          checkpoint["completed"].extend([
+              dict(sequence=4,run=44588843880,job=135789212875,head="04aa0873a78d86a13018350ff9d6deb124872acb",
+                   task="campaign-memory-replay-44586167242",model_result_run=44586167242),
+              dict(sequence=5,run=44594970266,job=135810779067,head="009a51cf8da6c01d8b762e8caf8c1af570ef780a",
+                   task="continuity-replay-44591454500",model_result_run=44591454500),
+              dict(sequence=6,run=44600196766,job=135829291115,head="795b62642316d915bc0fb52d52858de466ac2140",
+                   task="grade-artifact-replay-44597582618",model_result_run=44597582618),
+          ])
+          checkpoint["completed"].extend([
+              dict(sequence=7,run=44606221168,job=135850602275,head="669ba2845dbafe7e300ac01b3d27231b3e60cb03",
+                   task="grade-artifact-replay-44602759555",model_result_run=44602759555),
+              dict(sequence=8,run=44611368845,job=135868659645,head="8ca7260d10537caafed55241737857af3aedbc33",
+                   task="continuity-replay-44608817357",model_result_run=44608817357),
+          ])
+          if next_sequence(checkpoint,fetch)["next_sequence"] != 9:
+              raise RuntimeError("could not verify eight production predecessors")
+          def missing_step(path):
+              actual=fetch(path)
+              if not path.endswith("/jobs/135868659645"):
+                  return actual
+              selected=[s for s in actual["steps"] if s["name"]=="Execute the fixed suite offline" and s["conclusion"]=="success"]
+              if len(selected)!=1:
+                  raise RuntimeError("actual worker did not execute one offline suite")
+              return {**actual,"steps":[{**s,"conclusion":"skipped"} if s in selected else s for s in actual["steps"]]}
+          try:
+              next_sequence(checkpoint,missing_step)
+          except ValueError:
+              pass
+          else:
+              raise AssertionError("worker with skipped offline suite advanced campaign continuity")
+          PY
+  propose:
+    needs: probe
+    if: failure() && needs.probe.result == 'failure' && github.head_ref == 'experiment/hydra-campaign-cycle-nine-probe'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Retrieve the actual failure and propose its successor task
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          from p3l_hydra_next_task import REPO, fetch
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          root = f"repos/{REPO}/actions"
+          run = fetch(f"{root}/runs/{run_id}")
+          assert run["head_sha"] == os.environ["APPROVED_HEAD"]
+          assert run["head_branch"] == "experiment/hydra-campaign-cycle-nine-probe"
+          assert run["event"] == "pull_request" and run["run_attempt"] == 1
+          assert run["path"] == ".github/workflows/hydra-campaign-cycle-nine-probe.yml"
+          jobs = fetch(f"{root}/runs/{run_id}/attempts/1/jobs")["jobs"]
+          job, = [j for j in jobs if j["name"] == "Worker required-worker-step"]
+          assert job["run_id"] == run_id and job["status"] == "completed" and job["conclusion"] == "failure"
+          step, = [s for s in job["steps"] if s["name"] == "Detect incomplete required worker step evidence"]
+          assert step["conclusion"] == "failure"
+          identity = hashlib.sha256(f"{run_id}:{job['id']}".encode()).hexdigest()[:20]
+          task = dict(id="hydra-problem-"+identity, state="proposed", model_calls=0,
+                      task="Require the successful fixed offline suite step within each completed production worker.",
+                      target="scripts/p3l_hydra_campaign_continuity.py", run_id=run_id,
+                      job_id=job["id"], head=run["head_sha"],
+                      url=f"https://github.com/{REPO}/actions/runs/{run_id}/job/{job['id']}")
+          Path(os.environ["RUNNER_TEMP"], "proposal.json").write_text(json.dumps(task, sort_keys=True))
+          print(json.dumps(task, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-campaign-cycle-nine-proposal
+          path: ${{ runner.temp }}/proposal.json
+          if-no-files-found: error
