@@ -11,4 +11,7 @@ def select_grade(artifacts, run):
             or grade["workflow_run"]["id"] != run
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", grade["digest"])):
         raise ValueError("invalid grade archive provenance")
+    size = grade.get("size_in_bytes")
+    if type(size) is not int or not (1 <= size <= 256000):
+        raise ValueError("invalid grade archive size")
     return grade
