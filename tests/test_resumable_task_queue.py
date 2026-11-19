@@ -113,5 +113,33 @@ class ResumableQueueTests(unittest.TestCase):
                 save(link, new_queue(TASKS, REPO, COMMIT))
 
 
+    def test_concurrent_checkpoint_cas(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "queue.json"
+            base = new_queue(TASKS, REPO, COMMIT)
+            save(path, base)
+            committed = Event()
+            first = advance(base, evidence(sha="b"*40), fetch=github_ok("b"*40))
+            second = advance(base, evidence(sha="c"*40), fetch=github_ok("c"*40))
+
+            def writer_first():
+                save(path, first, expected_integrity=base["integrity"])
+                committed.set()
+
+            def writer_second():
+                self.assertTrue(committed.wait(timeout=5))
+                with self.assertRaisesRegex(ValueError, "stale checkpoint generation"):
+                    save(path, second, expected_integrity=base["integrity"])
+
+            with ThreadPoolExecutor(2) as pool:
+                one = pool.submit(writer_first)
+                two = pool.submit(writer_second)
+                one.result(timeout=10)
+                two.result(timeout=10)
+
+            assert load(path) == first and not path.with_name("queue.json.lock").exists()
+
 if __name__ == "__main__":
     unittest.main()
