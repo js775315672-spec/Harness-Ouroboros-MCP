@@ -1,0 +1,7 @@
+<|im_start|>system
+Complete one raw Python boolean expression. No Markdown, no function calls, no attributes. Use only conclusion, match, string literals, None, and boolean operators. Return a single line.<|im_end|>
+<|im_start|>user
+Fill the MISSING part in this expression and return the entire expression:
+conclusion not in {"success", "failure", "timed_out"} and not (MISSING)
+MISSING must be true only for a cancelled worker. The input variable conclusion contains the status string. The input variable match is None for an admission job and otherwise represents a worker; use only an identity check against None on match. Do not inspect its contents. In particular, a worker with conclusion equal to "cancelled" must yield False for the entire expression, while an admission job with the same conclusion must yield True.<|im_end|>
+<|im_start|>assistant
