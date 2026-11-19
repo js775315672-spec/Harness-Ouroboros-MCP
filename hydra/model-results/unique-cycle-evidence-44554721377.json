@@ -1,0 +1,55 @@
+{
+  "schema": "hydra-model-result-v1",
+  "task": "unique-cycle-evidence",
+  "source_run": 44554240280,
+  "proposal": "hydra-problem-1fcbfe02d34c6c6147e9",
+  "run": 44554721377,
+  "independent_job": 135668447166,
+  "source_pr": 178,
+  "candidate_pr": 179,
+  "candidate_commit": "05641d4964d1e8c1324b6fa1189fa52f6e4f0b6e",
+  "verdict": "accepted_independent",
+  "model_calls": 1,
+  "receipt": {
+    "binary_sha256": "76f4fb11d626bddcb10edb6ee4a28aaea8ad8a089a21a5c171f26566ce62ded4",
+    "grant_sha256": "a2edbdceda6e5a1f72043c708a95e1022c6a8e41fb375dbbae1545f6ba052af4",
+    "head": "c98303a3434fd0ae07d7ce50a7d8f766fee096e8",
+    "live": true,
+    "model_revision": "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+    "prompt": "c95d9c1467988a932c150813104d9bdc7d692d17f98076393ad8e38c9213fd88",
+    "proposal_sha256": "c9ef5237c31ba9d57ab78699d8d956ae54a000152467af18d8481ebc35838c60",
+    "proposal_task_sha256": "3cd31561c8c96ad6a2f3b7cc0794d95fe33f7e41384af11ade2b94b2de5e28a9",
+    "ref": "refs/heads/hydra-model/started/c95d9c1467988a932c150813104d9bdc7d692d17f98076393ad8e38c9213fd88",
+    "run": "44554721377",
+    "weights_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c"
+  },
+  "grade": {
+    "base_sha": "d863043c4a8cb3ae5eeb14e46ea5e03f09ebba89",
+    "candidate_sha256": "804bab752d8f6a29d23b95e363243221623597f79af98ef120ec194ca4ccc5a8",
+    "passed": 7,
+    "proposal_sha256": "c9ef5237c31ba9d57ab78699d8d956ae54a000152467af18d8481ebc35838c60",
+    "target": "scripts/p3l_hydra_cycle_memory.py"
+  },
+  "artifacts": [
+    {
+      "id": 14545690129,
+      "name": "p3l-w08-pinned-binary",
+      "digest": "sha256:1b290480a3ab2120e5f22e567d0b1dfc15bea15b27816b19e066288d3808836b"
+    },
+    {
+      "id": 14545620258,
+      "name": "hydra-checkpoint-independent-grade",
+      "digest": "sha256:c4ea923dc0794bce6e4bf9860b2b8630e2ebefa72f1f261bbd1f65d8e6a3a741"
+    },
+    {
+      "id": 14545360595,
+      "name": "hydra-checkpoint-model",
+      "digest": "sha256:59291b97ebb02aed62e44fd904eadb37a761e47f7c14e14742cc16f82add7374"
+    },
+    {
+      "id": 14543204763,
+      "name": "hydra-checkpoint-grant",
+      "digest": "sha256:1c763a85ba129b682d417e04d5b2ba17ebbb06d9faa07d717b2e37eca24adc21"
+    }
+  ]
+}

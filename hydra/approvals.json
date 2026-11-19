@@ -2,10 +2,10 @@
   "enabled": true,
   "approvals": [
     {
-      "id": "identity-replay-44551642849",
-      "suite": "identity-model-replay",
-      "head": "3ad1af369896ed82f1904e2ea98d7ae041d27f9c",
-      "model_result_run": 44551642849
+      "id": "memory-replay-44554721377",
+      "suite": "memory-model-replay",
+      "head": "05641d4964d1e8c1324b6fa1189fa52f6e4f0b6e",
+      "model_result_run": 44554721377
     }
   ]
 }

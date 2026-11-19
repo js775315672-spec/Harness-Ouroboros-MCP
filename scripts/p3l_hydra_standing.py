@@ -16,7 +16,8 @@ SUITES = {"fast-lane": "test_p3l_hydra_fast_lane_gate.py",
           "completion-ledger": "test_p3l_hydra_completion_rehearsal.py",
           "checkpoint-model-replay": "test_resumable_task_queue.py",
           "selector-model-replay": "test_p3l_hydra_cancelled_worker.py",
-          "identity-model-replay": "test_p3l_hydra_proposal_identity.py"}
+          "identity-model-replay": "test_p3l_hydra_proposal_identity.py",
+          "memory-model-replay": "test_p3l_hydra_cycle_memory.py"}
 
 
 def fetch(path):
@@ -40,10 +41,12 @@ def verify_grade_archive(raw, artifact, receipt, grade):
 def model_result_proof(approval):
     run = approval["model_result_run"]
     identity = approval["suite"] == "identity-model-replay"
-    selector = identity or approval["suite"] == "selector-model-replay"
-    family = "identity" if identity else "selector" if selector else "checkpoint"
-    target = "scripts/p3l_hydra_next_task.py" if selector else "tests/test_resumable_task_queue.py"
-    prefix = "proposal-identity" if identity else "cancelled-worker" if selector else "checkpoint-attestation"
+    memory = approval["suite"] == "memory-model-replay"
+    selector = memory or identity or approval["suite"] == "selector-model-replay"
+    family = "memory" if memory else "identity" if identity else "selector" if selector else "checkpoint"
+    target = ("scripts/p3l_hydra_cycle_memory.py" if memory else "scripts/p3l_hydra_next_task.py" if selector
+              else "tests/test_resumable_task_queue.py")
+    prefix = "unique-cycle-evidence" if memory else "proposal-identity" if identity else "cancelled-worker" if selector else "checkpoint-attestation"
     if type(run) is not int or run <= 0 or approval["id"] != f"{family}-replay-{run}":
         raise ValueError("invalid approved model replay")
     result = json.loads(Path(f"hydra/model-results/{prefix}-{run}.json").read_bytes())
@@ -56,19 +59,19 @@ def model_result_proof(approval):
             or grade["proposal_sha256"] != receipt["proposal_sha256"]
             or not SHA64.fullmatch(grade["candidate_sha256"])
             or (selector and (
-                type(grade.get("passed")) is not int or grade["passed"] != (6 if identity else 8)
-                or grade.get("base_sha") != ("5160e12527ff58f644ec5bd91cd3efdc82acc628" if identity else "ab2fcda4ad04491623aa287598cef727496d83a9")
-                or receipt.get("proposal_task_sha256") != ("780c02af6109a7913dbf39dbb69c72f29383947e7a598bea1eef221b3ffcbebf" if identity else "e412a21bc82b6934432ea7fac7741bc4bf0feab90578a1637db2daac17f43730")))
+                type(grade.get("passed")) is not int or grade["passed"] != (7 if memory else 6 if identity else 8)
+                or grade.get("base_sha") != ("d863043c4a8cb3ae5eeb14e46ea5e03f09ebba89" if memory else "5160e12527ff58f644ec5bd91cd3efdc82acc628" if identity else "ab2fcda4ad04491623aa287598cef727496d83a9")
+                or receipt.get("proposal_task_sha256") != ("3cd31561c8c96ad6a2f3b7cc0794d95fe33f7e41384af11ade2b94b2de5e28a9" if memory else "780c02af6109a7913dbf39dbb69c72f29383947e7a598bea1eef221b3ffcbebf" if identity else "e412a21bc82b6934432ea7fac7741bc4bf0feab90578a1637db2daac17f43730")))
             or (not selector and (grade["normal_test_count"] != 7 or grade["mutant_assertion_failures"] != 3))):
         raise ValueError("model receipt does not authorize this exact test replay")
     metadata = fetch(f"repos/{REPO}/actions/runs/{run}")
-    if (metadata.get("workflow_id") != (423988182 if identity else 423972341 if selector else 423749758)
-            or metadata.get("head_branch") != ("run/hydra-third-cycle-model" if identity else "run/hydra-second-cycle-exception" if selector else "run/hydra-checkpoint-model-scaffold")
+    if (metadata.get("workflow_id") != (424005916 if memory else 423988182 if identity else 423972341 if selector else 423749758)
+            or metadata.get("head_branch") != ("run/hydra-campaign-cycle-one-model" if memory else "run/hydra-third-cycle-model" if identity else "run/hydra-second-cycle-exception" if selector else "run/hydra-checkpoint-model-scaffold")
             or metadata.get("status") != "completed" or metadata.get("conclusion") != "success"):
         raise ValueError("model source did not complete with independent success")
     proof = verify_completion(
         dict(task=approval["id"], head=receipt["head"], run_id=run, job_id=result["independent_job"]),
-        repository=REPO, workflow=(".github/workflows/hydra-third-cycle-model.yml" if identity else ".github/workflows/hydra-second-cycle-exception.yml" if selector
+        repository=REPO, workflow=(".github/workflows/hydra-campaign-cycle-one-model.yml" if memory else ".github/workflows/hydra-third-cycle-model.yml" if identity else ".github/workflows/hydra-second-cycle-exception.yml" if selector
                                    else ".github/workflows/hydra-checkpoint-model-revised.yml"),
         job_name="independent", required_step="Independently grade bound Qwen output", fetch=fetch)
     artifact, = [item for item in result["artifacts"] if item["name"] == "hydra-checkpoint-independent-grade"]
@@ -100,7 +103,7 @@ def claim(approval, namespace):
         raise ValueError(f"execution ledger lookup failed ({existing})")
     candidate_sha = ""
     candidate_target = ""
-    if approval["suite"] in {"checkpoint-model-replay", "selector-model-replay", "identity-model-replay"}:
+    if approval["suite"] in {"checkpoint-model-replay", "selector-model-replay", "identity-model-replay", "memory-model-replay"}:
         proof, candidate_sha, candidate_target = model_result_proof(approval)
     else:
         event = dict(task=task, head=head, run_id=approval["run"], job_id=approval["job"])
