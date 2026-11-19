@@ -2,10 +2,10 @@
   "enabled": true,
   "approvals": [
     {
-      "id": "grade-artifact-replay-44597582618",
+      "id": "grade-artifact-replay-44602759555",
       "suite": "grade-artifact-replay",
-      "head": "768132073f9b4f28567277f5eb224c7b3604d55b",
-      "model_result_run": 44597582618
+      "head": "90cabdb3bd779aae67aa8d9fcb717e16221c4ecc",
+      "model_result_run": 44602759555
     }
   ]
 }
