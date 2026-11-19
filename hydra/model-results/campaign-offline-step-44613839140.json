@@ -1,0 +1,35 @@
+{
+  "schema": "hydra-model-result-v1",
+  "run": 44613839140,
+  "independent_job": 135877882125,
+  "candidate_commit": "beee8e646e17af12bc07a06445c044ef0bfa2e33",
+  "verdict": "accepted_independent",
+  "model_calls": 1,
+  "grade": {
+    "base_sha": "953fab313975d1193afaf50fead274064edda964",
+    "candidate_sha256": "c4369ec9d63964fa78486b8b170d441dbb64cdb6e8a0e7b82f3026b98202874d",
+    "passed": 6,
+    "proposal_sha256": "2f6e12f05dfd4a077db263886996a6bb9e7242f3b64d1eabbbabc68be8d56575",
+    "target": "scripts/p3l_hydra_campaign_continuity.py"
+  },
+  "receipt": {
+    "binary_sha256": "76f4fb11d626bddcb10edb6ee4a28aaea8ad8a089a21a5c171f26566ce62ded4",
+    "grant_sha256": "cd76d511accb83336cedd3b2ab6c3381d9979b0afcd8b624236704e014c36ceb",
+    "head": "179bf5eb704b35a03935248edd0d3491ab4f441d",
+    "live": true,
+    "model_revision": "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+    "prompt": "b59d0716bcfa03643a315c36539d8d24d8e01f2c654bb42d2c87656dfb6cca49",
+    "proposal_sha256": "2f6e12f05dfd4a077db263886996a6bb9e7242f3b64d1eabbbabc68be8d56575",
+    "proposal_task_sha256": "d6d6014d03c9f7f8d9a29679e5a142e546cf36ad2418df81b3e3cd0f7ab1116a",
+    "ref": "refs/heads/hydra-model/started/b59d0716bcfa03643a315c36539d8d24d8e01f2c654bb42d2c87656dfb6cca49",
+    "run": "44613839140",
+    "weights_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c"
+  },
+  "artifacts": [
+    {
+      "name": "hydra-checkpoint-independent-grade",
+      "id": 14572374289,
+      "digest": "sha256:4889df2128fdb2ed8ff6ba811f60074f3c7b7a08cabb6e69563cac74aaacada4"
+    }
+  ]
+}
