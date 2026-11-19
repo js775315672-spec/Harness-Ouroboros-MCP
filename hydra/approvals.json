@@ -1,0 +1,15 @@
+{
+  "enabled": false,
+  "approvals": [
+    {
+      "id": "initial-fast-lane",
+      "suite": "fast-lane",
+      "head": "adb1d414f94bedeef31487d9d1618094b781c967",
+      "branch": "experiment/hydra-approved-push-intake",
+      "workflow": ".github/workflows/hydra-approved-push.yml",
+      "workflow_id": 423641070,
+      "run": 44497835184,
+      "job": 135469460234
+    }
+  ]
+}

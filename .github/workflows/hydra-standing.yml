@@ -1,0 +1,76 @@
+name: Hydra standing approved tasks
+on:
+  pull_request:
+    branches: [main]
+    types: [opened]
+    paths: [.github/workflows/hydra-standing.yml, hydra/approvals.json]
+  push:
+    branches: [main]
+    paths: [hydra/approvals.json]
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: hydra-standing-${{ github.event_name == 'pull_request' && 'review' || 'production' }}
+  cancel-in-progress: false
+jobs:
+  admit:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      tasks: ${{ steps.claim.outputs.tasks }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Claim approval slots
+        id: claim
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ github.event_name == 'pull_request' && 'review' || 'production' }}
+        run: python3 -B scripts/p3l_hydra_standing.py "$MODE"
+  worker:
+    needs: admit
+    if: needs.admit.outputs.tasks != '' && needs.admit.outputs.tasks != '[]'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        task: ${{ fromJSON(needs.admit.outputs.tasks) }}
+    name: Worker ${{ matrix.task.task }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ matrix.task.head }}
+          persist-credentials: false
+      - name: Execute the fixed suite offline
+        shell: bash
+        env:
+          HEAD: ${{ matrix.task.head }}
+          SUITE: ${{ matrix.task.suite }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$HEAD"
+          case "$SUITE" in
+            test_p3l_hydra_fast_lane_gate.py|test_p3l_hydra_completion_rehearsal.py) ;;
+            *) exit 1 ;;
+          esac
+          docker pull python:3.11-slim
+          root=$(mktemp -d "$RUNNER_TEMP/hydra.XXXXXXXX")
+          chmod 755 "$root"
+          git archive HEAD scripts tests | tar -x -C "$root"
+          docker run --rm --pull=never --network=none --read-only --cap-drop=ALL \
+            --security-opt=no-new-privileges --user=65534:65534 --memory=256m --cpus=1 --pids-limit=64 \
+            --tmpfs=/tmp:rw,nosuid,nodev,size=16m --mount "type=bind,src=$root,dst=/work,readonly" -w /work \
+            python:3.11-slim python -B -m unittest discover -s tests -p "$SUITE" -v
