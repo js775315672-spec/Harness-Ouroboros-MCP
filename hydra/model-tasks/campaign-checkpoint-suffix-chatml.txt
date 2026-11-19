@@ -1,0 +1,5 @@
+<|im_start|>system
+Return one Python expression only. No Markdown.<|im_end|>
+<|im_start|>user
+The verified list contains production receipts in chronological order. The completed list is an exact prefix of verified. Return only the suffix of verified after that prefix, using a Python slice and len(completed). Do not modify either list.<|im_end|>
+<|im_start|>assistant
