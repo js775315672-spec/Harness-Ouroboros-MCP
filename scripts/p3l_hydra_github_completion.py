@@ -7,22 +7,35 @@ from p3l_hydra_fast_lane_gate import SHA40
 
 
 def verify_completion(event, *, repository: str, workflow: str, job_name: str,
-                      required_step: str, fetch: Callable):
+                      required_step: str, fetch: Callable, trusted_push=None):
     if (type(event) is not dict or set(event) != {"task", "head", "run_id", "job_id"}
             or type(event["head"]) is not str or SHA40.fullmatch(event["head"]) is None
             or any(type(event[key]) is not int or not 0 < event[key] <= 2**63 - 1
                    for key in ("run_id", "job_id"))):
         raise ValueError("invalid GitHub completion identity")
+    expected_event = "pull_request"
+    if trusted_push is not None:
+        branch, approved_head, workflow_id = trusted_push
+        if (not isinstance(branch, str) or not branch or approved_head != event["head"]
+                or type(workflow_id) is not int or workflow_id <= 0):
+            raise ValueError("completion is outside the trusted push approval")
+        expected_event = "push"
     run_id, job_id = event["run_id"], event["job_id"]
     path = f"repos/{repository}/actions"
     run = fetch(f"{path}/runs/{run_id}")
     if (type(run.get("id")) is not int or run["id"] != run_id
             or run.get("repository", {}).get("full_name") != repository
             or run.get("head_repository", {}).get("full_name") != repository
-            or run.get("path") != workflow or run.get("event") != "pull_request"
+            or run.get("path") != workflow or run.get("event") != expected_event
             or run.get("head_sha") != event["head"] or type(run.get("run_attempt")) is not int
             or run["run_attempt"] != 1):
         raise ValueError("GitHub run does not match the expected workflow and source")
+    if trusted_push is not None and (
+        run.get("head_branch") != branch or type(run.get("workflow_id")) is not int
+        or run["workflow_id"] != workflow_id or run.get("status") != "completed"
+        or run.get("conclusion") != "success"
+    ):
+        raise ValueError("trusted push run is not the approved successful producer")
     job = fetch(f"{path}/jobs/{job_id}")
     if (type(job.get("id")) is not int or job["id"] != job_id
             or type(job.get("run_id")) is not int or job["run_id"] != run_id
@@ -34,5 +47,7 @@ def verify_completion(event, *, repository: str, workflow: str, job_name: str,
         raise ValueError("required test step did not complete successfully")
     identity = {**event, "repository": repository, "workflow": workflow, "job": job_name,
                 "step": required_step, "attempt": 1, "passed": True}
+    if trusted_push is not None:
+        identity.update(event=expected_event, branch=branch, workflow_id=workflow_id)
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode())
     return {**event, "sha256": digest.hexdigest(), "passed": True}
