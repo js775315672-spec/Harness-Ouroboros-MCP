@@ -94,6 +94,24 @@ class CompletionRehearsalTests(unittest.TestCase):
         final_event = {**self.event, "task": running["key"], "job_id": 23}
         self.assertEqual(registry.complete(final_event, self.verify)["reserved"], ["w06_public_probe"])
 
+    def test_one_execution_ticket_survives_process_restart(self):
+        path = self.path.with_name("dispatch.sqlite3")
+        task = "w05_receipt_gate"
+        registry = CompletionRegistry(path, self.plan, approved_tasks=(task,))
+        registry.complete(self.event, self.verify)
+        head = self.event["head"]
+        with self.assertRaisesRegex(ValueError, "outside the fixed approval"):
+            registry.consume("w06_public_probe", self.event, observed_head=head)
+        with self.assertRaisesRegex(ValueError, "HEAD differs"):
+            registry.consume(task, self.event, observed_head="f" * 40)
+        with self.assertRaisesRegex(ValueError, "verified reservation"):
+            registry.consume(task, {**self.event, "job_id": 99}, observed_head=head)
+        with ThreadPoolExecutor(2) as pool:
+            outcomes = list(pool.map(lambda _: registry.consume(task, self.event, observed_head=head), range(2)))
+        self.assertCountEqual(outcomes, [True, False])
+        reopened = CompletionRegistry(path, self.plan, approved_tasks=(task,))
+        self.assertFalse(reopened.consume(task, self.event, observed_head=head))
+
 
 if __name__ == "__main__":
     unittest.main()

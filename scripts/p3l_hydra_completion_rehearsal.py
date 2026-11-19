@@ -25,6 +25,8 @@ class CompletionRegistry:
             db.execute("CREATE TABLE IF NOT EXISTS approval (id INTEGER PRIMARY KEY, scope TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS reservations (task TEXT PRIMARY KEY, "
                        "run_id INTEGER, job_id INTEGER)")
+            db.execute("CREATE TABLE IF NOT EXISTS starts (task TEXT PRIMARY KEY, "
+                       "run_id INTEGER, job_id INTEGER)")
             db.execute("INSERT OR IGNORE INTO plan VALUES (1, ?, ?)",
                        (proposal["input_sha256"], json.dumps(plan)))
             actual, = db.execute("SELECT sha FROM plan WHERE id=1").fetchone()
@@ -92,3 +94,28 @@ class CompletionRegistry:
             if self.approved_tasks is not None:
                 result["reserved"] = self._reserve(db, plan, event)
             return result
+
+    def consume(self, task, event, *, observed_head):
+        """Spend the reserved execution slot before running the isolated task."""
+        if (type(task) is not str or type(event) is not dict
+                or set(event) != {"task", "head", "run_id", "job_id"}
+                or type(observed_head) is not str
+                or any(type(event[k]) is not int or not 0 < event[k] <= 2**63-1
+                       for k in ("run_id", "job_id"))):
+            raise ValueError("invalid execution identity")
+        if self.approved_tasks is None or task not in self.approved_tasks:
+            raise ValueError("execution task is outside the fixed approval scope")
+        with closing(sqlite3.connect(self.path, timeout=10)) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            raw, = db.execute("SELECT data FROM plan WHERE id=1").fetchone()
+            plan = json.loads(raw)
+            if observed_head != plan["head_sha"] or event["head"] != observed_head:
+                raise ValueError("execution HEAD differs from the reviewed plan")
+            origin = (event["run_id"], event["job_id"])
+            reservation = db.execute("SELECT run_id, job_id FROM reservations WHERE task=?",
+                                     (task,)).fetchone()
+            receipt = db.execute("SELECT task FROM receipts WHERE run_id=? AND job_id=?", origin).fetchone()
+            if reservation != origin or receipt != (event["task"],):
+                raise ValueError("execution does not match a verified reservation")
+            return db.execute("INSERT OR IGNORE INTO starts VALUES (?, ?, ?)",
+                              (task, *origin)).rowcount == 1
