@@ -1,0 +1,5 @@
+<|im_start|>system
+Return one raw Python boolean expression. No assignment, function calls, attributes, Markdown, or explanation.<|im_end|>
+<|im_start|>user
+A Hydra evidence index stores previously credited GitHub run IDs in the set used_runs. Two integer IDs are available as row["model"] and row["operation"]. Write a boolean rejection expression. Reject if the model run is already in used_runs, the operation run is already in used_runs, or the two IDs in this row equal each other. Use only row, used_runs, string subscripts, in, ==, and or. Return the whole expression.<|im_end|>
+<|im_start|>assistant
