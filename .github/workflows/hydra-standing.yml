@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admit:
-    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout' || github.head_ref == 'review/hydra-model-handoff' || github.head_ref == 'review/hydra-model-handoff-replay' || github.head_ref == 'review/hydra-selector-handoff' || github.head_ref == 'review/hydra-selector-handoff-replay' || github.head_ref == 'review/hydra-identity-handoff' || github.head_ref == 'review/hydra-identity-handoff-replay')))
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout' || github.head_ref == 'review/hydra-model-handoff' || github.head_ref == 'review/hydra-model-handoff-replay' || github.head_ref == 'review/hydra-selector-handoff' || github.head_ref == 'review/hydra-selector-handoff-replay' || github.head_ref == 'review/hydra-identity-handoff' || github.head_ref == 'review/hydra-identity-handoff-replay' || github.head_ref == 'review/hydra-memory-handoff' || github.head_ref == 'review/hydra-memory-handoff-replay')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -66,9 +66,9 @@ jobs:
           test "$(git rev-parse HEAD)" = "$HEAD"
           case "$SUITE" in
             test_p3l_hydra_fast_lane_gate.py|test_p3l_hydra_completion_rehearsal.py) ;;
-            test_resumable_task_queue.py|test_p3l_hydra_cancelled_worker.py|test_p3l_hydra_proposal_identity.py)
+            test_resumable_task_queue.py|test_p3l_hydra_cancelled_worker.py|test_p3l_hydra_proposal_identity.py|test_p3l_hydra_cycle_memory.py)
               case "$SUITE:$CANDIDATE_TARGET" in
-                test_resumable_task_queue.py:tests/test_resumable_task_queue.py|test_p3l_hydra_cancelled_worker.py:scripts/p3l_hydra_next_task.py|test_p3l_hydra_proposal_identity.py:scripts/p3l_hydra_next_task.py) ;;
+                test_resumable_task_queue.py:tests/test_resumable_task_queue.py|test_p3l_hydra_cancelled_worker.py:scripts/p3l_hydra_next_task.py|test_p3l_hydra_proposal_identity.py:scripts/p3l_hydra_next_task.py|test_p3l_hydra_cycle_memory.py:scripts/p3l_hydra_cycle_memory.py) ;;
                 *) exit 1 ;;
               esac
               printf '%s  %s\n' "$CANDIDATE_SHA" "$CANDIDATE_TARGET" | sha256sum -c -
