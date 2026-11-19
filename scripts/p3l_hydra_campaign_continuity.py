@@ -42,6 +42,12 @@ def verified_regrade(root, row, model, read):
     )
 
 
+def verify_offline_step(job):
+    steps = [step for step in job.get("steps", []) if step.get("name") == "Execute the fixed suite offline"]
+    if len(steps) != 1 or steps[0].get("status") != "completed" or steps[0].get("conclusion") != "success":
+        raise ValueError("production predecessor lacks exactly one successful offline suite step")
+
+
 def next_sequence(checkpoint, read):
     if (checkpoint.get("schema") != "hydra-nine-cycle-checkpoint-v1"
             or checkpoint.get("campaign") != "hydra-nine-cycle" or checkpoint.get("requested") != LIMIT):
@@ -67,6 +73,8 @@ def next_sequence(checkpoint, read):
                 or job["head_sha"] != row["head"] or job["status"] != "completed"
                 or job["name"] != "Worker " + row["task"] or job["conclusion"] != "success"):
             raise ValueError("campaign predecessor lacks exact successful production evidence")
+        if len(completed) > 1 or "steps" in job:
+            verify_offline_step(job)
         manifest_file = read(f"repos/{REPO}/contents/hydra/approvals.json?ref={row['head']}")
         if manifest_file.get("type") != "file" or manifest_file.get("encoding") != "base64":
             raise ValueError("unsupported approval manifest evidence")
