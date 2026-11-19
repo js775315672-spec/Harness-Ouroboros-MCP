@@ -1,0 +1,36 @@
+name: Hydra Linux crash recovery
+on:
+  pull_request:
+    paths:
+      - .github/workflows/hydra-linux-crash.yml
+      - scripts/p3l_hydra_transaction_crash.py
+permissions:
+  contents: read
+jobs:
+  recover:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-linux-crash' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          path: harness
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 900fbd4292bdd258b8b619c055e62fbd7383dc21
+          persist-credentials: false
+          path: candidate
+      - name: Kill four workers at the SQLite commit boundary
+        working-directory: candidate
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "900fbd4292bdd258b8b619c055e62fbd7383dc21"
+          python3 -B ../harness/scripts/p3l_hydra_transaction_crash.py | tee "$RUNNER_TEMP/hydra-linux-crash.json"
+          sha256sum ../harness/scripts/p3l_hydra_transaction_crash.py "$RUNNER_TEMP/hydra-linux-crash.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-linux-crash
+          path: ${{ runner.temp }}/hydra-linux-crash.json
+          if-no-files-found: error
