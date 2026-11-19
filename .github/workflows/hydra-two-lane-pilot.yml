@@ -1,0 +1,126 @@
+name: Hydra approved two-lane isolated pilot
+on:
+  pull_request:
+    types: [opened]
+    paths:
+      - ".github/workflows/hydra-two-lane-pilot.yml"
+permissions:
+  contents: read
+  actions: read
+env:
+  REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+jobs:
+  source:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-two-lane-pilot' && github.base_ref == 'work/hydra-cross-run-dispatch' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Run authorized pilot prerequisite
+        run: python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
+  reserve:
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      lanes: ${{ steps.claims.outputs.lanes }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - id: claims
+        name: Verify GitHub completion and commit two approved claims
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          from p3l_hydra_completion_rehearsal import CompletionRegistry
+          from p3l_hydra_fast_lane_gate import SCHEMA
+          from p3l_hydra_github_completion import verify_completion
+          from p3l_hydra_shared_dispatch import request, record_head
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run = int(os.environ["GITHUB_RUN_ID"])
+          head = os.environ["REVIEW_HEAD"]
+          if subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() != head:
+              raise SystemExit("pilot checkout mismatch")
+          def fetch(path):
+              return json.loads(subprocess.check_output(["gh", "api", path], timeout=15))
+          identities = [j["id"] for j in fetch(f"repos/{repo}/actions/runs/{run}/attempts/1/jobs")["jobs"]
+                        if j["name"] == "source"]
+          if len(identities) != 1:
+              raise SystemExit("missing exact prerequisite job")
+          suites = {"lane-selection": "test_p3l_hydra_fast_lane_gate.py",
+                    "completion-registry": "test_p3l_hydra_completion_rehearsal.py"}
+          def item(key, state, deps, path):
+              return {"key": key, "base_sha": head, "state": state, "deps": deps,
+                      "paths": [path], "evidence_sha": None}
+          plan = {"schema": SCHEMA, "head_sha": head, "max_parallel": 2,
+                  "tasks": [item("prerequisite", "running", [], "scripts/p3l_hydra_github_completion.py")]
+                  + [item(key, "pending", ["prerequisite"], "tests/" + suite) for key, suite in suites.items()]}
+          store = CompletionRegistry(Path(os.environ["RUNNER_TEMP"]) / "pilot.sqlite3", plan,
+                                     approved_tasks=tuple(suites))
+          event = {"task": "prerequisite", "head": head, "run_id": run, "job_id": identities[0]}
+          proof = verify_completion(event, repository=repo, workflow=".github/workflows/hydra-two-lane-pilot.yml",
+                                    job_name="source", required_step="Run authorized pilot prerequisite", fetch=fetch)
+          result = store.complete(event, lambda _: proof)
+          if result["reserved"] != list(suites) or store.complete(event, lambda _: proof)["reserved"]:
+              raise SystemExit("pilot reservations were not exactly once")
+          claims = []
+          for key in result["reserved"]:
+              if not store.consume(key, event, observed_head=head):
+                  raise SystemExit("pilot reservation was already consumed")
+              slot = hashlib.sha256(("hydra-two-lane-pilot-v1:" + key).encode()).hexdigest()
+              ref = "refs/heads/rehearsal/hydra-approved-pilot/" + slot
+              status, raw = request("POST", "refs", json.dumps({"ref": ref, "sha": head}).encode())
+              if status != 201 or record_head(raw, ref) != head:
+                  raise SystemExit("pilot slot not created; no dispatch")
+              claims.append({"key": key, "suite": suites[key], "ref": ref})
+          print(json.dumps({"head": head, "run": run, "source_proof_sha256": proof["sha256"],
+                            "reserved": result["reserved"], "claims": claims, "model_calls": 0}, sort_keys=True))
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as stream:
+              stream.write("lanes=" + json.dumps({"include": claims}, separators=(",", ":")) + "\n")
+          PY
+  lane:
+    needs: reserve
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.reserve.outputs.lanes) }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Run fixed approved suite in offline Docker
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          case "$SUITE" in
+            test_p3l_hydra_fast_lane_gate.py|test_p3l_hydra_completion_rehearsal.py) ;;
+            *) exit 2 ;;
+          esac
+          docker pull python:3.11-slim
+          root=$(mktemp -d)
+          chmod 755 "$root"
+          git archive HEAD scripts tests | tar -x -C "$root"
+          docker run --rm --pull=never --network=none --read-only --cap-drop=ALL \
+            --security-opt=no-new-privileges --user=65534:65534 --memory=256m --cpus=1 --pids-limit=64 \
+            --tmpfs=/tmp:rw,nosuid,nodev,size=16m --mount "type=bind,src=$root,dst=/work,readonly" -w /work \
+            python:3.11-slim python -B -m unittest discover -s tests -p "$SUITE" -v
