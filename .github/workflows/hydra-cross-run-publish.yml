@@ -1,0 +1,69 @@
+name: Hydra ledger cross-run publisher
+on:
+  pull_request:
+    types: [opened]
+    paths: [.github/workflows/hydra-cross-run-publish.yml, scripts/p3l_hydra_intake.py]
+permissions:
+  contents: read
+jobs:
+  first:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-cross-run-publish' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    outputs:
+      ledger_sha: ${{ steps.seal.outputs.ledger_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: verifier
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: adb1d414f94bedeef31487d9d1618094b781c967
+          path: candidate
+          persist-credentials: false
+      - name: Run verifier regressions
+        working-directory: verifier
+        run: python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
+      - name: Run the first worker and pause the ledger
+        working-directory: candidate
+        shell: bash
+        run: |
+          export PYTHONPATH="$GITHUB_WORKSPACE/verifier/scripts"
+          export APPROVAL="$RUNNER_TEMP/approval.json"
+          export LEDGER="$RUNNER_TEMP/hydra.sqlite"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from p3l_hydra_generation_rehearsal import make_plan
+          plan = make_plan('adb1d414f94bedeef31487d9d1618094b781c967')
+          plan['max_parallel'] = 2
+          plan['tasks'][2]['deps'] = ['source']
+          approval = dict(plan=plan, tasks=['first', 'second'], producer=dict(
+              task='source', workflow='.github/workflows/hydra-approved-push.yml',
+              job='source', step='Verify approved intake fixture',
+              branch='experiment/hydra-approved-push-intake', workflow_id=423641070))
+          Path(os.environ['APPROVAL']).write_text(json.dumps(approval))
+          PY
+          cmd=(python3 -B ../verifier/scripts/p3l_hydra_intake.py --approval "$APPROVAL" --ledger "$LEDGER")
+          origin=(--run 44497835184 --job 135469460234)
+          docker pull python:3.11-slim
+          "${cmd[@]}" poll | python3 -c 'import json,sys; assert json.load(sys.stdin)["reserved"] == ["first","second"]'
+          "${cmd[@]}" execute --task first "${origin[@]}" | tee "$RUNNER_TEMP/first.log"
+          grep -F '"executed": true' "$RUNNER_TEMP/first.log"
+          "${cmd[@]}" pause
+      - name: Seal and upload the paused ledger
+        id: seal
+        shell: bash
+        run: |
+          seal=$(sha256sum "$RUNNER_TEMP/hydra.sqlite" | cut -d ' ' -f 1)
+          echo "ledger_sha=$seal" >> "$GITHUB_OUTPUT"
+          sha256sum "$RUNNER_TEMP/hydra.sqlite" "$RUNNER_TEMP/approval.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: paused-hydra-ledger
+          path: |
+            ${{ runner.temp }}/approval.json
+            ${{ runner.temp }}/hydra.sqlite
+          if-no-files-found: error
