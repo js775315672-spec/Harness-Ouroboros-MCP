@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   admit:
-    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout' || github.head_ref == 'review/hydra-model-handoff' || github.head_ref == 'review/hydra-model-handoff-replay' || github.head_ref == 'review/hydra-selector-handoff' || github.head_ref == 'review/hydra-selector-handoff-replay' || github.head_ref == 'review/hydra-identity-handoff' || github.head_ref == 'review/hydra-identity-handoff-replay' || github.head_ref == 'review/hydra-memory-handoff' || github.head_ref == 'review/hydra-memory-handoff-replay' || github.head_ref == 'review/hydra-continuity-handoff' || github.head_ref == 'review/hydra-continuity-handoff-replay' || github.head_ref == 'review/hydra-order-handoff' || github.head_ref == 'review/hydra-order-handoff-replay' || github.head_ref == 'review/hydra-campaign-checkpoint-handoff' || github.head_ref == 'review/hydra-sequence-handoff' || github.head_ref == 'review/hydra-sequence-handoff-corrected')))
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1' && ((github.event_name != 'pull_request' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'review/hydra-standing' || github.head_ref == 'review/hydra-standing-replay' || github.head_ref == 'review/hydra-standing-rollout' || github.head_ref == 'review/hydra-model-handoff' || github.head_ref == 'review/hydra-model-handoff-replay' || github.head_ref == 'review/hydra-selector-handoff' || github.head_ref == 'review/hydra-selector-handoff-replay' || github.head_ref == 'review/hydra-identity-handoff' || github.head_ref == 'review/hydra-identity-handoff-replay' || github.head_ref == 'review/hydra-memory-handoff' || github.head_ref == 'review/hydra-memory-handoff-replay' || github.head_ref == 'review/hydra-continuity-handoff' || github.head_ref == 'review/hydra-continuity-handoff-replay' || github.head_ref == 'review/hydra-order-handoff' || github.head_ref == 'review/hydra-order-handoff-replay' || github.head_ref == 'review/hydra-campaign-checkpoint-handoff' || github.head_ref == 'review/hydra-sequence-handoff' || github.head_ref == 'review/hydra-sequence-handoff-corrected' || github.head_ref == 'review/hydra-artifact-handoff')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -67,6 +67,11 @@ jobs:
           docker_args=(-B -m unittest discover -s tests -p "$SUITE" -v)
           case "$SUITE" in
             test_p3l_hydra_fast_lane_gate.py|test_p3l_hydra_completion_rehearsal.py) ;;
+            grade-artifact)
+              test "$CANDIDATE_TARGET" = scripts/p3l_hydra_grade_artifact.py
+              printf '%s  %s\n' "$CANDIDATE_SHA" "$CANDIDATE_TARGET" | sha256sum -c -
+              docker_args=(-B -c 'import sys; sys.path.insert(0,"scripts"); from p3l_hydra_grade_artifact import select_grade; grade=dict(name="hydra-checkpoint-independent-grade",id=14562348341,expired=False,workflow_run={"id":44591454500},digest="sha256:9a3f6a9e367d44ec66d0d315f0656205e43bb34510ce0f7e451ea671a7ed52ea"); model={**grade,"name":"hydra-checkpoint-model","id":14564455082}; assert select_grade([model,grade],44591454500)==grade; assert select_grade([grade,model],44591454500)==grade; print("GRADE ARCHIVE 2/2")')
+              ;;
             campaign-checkpoint)
               test "$CANDIDATE_TARGET" = hydra/memory/campaign.json
               printf '%s  %s\n' "$CANDIDATE_SHA" "$CANDIDATE_TARGET" | sha256sum -c -
