@@ -1,0 +1,67 @@
+<|im_start|>system
+You are a Python unittest author. Return the single requested function as valid Python source.<|im_end|>
+<|im_start|>user
+Write one Python unittest method named test_concurrent_checkpoint_cas(self) for the existing ResumableQueueTests class. Return only that function beginning with def, without Markdown. Two writers must capture the same original integrity token and produce different valid next records. Coordinate bounded concurrent work so the second writer attempts to save after the first write completes. Assert the second save is rejected for stale generation, the first record stays on disk, and the lock is cleaned up. Keep the existing tests and queue implementation intact. Use two commits 'b'*40 and 'c'*40 with evidence(sha=...) and github_ok(sha) to build expected states via advance. Available imports inside the method are Barrier or Event from threading and ThreadPoolExecutor from concurrent.futures. Existing symbols include tempfile, Path and all fixtures below. Use helper names writer_first and writer_second. Do not mock save or load. Allowed calls: Barrier, Event, Path, TemporaryDirectory, ThreadPoolExecutor, advance, evidence, github_ok, load, new_queue, save, str. Allowed attributes: TemporaryDirectory, assertEqual, assertFalse, assertRaises, assertRaisesRegex, assertTrue, exists, result, set, submit, wait, with_name.
+
+Existing public fixtures:
+"""Resumable queue tests; all CI attestations are offline fixtures."""
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from resumable_task_queue import new_queue, advance, load, save, next_action, validate, seal
+
+COMMIT = "a" * 40
+REPO = "js775315672-spec/Harness-Ouroboros-MCP"
+TASKS = [{"id": "task-1", "description": "Create bounded parser"},
+         {"id": "task-2", "description": "Add regression tests"}]
+CI = f"https://github.com/{REPO}/actions/runs/123"
+
+
+def evidence(task="task-1", sha="b" * 40, fail=False):
+    return {"task_id": task, "source_changed": True, "commit": sha,
+            "ci_url": CI, "checks": {"harness": "pass", "ouroboros": "pass",
+             "regression": "fail" if fail else "pass", "secrets": "pass"}}
+
+
+def github_ok(sha):
+    return lambda _: {"status": "completed", "conclusion": "success",
+                      "html_url": CI, "repository": {"full_name": REPO},
+                      "event": "push", "head_sha": sha, "name": "Harness safety checks",
+                      "path": ".github/workflows/harness.yml"}
+
+
+
+Public save implementation:
+def save(path, record, expected_integrity=None):
+    validate(record)
+    path = Path(path).absolute()
+    if path.is_symlink():
+        raise ValueError("symlink checkpoint forbidden")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = path.with_name(path.name + ".lock")
+    lock_fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        if expected_integrity is None:
+            if path.exists():
+                raise ValueError("refusing to replace existing checkpoint")
+        elif load(path)["integrity"] != expected_integrity:
+            raise ValueError("stale checkpoint generation")
+        fd, temp = tempfile.mkstemp(prefix=".queue-", dir=path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(record, stream, sort_keys=True, ensure_ascii=False, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temp, path)
+        finally:
+            if os.path.exists(temp):
+                os.unlink(temp)
+    finally:
+        os.close(lock_fd)
+        os.unlink(lock)<|im_end|>
+<|im_start|>assistant
