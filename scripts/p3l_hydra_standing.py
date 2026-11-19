@@ -1,10 +1,12 @@
 """Reserve approved offline Hydra tasks in a create-only GitHub ref ledger."""
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import zipfile
 
 from p3l_hydra_fast_lane_gate import IDENT, SHA40, SHA64
 from p3l_hydra_github_completion import verify_completion
@@ -17,6 +19,20 @@ SUITES = {"fast-lane": "test_p3l_hydra_fast_lane_gate.py",
 
 def fetch(path):
     return json.loads(subprocess.check_output(["gh", "api", path], timeout=15))
+
+
+def verify_grade_archive(raw, artifact, receipt, grade):
+    if len(raw) > 256_000 or "sha256:" + hashlib.sha256(raw).hexdigest() != artifact["digest"]:
+        raise ValueError("independent grade ZIP digest differs")
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        members = archive.infolist()
+        if (len(members) != 1 or members[0].filename != "grade.json"
+                or members[0].file_size > 64_000):
+            raise ValueError("unexpected independent grade ZIP contents")
+        observed = json.loads(archive.read(members[0]))
+    expected = {"receipt": receipt, "grade": grade}
+    if json.dumps(observed, sort_keys=True) != json.dumps(expected, sort_keys=True):
+        raise ValueError("independent grade ZIP differs from ledger receipt")
 
 
 def model_result_proof(approval):
@@ -46,8 +62,12 @@ def model_result_proof(approval):
     artifact, = [item for item in result["artifacts"] if item["name"] == "hydra-checkpoint-independent-grade"]
     live = fetch(f"repos/{REPO}/actions/artifacts/{int(artifact['id'])}")
     if (live.get("name") != artifact["name"] or live.get("digest") != artifact["digest"]
-            or live.get("workflow_run", {}).get("id") != run):
+            or live.get("workflow_run", {}).get("id") != run or live.get("expired") is not False
+            or type(live.get("size_in_bytes")) is not int or not 0 < live["size_in_bytes"] <= 256_000):
         raise ValueError("independent grade artifact provenance differs")
+    raw = subprocess.check_output(["gh", "api", f"repos/{REPO}/actions/artifacts/{int(artifact['id'])}/zip"],
+                                  timeout=30)
+    verify_grade_archive(raw, artifact, receipt, grade)
     return proof, grade["candidate_sha256"]
 
 
@@ -55,6 +75,17 @@ def claim(approval, namespace):
     task = approval["id"]
     suite = SUITES[approval["suite"]]
     head = approval["head"]
+    key = hashlib.sha256(task.encode()).hexdigest()
+    ref = f"refs/heads/{namespace}/{key}"
+    read_ref = "/ref/" + ref.removeprefix("refs/")
+    existing, body = request("GET", read_ref)
+    if existing == 200:
+        if record_head(body, ref) != head:
+            raise ValueError("execution ledger conflict")
+        print(json.dumps({"task": task, "status": "already_spent", "ref": ref}))
+        return None
+    if existing != 404:
+        raise ValueError(f"execution ledger lookup failed ({existing})")
     candidate_sha = ""
     if approval["suite"] == "checkpoint-model-replay":
         proof, candidate_sha = model_result_proof(approval)
@@ -64,8 +95,6 @@ def claim(approval, namespace):
                                   job_name="source", required_step="Verify approved intake fixture",
                                   fetch=fetch, trusted_push=(approval["branch"], head,
                                                              approval["workflow_id"]))
-    key = hashlib.sha256(task.encode()).hexdigest()
-    ref = f"refs/heads/{namespace}/{key}"
     status, body = request("POST", "refs", json.dumps({"ref": ref, "sha": head}).encode())
     if status in (409, 422):
         confirmed, body = request("GET", "ref/" + ref.removeprefix("refs/"))
