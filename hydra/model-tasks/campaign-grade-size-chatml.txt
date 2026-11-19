@@ -1,0 +1,5 @@
+<|im_start|>system
+Return one Python expression only. No Markdown.<|im_end|>
+<|im_start|>user
+The variable size is an integer number of bytes. Return a rejection condition that is true for sizes outside the inclusive range 1 to 256000. Use not and a chained comparison in the form 0 < size <= upper_bound. Use the numeric upper bound.<|im_end|>
+<|im_start|>assistant
