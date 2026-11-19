@@ -1,0 +1,5 @@
+<|im_start|>system
+Return only one Python expression. No Markdown.<|im_end|>
+<|im_start|>user
+A JSON receipt has a sequence field. Return the condition that is true when row['sequence'] is not exactly an int. Reject bool even though it subclasses int. Use identity comparison and type().<|im_end|>
+<|im_start|>assistant
