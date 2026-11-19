@@ -105,12 +105,19 @@ def verify(root, proposal, *, checkpoint_attestation=False):
     base = CANDIDATE_COMMIT
     method, anchor, replacement = METHOD, STALE_CHECK, b"elif False:"
     extra_calls = ()
+    extra_mutations = []
     if checkpoint_attestation:
         base = "bb1a446473dfcd150c5161461c14a9420835d60b"
         method = "test_checkpoint_rejects_wrong_attestation"
         anchor = b'data.get("name") != "Harness safety checks"'
         replacement = b"False"
         extra_calls = ("dict",)
+        advance_anchor = b'    event = {"seq": record["generation"] + 1,'
+        save_anchor = b"def save(path, record, expected_integrity=None):\n"
+        extra_mutations = [
+            ("no_advance", advance_anchor, b"    if passed:\n        return record\n" + advance_anchor),
+            ("no_persist", save_anchor, save_anchor + b"    if expected_integrity is not None:\n        return\n"),
+        ]
     if git(root, "rev-parse", "HEAD").decode().strip() != base:
         raise ValueError("W08 requires the exact reviewed checkout")
     archive = git(root, "archive", "--format=zip", base, "scripts", "tests")
@@ -127,8 +134,6 @@ def verify(root, proposal, *, checkpoint_attestation=False):
         target.write_bytes(candidate)
         queue = root / QUEUE
         original = queue.read_bytes()
-        if original.count(anchor) != 1:
-            raise ValueError("pinned mutation anchor changed")
 
         def run(args):
             command = _docker_command(root, "python:3.11-slim", args)
@@ -138,20 +143,26 @@ def verify(root, proposal, *, checkpoint_attestation=False):
         if (clean.returncode != 0 or not re.search(r"(?m)^Ran 7 tests? ", clean.stderr)
                 or not re.search(rf"(?m)^{method} .* \.\.\. ok$", clean.stderr)):
             raise ValueError("candidate must pass all seven tests in Docker")
-        mutant = original.replace(anchor, replacement)
-        queue.write_bytes(mutant)
-        altered = run(["-c", "import sys,unittest;sys.path.insert(0,'tests');unittest.main(module=None)",
-                       "-v", f"test_resumable_task_queue.ResumableQueueTests.{method}"])
-        if (altered.returncode != 1 or not re.search(r"(?m)^Ran 1 test ", altered.stderr)
-                or not re.search(rf"(?m)^FAIL: {method} ", altered.stderr)
-                or "FAILED (failures=1)" not in altered.stderr):
-            raise ValueError("the proposed test must fail by assertion on the selected mutant")
+        digests = {}
+        for name, old, new in [("wrong_evidence", anchor, replacement), *extra_mutations]:
+            if original.count(old) != 1:
+                raise ValueError("pinned mutation anchor changed")
+            mutant = original.replace(old, new)
+            queue.write_bytes(mutant)
+            altered = run(["-c", "import sys,unittest;sys.path.insert(0,'tests');unittest.main(module=None)",
+                           "-v", f"test_resumable_task_queue.ResumableQueueTests.{method}"])
+            if (altered.returncode != 1 or not re.search(r"(?m)^Ran 1 test ", altered.stderr)
+                    or not re.search(rf"(?m)^FAIL: {method} ", altered.stderr)
+                    or "FAILED (failures=1)" not in altered.stderr):
+                raise ValueError(f"the proposed test must fail by assertion on the selected mutant: {name}")
+            digests[name] = hashlib.sha256(mutant).hexdigest()
     return {"base_sha": base, "target": TARGET.as_posix(),
             "proposal_sha256": hashlib.sha256(proposal).hexdigest(),
             "normalized_proposal_sha256": hashlib.sha256(normalized).hexdigest(),
             "candidate_sha256": hashlib.sha256(candidate).hexdigest(),
-            "mutant_sha256": hashlib.sha256(mutant).hexdigest(),
-            "normal_test_count": 7, "mutant_assertion_failures": 1}
+            "mutant_sha256": digests["wrong_evidence"],
+            **({"mutants": digests} if checkpoint_attestation else {}),
+            "normal_test_count": 7, "mutant_assertion_failures": len(digests)}
 
 
 def main():

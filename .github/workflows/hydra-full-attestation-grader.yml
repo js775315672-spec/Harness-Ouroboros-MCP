@@ -1,0 +1,50 @@
+name: Hydra full attestation grader review
+on:
+  pull_request:
+    paths: [.github/workflows/hydra-full-attestation-grader.yml, scripts/p3l_w08_verify_test.py, hydra/model-tasks/checkpoint-attestation-prompt.txt]
+permissions:
+  contents: read
+jobs:
+  rehearse:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-full-attestation-grader'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: review
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: bb1a446473dfcd150c5161461c14a9420835d60b
+          path: candidate
+          persist-credentials: false
+      - name: Rehearse verifier with coordinator-authored smoke cases
+        shell: bash
+        run: |
+          sha256sum review/hydra/model-tasks/checkpoint-attestation-prompt.txt
+          docker pull python:3.11-slim
+          cat > "$RUNNER_TEMP/smoke.py" <<'PY'
+          def test_checkpoint_rejects_wrong_attestation(self):
+              def writer_fixture(url):
+                  return {"status": "completed", "conclusion": "success", "html_url": CI, "repository": {"full_name": REPO}, "event": "push", "head_sha": "b" * 40, "name": "Unapproved workflow", "path": ".github/workflows/harness.yml"}
+              with tempfile.TemporaryDirectory() as directory:
+                  path = Path(directory) / "checkpoint.json"
+                  state = new_queue(TASKS, REPO, COMMIT)
+                  save(path, state)
+                  old = load(path)
+                  with self.assertRaises(ValueError):
+                      advance(old, evidence(), fetch=writer_fixture)
+                  self.assertEqual(load(path), state)
+                  next_state = advance(old, evidence(), fetch=github_ok("b" * 40))
+                  save(path, next_state, expected_integrity=old["integrity"])
+                  persisted = load(path)
+                  self.assertEqual(persisted["generation"], 1)
+                  self.assertEqual(persisted["index"], 1)
+                  self.assertTrue(persisted["events"][0]["attested"])
+          PY
+          python3 -B review/scripts/p3l_w08_verify_test.py --checkout candidate --proposal "$RUNNER_TEMP/smoke.py" --checkpoint-attestation
+          printf 'def test_checkpoint_rejects_wrong_attestation(self):\n    pass\n' > "$RUNNER_TEMP/noop.py"
+          if python3 -B review/scripts/p3l_w08_verify_test.py --checkout candidate --proposal "$RUNNER_TEMP/noop.py" --checkpoint-attestation > "$RUNNER_TEMP/rejected.log" 2>&1; then exit 1; fi
+          grep -F 'must fail by assertion on the selected mutant' "$RUNNER_TEMP/rejected.log"
