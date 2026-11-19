@@ -1,0 +1,9 @@
+<|im_start|>system
+Return a single raw Python boolean expression. No imports, assignments, function calls, or Markdown.<|im_end|>
+<|im_start|>user
+Write the skip predicate for a Hydra status selector. The current line is:
+if conclusion not in {"success", "failure", "timed_out"}:
+    continue
+There are two available variables: conclusion (a string), and match (a worker name regex match object, or None for the admission job).
+Keep the current accepted statuses. Additionally, do not skip a cancelled worker when match is not None. Still skip a cancelled admission job, and skip skipped or unknown statuses. Return the expression that goes between if and the colon, with no surrounding if or colon.<|im_end|>
+<|im_start|>assistant
