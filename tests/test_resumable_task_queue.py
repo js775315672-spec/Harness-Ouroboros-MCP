@@ -113,5 +113,23 @@ class ResumableQueueTests(unittest.TestCase):
                 save(link, new_queue(TASKS, REPO, COMMIT))
 
 
+    def test_checkpoint_rejects_wrong_attestation(self):
+        def writer_fixture(url):
+            return {"status": "completed", "conclusion": "success", "html_url": CI, "repository": {"full_name": REPO}, "event": "push", "head_sha": "b" * 40, "name": "Unapproved workflow", "path": ".github/workflows/harness.yml"}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "checkpoint.json"
+            initial = new_queue(TASKS, REPO, COMMIT)
+            save(path, initial)
+            old = load(path)
+            with self.assertRaises(ValueError):
+                advance(old, evidence(), fetch=writer_fixture)
+            self.assertEqual(load(path), initial)
+            advanced = advance(old, evidence(), fetch=github_ok("b" * 40))
+            save(path, advanced, expected_integrity=old["integrity"])
+            restored = load(path)
+            self.assertEqual(restored["generation"], 1)
+            self.assertEqual(restored["index"], 1)
+            self.assertTrue(restored["events"][0]["attested"])
+
 if __name__ == "__main__":
     unittest.main()
