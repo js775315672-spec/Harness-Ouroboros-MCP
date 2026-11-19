@@ -1,0 +1,45 @@
+name: Hydra cycle evidence memory review
+on:
+  pull_request:
+    paths: [.github/workflows/hydra-cycle-memory-review.yml, hydra/memory/history.json, scripts/p3l_hydra_cycle_memory.py]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-cycle-memory'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify reusable history against real runs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import copy, json, os, subprocess
+          from pathlib import Path
+          from p3l_hydra_cycle_memory import select
+          h=json.loads(Path("hydra/memory/history.json").read_bytes())
+          assert len(select(h, "")) == 3
+          assert len(select(h, "테스트")) >= 1
+          tampered=copy.deepcopy(h)
+          tampered["cycles"][0]["operational_tests"]=0
+          try:
+              select(tampered,"")
+          except ValueError:
+              pass
+          else:
+              raise AssertionError("unverified record was accepted")
+          for row in h["cycles"]:
+              for key in ("model", "operation"):
+                  path=f'repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{row[key]}'
+                  run=json.loads(subprocess.check_output(["gh","api",path],timeout=15))
+                  assert run["head_sha"]==row[key+"_head"] and run["status"]=="completed" and run["conclusion"]=="success"
+          print("HISTORICAL RUN EVIDENCE 6/6")
+          print("MEMORY CONTRACT 3/3")
+          PY
