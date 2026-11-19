@@ -1,11 +1,13 @@
 """Admit a verified completion to an operator-approved Hydra ledger."""
 import argparse
 import json
+import subprocess
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from p3l_hydra_completion_rehearsal import CompletionRegistry
+from p3l_hydra_generation_rehearsal import SUITES, run_offline
 from p3l_hydra_github_completion import verify_completion
 
 REPOSITORY = "js775315672-spec/Harness-Ouroboros-MCP"
@@ -25,6 +27,10 @@ def main():
     admit = commands.add_parser("admit")
     admit.add_argument("--run", type=int, required=True)
     admit.add_argument("--job", type=int, required=True)
+    execute = commands.add_parser("execute")
+    execute.add_argument("--task", choices=sorted(SUITES), required=True)
+    execute.add_argument("--run", type=int, required=True)
+    execute.add_argument("--job", type=int, required=True)
     commands.add_parser("poll")
     delivery = commands.add_parser("workflow-run")
     delivery.add_argument("--event", type=Path, required=True)
@@ -41,6 +47,16 @@ def main():
         paused = args.command == "pause"
         registry.set_paused(paused)
         print(json.dumps({"paused": paused}))
+        return
+
+    if args.command == "execute":
+        head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, timeout=10).strip()
+        origin = dict(task=producer["task"], head=plan["head_sha"], run_id=args.run, job_id=args.job)
+        if not registry.consume(args.task, origin, observed_head=head):
+            print(json.dumps({"task": args.task, "executed": False, "reason": "slot already spent"}))
+            return
+        run_offline(SUITES[args.task])
+        print(json.dumps({"task": args.task, "executed": True, "head": head}))
         return
 
     if args.command in {"poll", "workflow-run"}:

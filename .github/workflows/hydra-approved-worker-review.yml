@@ -1,0 +1,61 @@
+name: Hydra approved worker review
+on:
+  pull_request:
+    paths: [.github/workflows/hydra-approved-worker-review.yml, scripts/p3l_hydra_intake.py]
+permissions:
+  contents: read
+jobs:
+  execute:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/hydra-approved-worker'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: verifier
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: adb1d414f94bedeef31487d9d1618094b781c967
+          path: candidate
+          persist-credentials: false
+      - name: Run verifier regressions
+        working-directory: verifier
+        run: python3 -B -m unittest discover -s tests -p 'test_p3l_hydra*.py' -v
+      - name: Verify two approved workers and replay resistance
+        working-directory: candidate
+        shell: bash
+        run: |
+          export PYTHONPATH="$GITHUB_WORKSPACE/verifier/scripts"
+          export APPROVAL="$RUNNER_TEMP/approval.json"
+          export LEDGER="$RUNNER_TEMP/hydra.sqlite"
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from p3l_hydra_generation_rehearsal import make_plan
+          plan = make_plan('adb1d414f94bedeef31487d9d1618094b781c967')
+          plan['max_parallel'] = 2
+          plan['tasks'][2]['deps'] = ['source']
+          approval = dict(plan=plan, tasks=['first', 'second'], producer=dict(
+              task='source', workflow='.github/workflows/hydra-approved-push.yml',
+              job='source', step='Verify approved intake fixture',
+              branch='experiment/hydra-approved-push-intake', workflow_id=423641070))
+          Path(os.environ['APPROVAL']).write_text(json.dumps(approval))
+          PY
+          cmd=(python3 -B ../verifier/scripts/p3l_hydra_intake.py --approval "$APPROVAL" --ledger "$LEDGER")
+          origin=(--run 44497835184 --job 135469460234)
+          docker pull python:3.11-slim
+          "${cmd[@]}" poll | python3 -c 'import json,sys; assert json.load(sys.stdin)["reserved"] == ["first","second"]'
+          "${cmd[@]}" execute --task first "${origin[@]}" | tee "$RUNNER_TEMP/first.log"
+          grep -F '"executed": true' "$RUNNER_TEMP/first.log"
+          "${cmd[@]}" pause
+          if "${cmd[@]}" execute --task second "${origin[@]}" > "$RUNNER_TEMP/paused.log" 2>&1; then exit 1; fi
+          grep -F 'Hydra dispatch is paused' "$RUNNER_TEMP/paused.log"
+          "${cmd[@]}" resume
+          "${cmd[@]}" execute --task second "${origin[@]}" | tee "$RUNNER_TEMP/second.log"
+          grep -F '"executed": true' "$RUNNER_TEMP/second.log"
+          for task in first second; do
+            "${cmd[@]}" execute --task "$task" "${origin[@]}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d["executed"] and d["reason"]=="slot already spent"'
+          done
+          echo 'WORKER REPLAY BLOCKED 2/2'
