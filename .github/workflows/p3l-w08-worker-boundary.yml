@@ -1,0 +1,234 @@
+name: W08 worker boundary rehearsal
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - ".github/workflows/p3l-w08-worker-boundary.yml"
+      - "scripts/p3l_w08_model_worker.py"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  preflight:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/p3l-w08-worker-boundary' && github.run_attempt == '1'
+    uses: ./.github/workflows/p3l-w08-w07-preflight.yml
+  coordinator:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    outputs:
+      grant_sha: ${{ steps.claim.outputs.grant_sha }}
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - id: claim
+        name: Record a rehearsal budget in the create-only GitHub store
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from p3l_w04_attempt_registry import AttemptInput
+          from p3l_w08_evidence_handoff import encode, sha
+          import p3l_w08_model_worker as worker
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          head = os.environ["REVIEW_HEAD"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          config = sha(b"W08 worker receipt integration rehearsal")
+          binary_sha = sha(b"synthetic binary; no model loaded")
+          inputs = AttemptInput("w08-checkpoint-cas", worker.CONTRACT_SHA, worker.CANDIDATE_COMMIT, head,
+                                worker.QWEN_REVISION, worker.QWEN_WEIGHTS_SHA256, config, worker.PROMPT_SHA256)
+          from p3l_w04_attempt_registry import AttemptBlocked
+          from p3l_w04_github_claim import github
+          request = lambda *args: github(os.environ["GH_TOKEN"], *args)
+          grant = worker.claim_budget(inputs, run_id, binary_sha, request, approved_head=head, rehearsal=True)
+          try:
+              worker.claim_budget(inputs, run_id, binary_sha, request, approved_head=head, rehearsal=True)
+          except AttemptBlocked:
+              print("duplicate shared rehearsal claim blocked")
+          else:
+              raise SystemExit("duplicate shared claim was accepted")
+          (temp / "w08-grant.json").write_bytes(grant)
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as out:
+              out.write("grant_sha=" + sha(grant) + "\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w08-worker-grant
+          path: ${{ runner.temp }}/w08-grant.json
+          if-no-files-found: error
+          retention-days: 7
+  worker:
+    needs: [preflight, coordinator]
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_GRANT: ${{ needs.coordinator.outputs.grant_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-worker-grant
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-w07-preflight-receipt
+          path: ${{ runner.temp }}
+      - name: Invoke one coordinator fixture after verifying the grant
+        run: |
+          cat > "$RUNNER_TEMP/fixture.py" <<'PY'
+          def test_concurrent_checkpoint_cas(self):
+              from concurrent.futures import ThreadPoolExecutor
+              from threading import Barrier, Event
+              with tempfile.TemporaryDirectory() as directory:
+                  path = Path(directory) / "queue.json"
+                  base = new_queue(TASKS, REPO, COMMIT)
+                  save(path, base)
+                  first = advance(base, evidence(sha="b"*40), fetch=github_ok("b"*40))
+                  second = advance(base, evidence(sha="c"*40), fetch=github_ok("c"*40))
+                  ready = Barrier(2)
+                  committed = Event()
+                  def writer_first():
+                      ready.wait(timeout=5)
+                      save(path, first, expected_integrity=base["integrity"])
+                      committed.set()
+                  def writer_second():
+                      ready.wait(timeout=5)
+                      self.assertTrue(committed.wait(timeout=5))
+                      save(path, second, expected_integrity=base["integrity"])
+                  with ThreadPoolExecutor(2) as pool:
+                      a = pool.submit(writer_first)
+                      b = pool.submit(writer_second)
+                      a.result(timeout=10)
+                      with self.assertRaisesRegex(ValueError, "stale checkpoint generation"):
+                          b.result(timeout=10)
+                  self.assertEqual(load(path), first)
+                  self.assertFalse(path.with_name("queue.json.lock").exists())
+          PY
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from p3l_w04_attempt_registry import AttemptInput
+          from p3l_w08_evidence_handoff import encode, sha
+          import p3l_w08_model_worker as worker
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          head = os.environ["REVIEW_HEAD"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          config = sha(b"W08 worker receipt integration rehearsal")
+          binary_sha = sha(b"synthetic binary; no model loaded")
+          inputs = AttemptInput("w08-checkpoint-cas", worker.CONTRACT_SHA, worker.CANDIDATE_COMMIT, head,
+                                worker.QWEN_REVISION, worker.QWEN_WEIGHTS_SHA256, config, worker.PROMPT_SHA256)
+          import json
+          from unittest.mock import Mock
+          from p3l_w04_attempt_registry import AttemptBlocked, AttemptRegistry
+          prompt = Path("docs/p3l/W08-public-chatml.txt").read_bytes()
+          grant = (temp / "w08-grant.json").read_bytes()
+          preflight = json.loads((temp / "w08-preflight.json").read_bytes())
+          invoke = Mock(return_value=(temp / "fixture.py").read_bytes())
+          def execute():
+              return worker.execute(AttemptRegistry(temp / "worker.db"), Path.cwd(), inputs, run_id,
+                                    prompt, preflight, grant, os.environ["EXPECTED_GRANT"], binary_sha,
+                                    invoke, rehearsal=True)
+          proposal, receipt = execute()
+          try:
+              execute()
+          except AttemptBlocked:
+              print("duplicate worker invocation blocked")
+          else:
+              raise SystemExit("duplicate local invocation was accepted")
+          invoke.assert_called_once_with(prompt)
+          (temp / "w08-proposal.py").write_bytes(proposal)
+          (temp / "w08-model-receipt.json").write_bytes(encode(receipt))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w08-worker-output
+          path: |
+            ${{ runner.temp }}/w08-proposal.py
+            ${{ runner.temp }}/w08-model-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+  independent:
+    needs: [coordinator, worker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_GRANT: ${{ needs.coordinator.outputs.grant_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: candidate
+          ref: '8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc'
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: harness
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Reconstruct and verify reviewed candidate
+        working-directory: candidate
+        run: |
+          test "$(git rev-parse 'HEAD^{tree}')" = '0863df1be5c336415f8ed2a5fcd7d15e31ffea16'
+          exact=$(printf '%s' 'dHJlZSAwODYzZGYxYmU1YzMzNjQxNWY4ZWQyYTVmY2Q3ZDE1ZTMxZmZlYTE2CnBhcmVudCBmMmM4YzVkMzdjN2Y0ZmU3OWE2NThjYzI1YTZiMGVjMTI2OTcyNTc4CmF1dGhvciBQM0wgVzA3IHJldmlldyA8dzA3QGV4YW1wbGUuaW52YWxpZD4gMTc5NDk2MDAwMCArMDAwMApjb21taXR0ZXIgUDNMIFcwNyByZXZpZXcgPHcwN0BleGFtcGxlLmludmFsaWQ+IDE3OTQ5NjAwMDAgKzAwMDAKClcwNyBkcnkgcnVuOiBtb2RlbC1nZW5lcmF0ZWQgdmFsaWRhdGUK' | base64 -d | git hash-object -t commit -w --stdin)
+          test "$exact" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          git -c advice.detachedHead=false checkout --detach "$exact"
+          test "$(git rev-parse HEAD)" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          sha256sum tests/test_resumable_task_queue.py
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-worker-grant
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-worker-output
+          path: ${{ runner.temp }}
+      - name: Verify the exact worker output in isolated Docker
+        run: |
+          docker pull python:3.11-slim
+          PYTHONPATH=harness/scripts python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from p3l_w04_attempt_registry import AttemptInput
+          from p3l_w08_evidence_handoff import encode, sha
+          import p3l_w08_model_worker as worker
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          head = os.environ["REVIEW_HEAD"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          config = sha(b"W08 worker receipt integration rehearsal")
+          binary_sha = sha(b"synthetic binary; no model loaded")
+          inputs = AttemptInput("w08-checkpoint-cas", worker.CONTRACT_SHA, worker.CANDIDATE_COMMIT, head,
+                                worker.QWEN_REVISION, worker.QWEN_WEIGHTS_SHA256, config, worker.PROMPT_SHA256)
+          import json
+          from p3l_w08_evidence_handoff import read_bounded
+          from p3l_w08_verify_test import verify
+          proposal = read_bounded(temp / "w08-proposal.py", 6000)
+          grant = read_bounded(temp / "w08-grant.json", 2000)
+          receipt = worker.validate_model_receipt(
+              read_bounded(temp / "w08-model-receipt.json", 3000), proposal, inputs,
+              run_id, binary_sha, grant, os.environ["EXPECTED_GRANT"], rehearsal=True)
+          result = {"receipt": receipt, "grade": verify(Path("candidate"), proposal)}
+          (temp / "w08-grade.json").write_bytes(encode(result))
+          print(json.dumps(result, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w08-worker-grade
+          path: ${{ runner.temp }}/w08-grade.json
+          if-no-files-found: error
+          retention-days: 7
