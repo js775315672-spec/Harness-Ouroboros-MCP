@@ -30,11 +30,11 @@ def claim_budget(inputs, run_id, binary_sha, request, *, approved_head, rehearsa
     if (type(run_id) is not int or run_id < 1 or type(binary_sha) is not str
             or re.fullmatch(r"[0-9a-f]{64}", binary_sha) is None):
         raise AttemptBlocked("invalid W08 coordinator execution identity")
-    prefix = "refs/heads/rehearsal/w08-model/" if rehearsal else "refs/heads/p3l-w08/revised-attempt-2/"
+    prefix = "refs/heads/rehearsal/w08-model/" if rehearsal else "refs/heads/p3l-w08/revised-attempt-3/"
     if not rehearsal:
-        original_ref = "refs/heads/p3l-w08/started/" + inputs.semantic_key
+        original_ref = "refs/heads/p3l-w08/revised-attempt-2/" + inputs.semantic_key
         status, body = request("GET", "/ref/" + original_ref.removeprefix("refs/"))
-        if status != 200 or verified_ref(body, original_ref) != "d348a9686f0c78283f0812cab6a5318bbe29976b":
+        if status != 200 or verified_ref(body, original_ref) != "b4ed2895a17e42ddc68e5e7d80199cfcb96e89a0":
             raise AttemptBlocked("original W08 budget record does not match the rejected attempt")
     ref = prefix + inputs.semantic_key
     created, _, _ = create_once(ref, inputs.head_sha, request)
