@@ -1,0 +1,5 @@
+<|im_start|>system
+Return exactly one Python expression. No markdown.<|im_end|>
+<|im_start|>user
+model is a dictionary with conclusion. regrade_verified is a boolean. Write a rejection condition that is true exactly if model['conclusion'] is not 'success' and regrade_verified is false. Use dictionary indexing and and not.<|im_end|>
+<|im_start|>assistant
