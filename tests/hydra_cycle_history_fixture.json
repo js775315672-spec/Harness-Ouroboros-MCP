@@ -1,0 +1,243 @@
+{
+  "schema": "hydra-verified-history-v1",
+  "cycles": [
+    {
+      "cycle": 1,
+      "problem": "체크포인트에서 잘못된 Actions 워크플로 성공 증거를 거부하고 정상 증거만 저장하는 테스트 보강",
+      "change": "tests/test_resumable_task_queue.py의 모델 작성 메서드 한 개",
+      "pr": 150,
+      "candidate": "68996cf2c1c5df3f7682fcb17822564a978f956c",
+      "model": 44515315325,
+      "operation": 44518504981,
+      "failures": [
+        44512929786
+      ],
+      "independent": {
+        "normal_passed": 7,
+        "mutants_detected": 3
+      },
+      "operational_tests": 7,
+      "model_artifact": "sha256:02e4ad4082fdc0e57cca4f7054ef605ca8cdb80b2808af2d8ad6cdaf2bce9dba",
+      "lessons": [
+        "공개 코드 틀에 변수 초기화와 증거 필드 고정",
+        "검증 원본과 코디네이터 준비 코드를 분리"
+      ],
+      "timing_seconds": {
+        "model_workflow": 333,
+        "execution_preparation": 206,
+        "worker": 89,
+        "independent": 14,
+        "production": 22
+      },
+      "model_head": "d27240ca418ae38cdb01cd04540032ab46f49a26",
+      "operation_head": "1896c979640e64667dd1e98eedae2aaff5f9ce9d",
+      "failure_evidence": [
+        {
+          "id": 44512929786,
+          "conclusion": "failure",
+          "head": "a557e0cb9fbd01343277e53ad18e033fbaa748e8"
+        }
+      ],
+      "model_jobs": [
+        {
+          "id": 135529727032,
+          "name": "coordinator",
+          "conclusion": "success",
+          "started_at": "2026-11-19T11:29:48Z",
+          "completed_at": "2026-11-19T11:29:55Z"
+        },
+        {
+          "id": 135529805134,
+          "name": "pinned_llama_cpu_build",
+          "conclusion": "success",
+          "started_at": "2026-11-19T11:29:58Z",
+          "completed_at": "2026-11-19T11:33:24Z"
+        },
+        {
+          "id": 135531651416,
+          "name": "worker",
+          "conclusion": "success",
+          "started_at": "2026-11-19T11:33:32Z",
+          "completed_at": "2026-11-19T11:35:01Z"
+        },
+        {
+          "id": 135532437715,
+          "name": "independent",
+          "conclusion": "success",
+          "started_at": "2026-11-19T11:35:04Z",
+          "completed_at": "2026-11-19T11:35:18Z"
+        }
+      ],
+      "generated_code_merged": false,
+      "rollback": {
+        "production_observed": false,
+        "shared_rehearsal_run": 44499999844
+      },
+      "performance_comparable": false
+    },
+    {
+      "cycle": 2,
+      "problem": "취소된 승인 작업자가 운영 과제 선정에서 누락",
+      "change": "scripts/p3l_hydra_next_task.py의 기존 분류식에 모델 작성 예외 조건 결합",
+      "pr": 166,
+      "candidate": "b7cd3806088a65cead03c78b12dc800ce6a60f98",
+      "model": 44549065362,
+      "operation": 44549928615,
+      "failures": [
+        44527038293,
+        44530610744,
+        44548247035
+      ],
+      "independent": {
+        "normal_passed": 8
+      },
+      "operational_tests": 2,
+      "lessons": [
+        "기존 조건 전체 대신 모델 작성 범위를 예외식으로 제한",
+        "고정 실행기 재사용",
+        "제안 SHA를 호출 슬롯에 결합"
+      ],
+      "timing_seconds": {
+        "model_workflow": 90,
+        "execution_preparation": 5,
+        "worker": 53,
+        "independent": 11,
+        "production": 22
+      },
+      "model_head": "31b29f930bbe25a863567c84fef779838fabb632",
+      "operation_head": "5160e12527ff58f644ec5bd91cd3efdc82acc628",
+      "failure_evidence": [
+        {
+          "id": 44527038293,
+          "conclusion": "failure",
+          "head": "12a384f5c6f21588cd55413957f693eacab2ec66"
+        },
+        {
+          "id": 44530610744,
+          "conclusion": "failure",
+          "head": "ee1cf8af512d8fc11204bb0b4f3085dcc2097b96"
+        },
+        {
+          "id": 44548247035,
+          "conclusion": "failure",
+          "head": "dad020621f8f9aee7d7dd7d51184553e0108c409"
+        }
+      ],
+      "model_jobs": [
+        {
+          "id": 135647510609,
+          "name": "coordinator",
+          "conclusion": "success",
+          "started_at": "2026-11-19T14:55:48Z",
+          "completed_at": "2026-11-19T14:55:57Z"
+        },
+        {
+          "id": 135647629895,
+          "name": "pinned_llama_cpu_build",
+          "conclusion": "success",
+          "started_at": "2026-11-19T14:56:00Z",
+          "completed_at": "2026-11-19T14:56:05Z"
+        },
+        {
+          "id": 135647633774,
+          "name": "rehearsal_grader",
+          "conclusion": "skipped",
+          "started_at": "2026-11-19T14:55:57Z",
+          "completed_at": "2026-11-19T14:55:57Z"
+        },
+        {
+          "id": 135647721828,
+          "name": "worker",
+          "conclusion": "success",
+          "started_at": "2026-11-19T14:56:08Z",
+          "completed_at": "2026-11-19T14:57:01Z"
+        },
+        {
+          "id": 135648326515,
+          "name": "independent",
+          "conclusion": "success",
+          "started_at": "2026-11-19T14:57:04Z",
+          "completed_at": "2026-11-19T14:57:15Z"
+        }
+      ],
+      "generated_code_merged": false,
+      "rollback": {
+        "production_observed": false,
+        "shared_rehearsal_run": 44499999844
+      },
+      "performance_comparable": false
+    },
+    {
+      "cycle": 3,
+      "problem": "동일 커밋의 같은 실패가 매번 다른 과제 ID를 생성",
+      "change": "scripts/p3l_hydra_next_task.py의 ID 입력을 커밋과 작업 이름으로 변경",
+      "pr": 172,
+      "candidate": "3ad1af369896ed82f1904e2ea98d7ae041d27f9c",
+      "model": 44551642849,
+      "operation": 44552531443,
+      "failures": [
+        44551180471
+      ],
+      "independent": {
+        "normal_passed": 6
+      },
+      "operational_tests": 2,
+      "lessons": [
+        "반복 증거와 안정적 과제 ID 분리",
+        "후속 완료 이벤트에서 문제를 다시 조회"
+      ],
+      "timing_seconds": {
+        "model_workflow": 127,
+        "execution_preparation": 7,
+        "worker": 83,
+        "independent": 14,
+        "production": 25
+      },
+      "model_head": "e586e5d2a8d511409c1bcbb163e17bde9f261296",
+      "operation_head": "bb99c7d97cec311f2ba6016cc80649a2b2dd84fe",
+      "failure_evidence": [
+        {
+          "id": 44551180471,
+          "conclusion": "failure",
+          "head": "62bb4db2df8a4a3404ca5d10402f7d54e17ba47b"
+        }
+      ],
+      "model_jobs": [
+        {
+          "id": 135656657821,
+          "name": "coordinator",
+          "conclusion": "success",
+          "started_at": "2026-11-19T15:09:43Z",
+          "completed_at": "2026-11-19T15:09:52Z"
+        },
+        {
+          "id": 135656795431,
+          "name": "pinned_llama_cpu_build",
+          "conclusion": "success",
+          "started_at": "2026-11-19T15:09:55Z",
+          "completed_at": "2026-11-19T15:10:02Z"
+        },
+        {
+          "id": 135656896634,
+          "name": "worker",
+          "conclusion": "success",
+          "started_at": "2026-11-19T15:10:05Z",
+          "completed_at": "2026-11-19T15:11:28Z"
+        },
+        {
+          "id": 135657850156,
+          "name": "independent",
+          "conclusion": "success",
+          "started_at": "2026-11-19T15:11:31Z",
+          "completed_at": "2026-11-19T15:11:45Z"
+        }
+      ],
+      "generated_code_merged": false,
+      "rollback": {
+        "production_observed": false,
+        "shared_rehearsal_run": 44499999844
+      },
+      "performance_comparable": false
+    }
+  ]
+}
