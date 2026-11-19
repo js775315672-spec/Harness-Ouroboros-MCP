@@ -1,0 +1,58 @@
+"""Verify completed campaign receipts before preparing the next sequence."""
+import hashlib
+import json
+import os
+from pathlib import Path
+
+from p3l_hydra_next_task import REPO, fetch
+
+LIMIT = 9
+WORKFLOW = 423685918
+
+
+def digest(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def next_sequence(checkpoint, read):
+    if (checkpoint.get("schema") != "hydra-nine-cycle-checkpoint-v1"
+            or checkpoint.get("campaign") != "hydra-nine-cycle" or checkpoint.get("requested") != LIMIT):
+        raise ValueError("unexpected campaign checkpoint")
+    completed = checkpoint["completed"]
+    if not 0 < len(completed) <= LIMIT:
+        raise ValueError("unexpected verified cycle count")
+    runs, models, tasks = set(), set(), set()
+    for sequence, row in enumerate(completed, 1):
+        if (row["sequence"] != sequence or row["run"] in runs or row["model_result_run"] in models
+                or row["task"] in tasks or row["run"] == row["model_result_run"]):
+            raise ValueError("campaign evidence is reordered or reused")
+        root = f"repos/{REPO}/actions"
+        run = read(f"{root}/runs/{row['run']}")
+        job = read(f"{root}/jobs/{row['job']}")
+        if (run["id"] != row["run"] or run["repository"]["full_name"] != REPO
+                or run["workflow_id"] != WORKFLOW or run["head_branch"] != "main"
+                or run["head_sha"] != row["head"] or run["run_attempt"] != 1
+                or run["status"] != "completed" or run["conclusion"] != "success"
+                or run["event"] not in {"push", "schedule", "workflow_dispatch"}
+                or job["id"] != row["job"] or job["run_id"] != row["run"]
+                or job["head_sha"] != row["head"] or job["status"] != "completed"
+                or job["name"] != "Worker " + row["task"] or job["conclusion"] != "success"):
+            raise ValueError("campaign predecessor lacks exact successful production evidence")
+        model = read(f"{root}/runs/{row['model_result_run']}")
+        if (model["id"] != row["model_result_run"] or model["repository"]["full_name"] != REPO
+                or model["status"] != "completed" or model["conclusion"] != "success"):
+            raise ValueError("campaign predecessor lacks exact successful model evidence")
+        runs.add(row["run"])
+        models.add(row["model_result_run"])
+        tasks.add(row["task"])
+    return {"campaign": checkpoint["campaign"], "completed": len(completed), "requested": LIMIT,
+            "next_sequence": len(completed) + 1 if len(completed) < LIMIT else None,
+            "previous_run": completed[-1]["run"], "checkpoint_sha256": digest(checkpoint)}
+
+
+if __name__ == "__main__":
+    checkpoint = json.loads(Path("hydra/memory/campaign.json").read_bytes())
+    record = next_sequence(checkpoint, fetch)
+    output = Path(os.environ["RUNNER_TEMP"], "campaign-continuity.json")
+    output.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(record, sort_keys=True))
