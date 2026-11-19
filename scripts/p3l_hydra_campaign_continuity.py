@@ -26,7 +26,7 @@ def next_sequence(checkpoint, read):
     runs, models, tasks = set(), set(), set()
     previous_started_at = None
     for sequence, row in enumerate(completed, 1):
-        if (row["sequence"] != sequence or row["run"] in runs or row["model_result_run"] in models
+        if (type(row['sequence']) is not int or row["sequence"] != sequence or row["run"] in runs or row["model_result_run"] in models
                 or row["task"] in tasks or row["run"] == row["model_result_run"]):
             raise ValueError("campaign evidence is reordered or reused")
         root = f"repos/{REPO}/actions"
