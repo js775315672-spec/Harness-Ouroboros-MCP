@@ -1,0 +1,36 @@
+name: Hydra cycle four source audit
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/hydra-campaign-four-source-audit.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-campaign-four-source-audit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Identify the original failure without replay
+        run: |
+          root="repos/$GITHUB_REPOSITORY/actions"
+          gh api "$root/runs/44566289515" | jq -e '.head_sha=="1c55c4df65778ab6919a887b4f32fb5ba76ef14c" and .head_branch=="experiment/hydra-campaign-cycle-four-probe" and .conclusion=="failure" and .run_attempt==1'
+          gh api "$root/jobs/135708808655" | jq -e '.run_id==44566289515 and .conclusion=="failure"'
+          gh api --allow-escape-sequences "$root/jobs/135708808655/logs" > "$RUNNER_TEMP/source.log"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          log = (Path(os.environ["RUNNER_TEMP"]) / "source.log").read_text(errors="replace")
+          safe = [line.strip().split("Error: ",1)[-1] for line in log.splitlines()
+                  if any(token in line for token in ("AssertionError: ", "RuntimeError: ", "KeyError: ", "ValueError: "))]
+          if "persisted campaign checkpoint is stale after verified production" in safe:
+              print("Verified: stale persisted checkpoint")
+          else:
+              print("Stale checkpoint assertion absent")
+              for value in safe[-4:]:
+                  print(repr(value)[:250])
+              raise SystemExit(1)
+          PY
