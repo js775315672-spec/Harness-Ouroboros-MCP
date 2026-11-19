@@ -4,14 +4,18 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import signal
+import sqlite3
 import subprocess
+import sys
 import tempfile
+import time
 
 from p3l_hydra_completion_rehearsal import CompletionRegistry
 from p3l_hydra_fast_lane_gate import SCHEMA
 from p3l_hydra_github_completion import verify_completion
 
-WORKFLOW = ".github/workflows/hydra-next-generation.yml"
+WORKFLOW = os.environ.get("HYDRA_WORKFLOW", ".github/workflows/hydra-next-generation.yml")
 STEPS = {"source": "Run exact Hydra tests", "first": "Execute first approved generation",
          "second": "Resume and execute second approved generation"}
 SUITES = {"first": "test_p3l_hydra_fast_lane_gate.py",
@@ -42,6 +46,45 @@ def run_offline(suite):
                    "python:3.11-slim", "python", "-B", "-m", "unittest", "discover",
                    "-s", "tests", "-p", suite]
         subprocess.run(command, env=env, timeout=45, check=True)
+
+
+def interrupt_before_commit(database, event, binding):
+    """Stop a worker after its SQLite writes, before the transaction commits."""
+    with tempfile.TemporaryDirectory(prefix="hydra-interrupt-") as folder:
+        ready = Path(folder) / "ready"
+        env = {key: value for key, value in os.environ.items() if key not in {"GH_TOKEN", "GITHUB_TOKEN"}}
+        with subprocess.Popen([sys.executable, "-B", __file__, "interrupt", str(database),
+                               json.dumps([event, binding, str(ready)])], env=env) as worker:
+            deadline = time.monotonic() + 10
+            try:
+                while not ready.exists() and worker.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                if not ready.exists() or worker.poll() is not None:
+                    raise ValueError("worker did not reach the transaction boundary")
+            finally:
+                if worker.poll() is None:
+                    worker.kill()
+                worker.wait(timeout=10)
+            if worker.returncode != -signal.SIGKILL:
+                raise ValueError("worker was not interrupted by SIGKILL")
+    print(json.dumps({"interrupted": "before_commit", "exit_code": worker.returncode}))
+
+
+def interrupted_worker(database, payload):
+    event, binding, ready = json.loads(payload)
+    registry = CompletionRegistry(database, make_plan(event["head"]), approved_tasks=("first", "second"))
+    connect = sqlite3.connect
+
+    class PausedCommit(sqlite3.Connection):
+        def __exit__(self, *exc):
+            if exc[0] is not None or not self.in_transaction:
+                raise ValueError("worker did not stage its transaction")
+            Path(ready).touch()
+            time.sleep(30)
+            raise ValueError("worker was not stopped")
+
+    sqlite3.connect = lambda *args, **kwargs: connect(*args, factory=PausedCommit, **kwargs)
+    registry.consume("first", event, observed_head=event["head"], completion=tuple(binding))
 
 
 def main():
@@ -84,6 +127,8 @@ def main():
     if desired:
         current = event(args.phase)
         binding = (run, current["job_id"])
+        if args.phase == "first" and WORKFLOW == ".github/workflows/hydra-recovery-pilot.yml":
+            interrupt_before_commit(args.database, done, binding)
         if not registry.consume(args.phase, done, observed_head=head, completion=binding):
             raise ValueError("generation execution already spent")
         run_offline(SUITES[args.phase])
@@ -98,4 +143,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 4 and sys.argv[1] == "interrupt":
+        interrupted_worker(Path(sys.argv[2]), sys.argv[3])
+    else:
+        main()
