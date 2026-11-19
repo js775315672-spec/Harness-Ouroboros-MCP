@@ -1,0 +1,275 @@
+name: W08 one-shot model experiment
+on:
+  pull_request:
+    types: [opened]
+    paths:
+      - ".github/workflows/p3l-w08-live-once.yml"
+      - "scripts/p3l_w08_model_worker.py"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  preflight:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.base_ref == 'work/p3l-w08-worker-boundary' && github.head_ref == 'run/p3l-w08-checkpoint-cas' && github.run_attempt == '1'
+    uses: ./.github/workflows/p3l-w08-w07-preflight.yml
+  pinned_llama_cpu_build:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      binary_sha: ${{ steps.digest.outputs.sha }}
+    env:
+      PINNED_LLAMA_SHA: "4e5116f47619dac4180c3007ef02a383f347554c"
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout same commit without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build pinned llama.cpp CPU executable only once
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REVIEW_SHA"
+          mkdir -p vendor/llama.cpp
+          git -C vendor/llama.cpp init -q
+          git -C vendor/llama.cpp remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C vendor/llama.cpp fetch --depth 1 --no-tags origin "$PINNED_LLAMA_SHA"
+          git -C vendor/llama.cpp checkout -q --detach FETCH_HEAD
+          test "$(git -C vendor/llama.cpp rev-parse HEAD)" = "$PINNED_LLAMA_SHA"
+          cmake -S vendor/llama.cpp -B vendor/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF
+          cmake --build vendor/llama.cpp/build --target llama-completion -j 4
+          test -x vendor/llama.cpp/build/bin/llama-completion
+          mkdir -p artifacts/w06-build
+          cp vendor/llama.cpp/build/bin/llama-completion artifacts/w06-build/llama-completion
+          cd artifacts/w06-build
+          sha256sum llama-completion > SHA256SUMS
+      - name: Record binary SHA for dependent jobs
+        id: digest
+        run: |
+          hash=$(sha256sum artifacts/w06-build/llama-completion)
+          printf 'sha=%s\n' "${hash%% *}" >> "$GITHUB_OUTPUT"
+      - name: Upload pinned binary for this run only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3l-w08-pinned-binary
+          path: artifacts/w06-build/
+          if-no-files-found: error
+          retention-days: 3
+
+  coordinator:
+    needs: [preflight, pinned_llama_cpu_build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    outputs:
+      grant_sha: ${{ steps.claim.outputs.grant_sha }}
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      PINNED_BINARY_SHA: ${{ needs.pinned_llama_cpu_build.outputs.binary_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - id: claim
+        name: Record the single authorized W08 call budget
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$REVIEW_HEAD"
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from p3l_w04_attempt_registry import AttemptInput
+          from p3l_w08_evidence_handoff import encode, sha
+          import p3l_w08_model_worker as worker
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          head = os.environ["REVIEW_HEAD"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          from p3l_w06_actual_model_once import inference_config_sha256
+          config = inference_config_sha256()
+          binary_sha = os.environ["PINNED_BINARY_SHA"]
+          inputs = AttemptInput("w08-checkpoint-cas", worker.CONTRACT_SHA, worker.CANDIDATE_COMMIT, head,
+                                worker.QWEN_REVISION, worker.QWEN_WEIGHTS_SHA256, config, worker.PROMPT_SHA256)
+          from p3l_w04_attempt_registry import AttemptBlocked
+          from p3l_w04_github_claim import github
+          request = lambda *args: github(os.environ["GH_TOKEN"], *args)
+          grant = worker.claim_budget(inputs, run_id, binary_sha, request, approved_head=head, rehearsal=False)
+          (temp / "w08-grant.json").write_bytes(grant)
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as out:
+              out.write("grant_sha=" + sha(grant) + "\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w08-worker-grant
+          path: ${{ runner.temp }}/w08-grant.json
+          if-no-files-found: error
+          retention-days: 7
+  worker:
+    needs: [preflight, coordinator, pinned_llama_cpu_build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      PINNED_BINARY_SHA: ${{ needs.pinned_llama_cpu_build.outputs.binary_sha }}
+      EXPECTED_GRANT: ${{ needs.coordinator.outputs.grant_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-worker-grant
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-w07-preflight-receipt
+          path: ${{ runner.temp }}
+      - name: Get same-run pinned binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: p3l-w08-pinned-binary
+          path: artifacts/w06-build/
+      - name: Check exact binary digest and executable boundary
+        run: |
+          set -euo pipefail
+          cd artifacts/w06-build
+          sha256sum -c SHA256SUMS
+          test "$(stat -c %s llama-completion)" -ge 1000000
+          test "$(stat -c %s llama-completion)" -le 100000000
+          chmod 755 llama-completion
+      - name: Download only official Apache-2.0 Qwen 7B GGUF
+        timeout-minutes: 9
+        env:
+          HF_HUB_DISABLE_XET: "1"
+          HF_HUB_DOWNLOAD_TIMEOUT: "60"
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "huggingface_hub==0.36.0"
+          timeout --kill-after=10s 8m python3 -u scripts/gguf_official_download.py --model 7b --destination models \
+            --revision 13fb94bfda8c8cf22497dc57b78f391a9acb426a \
+            --sha256 509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c \
+            --report artifacts/w08/model-provenance.json
+      - name: Invoke one pinned Qwen model after verifying the grant
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from p3l_w04_attempt_registry import AttemptInput
+          from p3l_w08_evidence_handoff import encode, sha
+          import p3l_w08_model_worker as worker
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          head = os.environ["REVIEW_HEAD"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          from p3l_w06_actual_model_once import inference_config_sha256, INFERENCE_OPTIONS
+          config = inference_config_sha256()
+          binary_sha = os.environ["PINNED_BINARY_SHA"]
+          inputs = AttemptInput("w08-checkpoint-cas", worker.CONTRACT_SHA, worker.CANDIDATE_COMMIT, head,
+                                worker.QWEN_REVISION, worker.QWEN_WEIGHTS_SHA256, config, worker.PROMPT_SHA256)
+          import json
+          from p3l_w04_attempt_registry import AttemptRegistry
+          from p3g_qwen_ledger_feedback_repair import check_model, infer_prepared, sha256_file
+          prompt = Path("docs/p3l/W08-public-chatml.txt").read_bytes()
+          grant = (temp / "w08-grant.json").read_bytes()
+          preflight = json.loads((temp / "w08-preflight.json").read_bytes())
+          binary = Path("artifacts/w06-build/llama-completion")
+          weights = Path("models/qwen2.5-coder-7b-instruct-q4_k_m.gguf")
+          if sha256_file(binary) != binary_sha:
+              raise SystemExit("W08 pinned binary digest differs")
+          check_model(weights, Path("artifacts/w08/model-provenance.json"), "7b")
+          def invoke(data):
+              raw, _ = infer_prepared(binary, weights, data.decode("utf-8"), "7b", **INFERENCE_OPTIONS)
+              return raw.encode("utf-8")
+          proposal, receipt = worker.execute(AttemptRegistry(temp / "worker.db"), Path.cwd(), inputs,
+                                             run_id, prompt, preflight, grant, os.environ["EXPECTED_GRANT"],
+                                             binary_sha, invoke, rehearsal=False)
+          (temp / "w08-proposal.py").write_bytes(proposal)
+          (temp / "w08-model-receipt.json").write_bytes(encode(receipt))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w08-worker-output
+          path: |
+            ${{ runner.temp }}/w08-proposal.py
+            ${{ runner.temp }}/w08-model-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+  independent:
+    needs: [coordinator, worker, pinned_llama_cpu_build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+      PINNED_BINARY_SHA: ${{ needs.pinned_llama_cpu_build.outputs.binary_sha }}
+      EXPECTED_GRANT: ${{ needs.coordinator.outputs.grant_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: candidate
+          ref: '8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc'
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: harness
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Reconstruct and verify reviewed candidate
+        working-directory: candidate
+        run: |
+          test "$(git rev-parse 'HEAD^{tree}')" = '0863df1be5c336415f8ed2a5fcd7d15e31ffea16'
+          exact=$(printf '%s' 'dHJlZSAwODYzZGYxYmU1YzMzNjQxNWY4ZWQyYTVmY2Q3ZDE1ZTMxZmZlYTE2CnBhcmVudCBmMmM4YzVkMzdjN2Y0ZmU3OWE2NThjYzI1YTZiMGVjMTI2OTcyNTc4CmF1dGhvciBQM0wgVzA3IHJldmlldyA8dzA3QGV4YW1wbGUuaW52YWxpZD4gMTc5NDk2MDAwMCArMDAwMApjb21taXR0ZXIgUDNMIFcwNyByZXZpZXcgPHcwN0BleGFtcGxlLmludmFsaWQ+IDE3OTQ5NjAwMDAgKzAwMDAKClcwNyBkcnkgcnVuOiBtb2RlbC1nZW5lcmF0ZWQgdmFsaWRhdGUK' | base64 -d | git hash-object -t commit -w --stdin)
+          test "$exact" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          git -c advice.detachedHead=false checkout --detach "$exact"
+          test "$(git rev-parse HEAD)" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          sha256sum tests/test_resumable_task_queue.py
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-worker-grant
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: w08-worker-output
+          path: ${{ runner.temp }}
+      - name: Verify the exact worker output in isolated Docker
+        run: |
+          docker pull python:3.11-slim
+          PYTHONPATH=harness/scripts python3 -B - <<'PY'
+          import os
+          from pathlib import Path
+          from p3l_w04_attempt_registry import AttemptInput
+          from p3l_w08_evidence_handoff import encode, sha
+          import p3l_w08_model_worker as worker
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          head = os.environ["REVIEW_HEAD"]
+          run_id = int(os.environ["GITHUB_RUN_ID"])
+          from p3l_w06_actual_model_once import inference_config_sha256
+          config = inference_config_sha256()
+          binary_sha = os.environ["PINNED_BINARY_SHA"]
+          inputs = AttemptInput("w08-checkpoint-cas", worker.CONTRACT_SHA, worker.CANDIDATE_COMMIT, head,
+                                worker.QWEN_REVISION, worker.QWEN_WEIGHTS_SHA256, config, worker.PROMPT_SHA256)
+          import json
+          from p3l_w08_evidence_handoff import read_bounded
+          from p3l_w08_verify_test import verify
+          proposal = read_bounded(temp / "w08-proposal.py", 6000)
+          grant = read_bounded(temp / "w08-grant.json", 2000)
+          receipt = worker.validate_model_receipt(
+              read_bounded(temp / "w08-model-receipt.json", 3000), proposal, inputs,
+              run_id, binary_sha, grant, os.environ["EXPECTED_GRANT"], rehearsal=False)
+          result = {"receipt": receipt, "grade": verify(Path("candidate"), proposal)}
+          (temp / "w08-grade.json").write_bytes(encode(result))
+          print(json.dumps(result, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: w08-worker-grade
+          path: ${{ runner.temp }}/w08-grade.json
+          if-no-files-found: error
+          retention-days: 7
