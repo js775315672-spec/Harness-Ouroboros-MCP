@@ -1,13 +1,13 @@
 name: Hydra second-cycle one-shot model
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize]
     paths: [.github/workflows/hydra-second-cycle-model.yml]
 permissions:
   contents: read
 jobs:
   coordinator:
-    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.base_ref == 'review/hydra-checkpoint-scaffold-budget' && github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'run/hydra-second-cycle-model' || github.head_ref == 'review/hydra-second-cycle-bound-budget') && github.run_attempt == '1'
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && ((github.head_ref == 'run/hydra-second-cycle-model' && github.base_ref == 'review/hydra-checkpoint-scaffold-budget' && github.event.action == 'opened') || (github.head_ref == 'review/hydra-second-cycle-bound-budget' && github.base_ref == 'review/hydra-second-cycle-budget')) && github.run_attempt == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     permissions:
