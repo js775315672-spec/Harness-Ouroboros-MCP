@@ -1,0 +1,74 @@
+name: W07 revision-pinned regression rehearsal
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p3l-w07-split-regression.yml"
+permissions:
+  contents: read
+jobs:
+  historical:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/p3l-w07-split-regression'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 'f2c8c5d37c7f4fe79a658cc25a6b0ec126972578'
+          persist-credentials: false
+      - name: Verify historical regression modules at original SHA
+        run: |
+          test "$(git rev-parse HEAD)" = 'f2c8c5d37c7f4fe79a658cc25a6b0ec126972578'
+          PYTHONPATH=tests:scripts python3 -B -m unittest -v test_ledger_rule_diagnostics test_p3g_qwen_ledger_feedback_repair test_p3l_w02_model_handoff test_p3l_w02_public_prompt_clarity test_p3l_w04_one_call_gate test_p3l_w05_replay_evidence test_p3l_w06_actual_model_once test_p3l_w01_zero_drift_gate
+  candidate_contract:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/p3l-w07-split-regression'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: '8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc'
+          persist-credentials: false
+      - name: Reconstruct and verify reviewed candidate
+        run: |
+          test "$(git rev-parse 'HEAD^{tree}')" = '0863df1be5c336415f8ed2a5fcd7d15e31ffea16'
+          exact=$(printf '%s' 'dHJlZSAwODYzZGYxYmU1YzMzNjQxNWY4ZWQyYTVmY2Q3ZDE1ZTMxZmZlYTE2CnBhcmVudCBmMmM4YzVkMzdjN2Y0ZmU3OWE2NThjYzI1YTZiMGVjMTI2OTcyNTc4CmF1dGhvciBQM0wgVzA3IHJldmlldyA8dzA3QGV4YW1wbGUuaW52YWxpZD4gMTc5NDk2MDAwMCArMDAwMApjb21taXR0ZXIgUDNMIFcwNyByZXZpZXcgPHcwN0BleGFtcGxlLmludmFsaWQ+IDE3OTQ5NjAwMDAgKzAwMDAKClcwNyBkcnkgcnVuOiBtb2RlbC1nZW5lcmF0ZWQgdmFsaWRhdGUK' | base64 -d | git hash-object -t commit -w --stdin)
+          test "$exact" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          git -c advice.detachedHead=false checkout --detach "$exact"
+          test "$(git rev-parse HEAD)" = '3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267'
+          sha256sum tests/test_resumable_task_queue.py
+      - name: Verify reviewed candidate against the public W01 contract
+        run: |
+          PYTHONPATH=scripts python3 -B - <<'PY'
+          import json
+          from development_ledger import validate
+          from p3l_w01_contract_drift import audit
+          report = audit(validate)
+          print(json.dumps(report, sort_keys=True))
+          if report["matches"] != 19 or report["mismatches"]:
+              raise SystemExit("reviewed candidate contract did not pass")
+          PY
+      - name: Run remaining regression tests on the reviewed candidate
+        run: |
+          PYTHONPATH=tests:scripts python3 -B - <<'PY'
+          import unittest
+
+          historical = set(["test_ledger_rule_diagnostics","test_p3g_qwen_ledger_feedback_repair","test_p3l_w02_model_handoff","test_p3l_w02_public_prompt_clarity","test_p3l_w04_one_call_gate","test_p3l_w05_replay_evidence","test_p3l_w06_actual_model_once","test_p3l_w01_zero_drift_gate"])
+          def cases(suite):
+              for item in suite:
+                  if isinstance(item, unittest.TestSuite):
+                      yield from cases(item)
+                  else:
+                      yield item
+
+          discovered = list(cases(unittest.defaultTestLoader.discover("tests")))
+          exact = {test.id() for test in discovered}
+          picked = [test for test in discovered if test.id().split(".", 1)[0] not in historical]
+          moved = {test.id().split(".", 1)[0] for test in discovered if test not in picked}
+          if (len(discovered) != 758 or len(exact) != 758 or len(picked) != 692
+                  or moved != historical):
+              raise SystemExit("unexpected candidate test inventory")
+          print(f"discovered={len(discovered)} historical={len(discovered)-len(picked)} candidate={len(picked)}", flush=True)
+          result = unittest.TextTestRunner(verbosity=1).run(unittest.TestSuite(picked))
+          if not result.wasSuccessful() or result.testsRun != len(picked):
+              raise SystemExit(1)
+          PY
