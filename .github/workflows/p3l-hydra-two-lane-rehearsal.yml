@@ -1,0 +1,61 @@
+name: Hydra two-lane isolated rehearsal
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p3l-hydra-two-lane-rehearsal.yml"
+      - "scripts/p3l_hydra_run_lanes.py"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  lane:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'work/p3l-hydra-two-lane-rehearsal' && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        lane: [w06_public_probe, w05_receipt_gate]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run one fixed offline verification lane
+        env:
+          LANE: ${{ matrix.lane }}
+        run: python3 -B scripts/p3l_hydra_run_lanes.py --lane "$LANE" --directory "$RUNNER_TEMP/lane"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-${{ matrix.lane }}
+          path: ${{ runner.temp }}/lane
+          if-no-files-found: error
+          retention-days: 7
+  independent:
+    needs: lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: hydra-*
+          path: ${{ runner.temp }}/evidence
+      - name: Bind lane job metadata to the two actual independent test runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/"$GITHUB_REPOSITORY"/actions/runs/"$GITHUB_RUN_ID"/attempts/1/jobs > "$RUNNER_TEMP/jobs.json"
+      - name: Replay both suites and reject duplicate completion events
+        shell: bash
+        run: |
+          python3 -B scripts/p3l_hydra_run_lanes.py --directory "$RUNNER_TEMP/evidence" \
+            --jobs "$RUNNER_TEMP/jobs.json" | tee "$RUNNER_TEMP/hydra-verdict.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hydra-independent-verdict
+          path: ${{ runner.temp }}/hydra-verdict.json
+          if-no-files-found: error
+          retention-days: 7
