@@ -23,6 +23,8 @@ class CompletionRegistry:
             db.execute("CREATE TABLE IF NOT EXISTS receipts (run_id INTEGER, job_id INTEGER, "
                        "task TEXT UNIQUE, sha TEXT, PRIMARY KEY (run_id, job_id))")
             db.execute("CREATE TABLE IF NOT EXISTS approval (id INTEGER PRIMARY KEY, scope TEXT)")
+            db.execute("CREATE TABLE IF NOT EXISTS dispatch_control (id INTEGER PRIMARY KEY, paused INTEGER NOT NULL)")
+            db.execute("INSERT OR IGNORE INTO dispatch_control VALUES (1, 0)")
             db.execute("CREATE TABLE IF NOT EXISTS reservations (task TEXT PRIMARY KEY, "
                        "run_id INTEGER, job_id INTEGER)")
             db.execute("CREATE TABLE IF NOT EXISTS starts (task TEXT PRIMARY KEY, "
@@ -38,6 +40,17 @@ class CompletionRegistry:
             db.execute("INSERT OR IGNORE INTO approval VALUES (1, ?)", (scope,))
             if db.execute("SELECT scope FROM approval WHERE id=1").fetchone() != (scope,):
                 raise ValueError("rehearsal database belongs to a different approval scope")
+
+    def set_paused(self, paused):
+        if type(paused) is not bool:
+            raise ValueError("invalid dispatch pause state")
+        with closing(sqlite3.connect(self.path, timeout=10)) as db, db:
+            db.execute("UPDATE dispatch_control SET paused=? WHERE id=1", (paused,))
+
+    @staticmethod
+    def _require_dispatch(db):
+        if db.execute("SELECT paused FROM dispatch_control WHERE id=1").fetchone() != (0,):
+            raise ValueError("Hydra dispatch is paused")
 
     def _reserve(self, db, plan, event):
         existing = {key for key, in db.execute("SELECT task FROM reservations")}
@@ -70,6 +83,7 @@ class CompletionRegistry:
             raise ValueError("completion is not independently verified")
         with closing(sqlite3.connect(self.path, timeout=10)) as db, db:
             db.execute("BEGIN IMMEDIATE")
+            self._require_dispatch(db)
             raw, = db.execute("SELECT data FROM plan WHERE id=1").fetchone()
             plan = json.loads(raw)
             if event["head"] != plan["head_sha"]:
@@ -120,6 +134,7 @@ class CompletionRegistry:
             raise ValueError("invalid expected worker completion identity")
         with closing(sqlite3.connect(self.path, timeout=10)) as db, db:
             db.execute("BEGIN IMMEDIATE")
+            self._require_dispatch(db)
             raw, = db.execute("SELECT data FROM plan WHERE id=1").fetchone()
             plan = json.loads(raw)
             if observed_head != plan["head_sha"] or event["head"] != observed_head:
