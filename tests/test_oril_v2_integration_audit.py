@@ -149,6 +149,63 @@ class ReadinessAuditTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit(data)
 
+    def test_newer_failed_run_overrides_older_success(self):
+        data = fixture()
+        old = data["workflow_runs"][0]
+        old["created_at"] = "2026-11-20T01:00:00Z"
+        new = copy.deepcopy(old)
+        new["created_at"] = "2026-11-20T01:05:00Z"
+        new["conclusion"] = "failure"
+        new["html_url"] = "https://github.com/example/repo/actions/runs/124"
+        data["workflow_runs"].append(new)
+        self.assertEqual(audit(data)["pull_requests"][1]["ci_snapshot_status"], "unverified")
+
+    def test_newer_success_overrides_older_failure(self):
+        data = fixture()
+        old = data["workflow_runs"][0]
+        old["created_at"] = "2026-11-20T01:00:00Z"
+        old["conclusion"] = "failure"
+        new = copy.deepcopy(old)
+        new["created_at"] = "2026-11-20T01:05:00Z"
+        new["conclusion"] = "success"
+        new["html_url"] = "https://github.com/example/repo/actions/runs/124"
+        data["workflow_runs"].append(new)
+        self.assertEqual(audit(data)["pull_requests"][1]["ci_snapshot_status"], "snapshot_success")
+
+    def test_multiple_runs_without_timestamps_fail_closed(self):
+        data = fixture()
+        data["workflow_runs"].append(copy.deepcopy(data["workflow_runs"][0]))
+        self.assertEqual(audit(data)["pull_requests"][1]["ci_snapshot_status"], "unverified")
+
+    def test_newer_in_progress_overrides_success(self):
+        data = fixture()
+        old = data["workflow_runs"][0]
+        old["created_at"] = "2026-11-20T01:00:00Z"
+        new = copy.deepcopy(old)
+        new["created_at"] = "2026-11-20T01:05:00Z"
+        new["status"] = "in_progress"
+        new["conclusion"] = None
+        data["workflow_runs"].append(new)
+        self.assertEqual(audit(data)["pull_requests"][1]["ci_snapshot_status"], "unverified")
+
+    def test_rerun_attempt_order_matters(self):
+        data = fixture()
+        old = data["workflow_runs"][0]
+        old["created_at"] = "2026-11-20T01:00:00Z"
+        old["run_attempt"] = 1
+        new = copy.deepcopy(old)
+        new["run_attempt"] = 2
+        new["conclusion"] = "failure"
+        data["workflow_runs"].append(new)
+        self.assertEqual(audit(data)["pull_requests"][1]["ci_snapshot_status"], "unverified")
+
+    def test_duplicate_latest_timestamp_and_attempt_is_ambiguous(self):
+        data = fixture()
+        old = data["workflow_runs"][0]
+        old["created_at"] = "2026-11-20T01:00:00Z"
+        data["workflow_runs"].append(copy.deepcopy(old))
+        self.assertEqual(audit(data)["pull_requests"][1]["ci_snapshot_status"], "unverified")
+
 
 if __name__ == "__main__":
     unittest.main()
