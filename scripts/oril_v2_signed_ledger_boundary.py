@@ -44,7 +44,7 @@ def verify(manifest, ledger, signature, public_key, checkpoint, now=None):
             raise ValueError("version")
         if type(cp["min_version"]) is not int or cp["min_version"] < 1:
             raise ValueError("checkpoint version")
-        if doc["schema_version"] != 1:
+        if type(doc["schema_version"]) is not int or doc["schema_version"] != 1:
             raise ValueError("schema version")
         if not isinstance(doc["manifest_sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", doc["manifest_sha256"]):
             raise ValueError("manifest hash")

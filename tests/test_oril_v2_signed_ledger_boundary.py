@@ -85,6 +85,21 @@ class SignedLedgerBoundary(unittest.TestCase):
         self.sign()
         self.assertFalse(self.result()["integrity_pass"])
 
+    def test_schema_version_accepts_exact_integer_one(self):
+        self.doc["schema_version"] = 1
+        self.sign()
+        self.assertTrue(self.result()["integrity_pass"])
+
+    def test_schema_version_rejects_noninteger_types_even_when_resigned(self):
+        for invalid in (True, 1.0, "1", None):
+            with self.subTest(schema_version=repr(invalid)):
+                self.doc["schema_version"] = invalid
+                self.sign()
+                result = self.result()
+                self.assertFalse(result["integrity_pass"], result)
+                self.assertFalse(result["training_approved"])
+                self.assertFalse(result["promotion_approved"])
+
     def test_duplicate_json_keys_rejected(self):
         self.ledger.write_text('{"dataset_id":"fixture","dataset_id":"other"}')
         self.assertFalse(self.result()["integrity_pass"])
