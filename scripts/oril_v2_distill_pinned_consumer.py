@@ -9,11 +9,15 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 
 from oril_v2_distill_pair_marker import SCHEMA, MAX_FILE, paths
 
 MAX_MARKER = 4096
+SAFE_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+HEX40 = re.compile(r"^[a-f0-9]{40}$")
+REVIEW_URL = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:actions/runs/[0-9]+|pull/[0-9]+)(?:/[A-Za-z0-9_.-]+)?$")
 
 
 def _strict_json(raw):
@@ -129,10 +133,15 @@ def consume(train, report, marker, *, before_read=None):
                         "quality_assertion"}
             if not isinstance(metadata, dict) or set(metadata) != required:
                 raise ValueError("invalid student metadata")
-            for key in ("case_id", "group_id", "task_type",
-                        "review_assertion_url", "candidate_sha"):
-                if not isinstance(metadata[key], str) or not metadata[key]:
+            for key in ("case_id", "group_id", "task_type"):
+                if (not isinstance(metadata[key], str) or
+                        not SAFE_ID.fullmatch(metadata[key])):
                     raise ValueError("invalid student metadata")
+            if (not isinstance(metadata["candidate_sha"], str) or
+                    not HEX40.fullmatch(metadata["candidate_sha"]) or
+                    not isinstance(metadata["review_assertion_url"], str) or
+                    not REVIEW_URL.fullmatch(metadata["review_assertion_url"])):
+                raise ValueError("invalid student provenance assertion")
             case_id = metadata["case_id"]
             if case_id in seen_cases:
                 raise ValueError("duplicate student case")
