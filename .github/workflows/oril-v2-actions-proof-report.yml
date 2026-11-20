@@ -1,0 +1,56 @@
+name: ORIL v2 Actions evidence and measured CI trend (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_actions_proof_report.py'
+      - 'scripts/oril_v2_phase_trace.py'
+      - 'tests/test_oril_v2_actions_proof_report.py'
+      - 'tests/test_oril_v2_phase_trace.py'
+      - '.github/workflows/oril-v2-actions-proof-report.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  evidence-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Unit tests and instrumented verification phase
+        run: |
+          python3 -m unittest discover -s tests -p test_oril_v2_phase_trace.py -v
+          python3 scripts/oril_v2_phase_trace.py measure --phase independent_verification --output oril-v2-phase-spans.jsonl -- python3 -m unittest discover -s tests -p test_oril_v2_actions_proof_report.py -v
+          python3 scripts/oril_v2_phase_trace.py summarize oril-v2-phase-spans.jsonl
+      - name: Collect actual completed Actions and job timings
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/oril_v2_actions_proof_report.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow 'ORIL v2 single SHA offline integration (experimental)' \
+            --event pull_request \
+            --window 12 \
+            --output oril-v2-ci-proof-report.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open("oril-v2-ci-proof-report.json", encoding="utf-8"))
+          print("EVIDENCE_REPORT_SUMMARY="+json.dumps({
+            "n":p["selection"]["n"],
+            "prior_n":p["selection"]["previous_successful_timing_n"],
+            "ci_speed":p["ci_speed"],
+            "failure_rate":p["observed_ci_failure_rate"],
+            "rerun_rate":p["observed_workflow_rerun_rate"],
+            "model_quality":p["model_quality_verdict"]}, ensure_ascii=False))
+          PY
+      - name: Upload non-sensitive evidence provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: oril-v2-ci-proof-report
+          path: |
+            oril-v2-ci-proof-report.json
+            oril-v2-phase-spans.jsonl
+          retention-days: 14

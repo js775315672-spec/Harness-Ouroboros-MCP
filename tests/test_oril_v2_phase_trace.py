@@ -1,0 +1,91 @@
+"""Runtime model/verification/operations phase tracer: measured but unattested."""
+import json
+import pathlib
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from oril_v2_phase_trace import run_timed, summarize
+
+SHA = "a" * 40
+
+
+class PhaseTraceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = pathlib.Path(self.tmp.name) / "spans.jsonl"
+
+    def read(self):
+        return [json.loads(line) for line in self.target.read_text().splitlines()]
+
+    def test_real_subprocess_time_is_recorded_with_source_and_ids(self):
+        result = run_timed("model_call", [sys.executable, "-c", "pass"],
+                           self.target, sha=SHA, run_id=123)
+        self.assertEqual(result, 0)
+        rows = self.read()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["sha"], SHA)
+        self.assertEqual(rows[0]["actions_run_id"], 123)
+        self.assertGreaterEqual(rows[0]["duration_seconds"], 0)
+        self.assertFalse(rows[0]["verified_independent"])
+
+    def test_failed_command_measured_but_not_success(self):
+        status = run_timed("independent_verification",
+                           [sys.executable, "-c", "raise SystemExit(3)"],
+                           self.target, sha=SHA, run_id=123)
+        self.assertEqual(status, 3)
+        summary = summarize(self.read(), sha=SHA, run_id=123)
+        self.assertIsNone(summary["spans_seconds"]["independent_verification"])
+        self.assertEqual(summary["sample_counts"]["independent_verification"], 0)
+
+    def test_missing_command_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "command"):
+            run_timed("model_call", [], self.target)
+
+    def test_phase_name_must_be_recognized(self):
+        with self.assertRaisesRegex(ValueError, "phase"):
+            run_timed("fake_gpu_training", [sys.executable], self.target)
+
+    def test_sha_validation(self):
+        with self.assertRaisesRegex(ValueError, "SHA"):
+            run_timed("whole_cycle", [sys.executable], self.target, sha="short")
+
+    def test_missing_phases_remain_null(self):
+        run_timed("operational_followup", [sys.executable, "-c", "pass"],
+                  self.target, sha=SHA, run_id=123)
+        summary = summarize(self.read(), sha=SHA, run_id=123)
+        self.assertIsNone(summary["spans_seconds"]["model_call"])
+        self.assertIsNone(summary["spans_seconds"]["independent_verification"])
+        self.assertIsNone(summary["spans_seconds"]["whole_cycle"])
+        self.assertGreater(summary["spans_seconds"]["operational_followup"], 0)
+
+    def test_cross_run_rejection(self):
+        run_timed("model_call", [sys.executable, "-c", "pass"],
+                  self.target, sha=SHA, run_id=123)
+        with self.assertRaisesRegex(ValueError, "Actions run mismatch"):
+            summarize(self.read(), sha=SHA, run_id=456)
+
+    def test_nonfinite_or_forged_schema_rejected(self):
+        row = {"schema_version": 1, "source": "runner_monotonic_unattested",
+               "phase": "model_call", "duration_seconds": float("nan"), "returncode": 0}
+        with self.assertRaisesRegex(ValueError, "invalid measured"):
+            summarize([row])
+        row["duration_seconds"] = 1.0
+        row["source"] = "independently_verified"
+        with self.assertRaisesRegex(ValueError, "unknown phase source"):
+            summarize([row])
+
+    def test_two_real_spans_sum_without_claiming_independence(self):
+        for i in range(2):
+            run_timed("model_call", [sys.executable, "-c", "pass"],
+                      self.target, sha=SHA, run_id=123)
+        result = summarize(self.read(), sha=SHA, run_id=123)
+        self.assertEqual(result["sample_counts"]["model_call"], 2)
+        self.assertGreater(result["spans_seconds"]["model_call"], 0)
+        self.assertFalse(result["independently_attested"])
+
+
+if __name__ == "__main__":
+    unittest.main()
