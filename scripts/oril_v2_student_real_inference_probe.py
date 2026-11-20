@@ -96,7 +96,10 @@ def invoke(cmd, question, case_id, seed, timeout):
     if proc.returncode or len(proc.stdout) > 200000:
         raise ValueError("adapter failed or returned excessive output")
     try:
-        result = json.loads(proc.stdout)
+        # Adapter output is untrusted: reject duplicate keys and nonfinite JSON.
+        # Do not silently accept last-value-wins token/answer/model claims.
+        result = json.loads(proc.stdout, object_pairs_hook=strict_json_pairs,
+                            parse_constant=reject_nonfinite_json)
     except (ValueError, TypeError) as exc:
         raise ValueError("adapter must emit one JSON object") from exc
     if not isinstance(result, dict) or set(result) != {"answer", "input_tokens", "output_tokens", "model_id"}:
