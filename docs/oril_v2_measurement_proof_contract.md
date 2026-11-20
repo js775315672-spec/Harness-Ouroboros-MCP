@@ -13,7 +13,7 @@ python3 scripts/oril_v2_actions_proof_report.py \
   --event pull_request --window 12 --output oril-v2-ci-proof-report.json
 ```
 
-Output carries source run URLs/IDs, head commit SHA **and separately** GitHub Job checkout SHA when present, CI queue time, measured Job wall-clock, Job sum time, workflow rerun-rate proxy, recent CI failure fraction, successful CI run throughput, and same-workflow/event median (minimum 5 comparable *prior* successful runs required for a latency verdict).
+Output carries source run URLs/IDs, head commit SHA and separately job API `head_sha` (which is **not** evidence of the actual checked-out commit; obtain that from the checkout step log), CI queue time, measured Job wall-clock, Job sum time, workflow rerun-rate proxy, recent CI failure fraction, successful CI run throughput, and same-workflow/event median (minimum 5 comparable *prior* successful runs required for a latency verdict).
 
 The source is currently the **latest 100** Actions runs only, so older runs may be absent. A matched workflow name/event does not guarantee identical workload difficulty. Never relabel this CI speed verdict as end-to-end agent speed.
 
