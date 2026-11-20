@@ -56,7 +56,7 @@ def open_secure_trace(path):
                             getattr(os, "O_CLOEXEC", 0), dir_fd=fd)
             os.close(fd)
             fd = child
-        return os.open(basename, os.O_WRONLY | os.O_APPEND | os.O_CREAT |
+        return os.open(basename, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NONBLOCK |
                        nofollow | getattr(os, "O_CLOEXEC", 0), 0o600, dir_fd=fd)
     finally:
         os.close(fd)

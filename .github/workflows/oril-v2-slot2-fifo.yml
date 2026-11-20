@@ -1,0 +1,21 @@
+name: ORIL v2 slot2 FIFO trace preflight (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_phase_trace.py'
+      - 'tests/test_oril_v2_slot2_fifo.py'
+      - '.github/workflows/oril-v2-slot2-fifo.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fifo-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run FIFO and existing preflight regression
+        run: python -m unittest discover -s tests -p 'test_oril_v2_slot*_*.py' -v
