@@ -1,0 +1,39 @@
+name: ORIL v2 frozen external dataset pin negative tests
+on:
+  pull_request:
+    paths:
+      - tests/test_oril_v2_dataset_frozen_pin.py
+      - .github/workflows/oril-v2-dataset-frozen-pin.yml
+permissions:
+  contents: read
+jobs:
+  frozen-external-pin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 46cfd6c0af120e093d58cfa495465bf221f373a6
+          path: .pinned-split
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: a9ee749b17d174bcdafcf264aaf266a8be5e5f4a
+          path: .pinned-manifest
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: def462c1f3df3deed980601079539e5dba904a20
+          path: .pinned-raw
+          persist-credentials: false
+      - name: Install exact-SHA validators
+        run: |
+          cp .pinned-split/scripts/oril_v2_dataset_split_audit.py scripts/
+          cp .pinned-manifest/scripts/oril_v2_dataset_manifest_attestation.py scripts/
+          cp .pinned-raw/scripts/oril_v2_raw_sample_integrity.py scripts/
+          sha256sum scripts/oril_v2_dataset_*py
+      - name: Test frozen external pin and tamper cases
+        run: python3 -m unittest discover -s tests -p test_oril_v2_dataset_frozen_pin.py -v

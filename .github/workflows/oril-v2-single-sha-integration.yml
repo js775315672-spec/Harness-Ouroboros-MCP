@@ -1,0 +1,60 @@
+name: ORIL v2 single SHA offline integration (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_*.py'
+      - 'tests/test_oril_v2_*.py'
+      - '.github/workflows/oril-v2-single-sha-integration.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integrated-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Runtime and required dependencies
+        run: |
+          python3 --version
+          command -v openssl
+          openssl version
+          command -v sha256sum
+      - name: Single candidate SHA regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, subprocess, sys
+          names = [
+              "test_oril_v2_dataset_split_audit.py",
+              "test_oril_v2_dataset_manifest_attestation.py",
+              "test_oril_v2_raw_sample_integrity.py",
+              "test_oril_v2_dataset_contract_bridge.py",
+              "test_oril_v2_dataset_contract_cli.py",
+              "test_oril_v2_dataset_frozen_pin.py",
+              "test_oril_v2_external_pin_boundary.py",
+              "test_oril_v2_signed_ledger_boundary.py",
+              "test_oril_v2_anchored_ledger_boundary.py",
+          ]
+          for name in names:
+              path = pathlib.Path("tests") / name
+              if not path.is_file():
+                  raise SystemExit("Missing expected test file: " + str(path))
+          for name in names:
+              print("RUN", name, flush=True)
+              completed = subprocess.run(
+                  [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", name, "-v"],
+                  capture_output=True, text=True, timeout=120)
+              output = completed.stdout + completed.stderr
+              print(output, flush=True)
+              if completed.returncode != 0:
+                  raise SystemExit("Test module failed: " + name)
+              if "skipped=" in output or " (skipped)" in output:
+                  raise SystemExit("Skipped security regression: " + name)
+              if "Ran " not in output or "\nOK" not in output:
+                  raise SystemExit("Missing unittest completion evidence: " + name)
+          print("ALL NINE MODULES COMPLETED ON ONE CANDIDATE SHA", flush=True)
+          PY

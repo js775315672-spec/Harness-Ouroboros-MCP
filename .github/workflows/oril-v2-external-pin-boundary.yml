@@ -1,0 +1,20 @@
+name: ORIL v2 external pin boundary (offline)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_external_pin_boundary.py'
+      - 'tests/test_oril_v2_external_pin_boundary.py'
+      - '.github/workflows/oril-v2-external-pin-boundary.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  independent-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Offline boundary tests
+        run: python -m unittest discover -s tests -p 'test_oril_v2_external_pin_boundary.py' -v
