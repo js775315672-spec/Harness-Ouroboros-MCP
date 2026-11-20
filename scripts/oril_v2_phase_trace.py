@@ -11,6 +11,7 @@ import math
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -52,9 +53,26 @@ def run_timed(phase, command, output, *, sha=None, run_id=None):
     target = Path(output)
     # Append a single small JSONL record; no subprocess command, tokens, or env.
     payload = (json.dumps(row, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
-    descriptor = os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    # A candidate-controlled symlink must never redirect trace writes to an
+    # unrelated file. Fail closed on platforms without O_NOFOLLOW.
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is None:
+        raise OSError("secure trace output requires O_NOFOLLOW")
+    descriptor = os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT |
+                         nofollow | getattr(os, "O_CLOEXEC", 0), 0o600)
     try:
-        os.write(descriptor, payload)
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError("trace output must be a regular file")
+        if info.st_mode & 0o077:
+            raise PermissionError("trace output must not be accessible by group/others")
+        # Small fixed-size record; write fully even if interrupted/short.
+        view = memoryview(payload)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("short trace write")
+            view = view[written:]
     finally:
         os.close(descriptor)
     return code
