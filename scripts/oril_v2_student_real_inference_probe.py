@@ -169,10 +169,22 @@ def main():
     if Path(a.report).resolve() == Path(a.heldout).resolve():
         raise ValueError("report must not overwrite heldout manifest")
     rows, digest = read_manifest(a.heldout)
-    result = evaluate(rows, digest, json.loads(a.baseline_cmd_json),
-                      json.loads(a.candidate_cmd_json), a.timeout, a.seed)
-    # No partial report on failed adapter execution.
-    Path(a.report).write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    baseline_cmd = json.loads(a.baseline_cmd_json)
+    candidate_cmd = json.loads(a.candidate_cmd_json)
+    # Reserve a new, private output BEFORE running either model. Never truncate
+    # an existing report, private heldout file or symlink target.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(a.report, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        result = evaluate(rows, digest, baseline_cmd, candidate_cmd,
+                          a.timeout, a.seed)
+        handle.write(json.dumps(result, sort_keys=True, indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    # On model failure an empty private reservation may remain. It is NOT
+    # an approved result; downstream consumers must reject empty reports.
 
 
 if __name__ == "__main__":
