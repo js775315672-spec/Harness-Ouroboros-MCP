@@ -47,7 +47,7 @@ class StrictHeldoutJsonTests(unittest.TestCase):
                            "exceeds 1000 cases")
 
     def test_reject_oversize_line(self):
-        self.check_invalid(" " * 24001 + "\n" + json.dumps(record(0)),
+        self.check_invalid(json.dumps(record(0)) + " " * 24001 + "\n" + json.dumps(record(1)),
                            "line too large")
 
     def test_valid_two_groups_preserve_raw_digest(self):
