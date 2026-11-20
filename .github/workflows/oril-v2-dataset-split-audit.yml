@@ -1,0 +1,19 @@
+name: ORIL v2 dataset split audit offline tests
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_dataset_split_audit.py
+      - tests/test_oril_v2_dataset_split_audit.py
+      - .github/workflows/oril-v2-dataset-split-audit.yml
+permissions:
+  contents: read
+jobs:
+  offline-dataset-split-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run synthetic split leakage and provenance regression tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_dataset_split_audit.py -v
