@@ -21,7 +21,7 @@ class FiniteMedianTests(unittest.TestCase):
         self.assertEqual(finite_median([1e308] * 4), 1e308)
 
     def test_even_mixed_values(self):
-        self.assertEqual(finite_median([1e308, 1e308, 1e308, 9e307]), 9.75e307)
+        self.assertEqual(finite_median([8e307, 9e307, 1e308, 1e308]), 9.5e307)
 
     def test_odd_history_control(self):
         self.assertEqual(finite_median([3, 1, 2]), 2)
