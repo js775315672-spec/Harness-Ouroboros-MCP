@@ -1,0 +1,23 @@
+name: ORIL slot4 parent FD regression (experimental)
+on:
+  push:
+    branches:
+      - oril-v2-slot4-parent-fd-trace-20261120
+  pull_request:
+    paths:
+      - scripts/oril_v2_phase_trace.py
+      - tests/test_oril_v2_phase_trace.py
+permissions:
+  contents: read
+jobs:
+  phase-fd-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Phase tracer regression tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_phase_trace.py -v
+      - name: All proof collector tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_actions_proof_report.py -v
