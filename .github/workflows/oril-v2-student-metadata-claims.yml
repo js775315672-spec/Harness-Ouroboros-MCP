@@ -1,0 +1,26 @@
+name: ORIL v2 student metadata assertion syntax (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_distill_pinned_consumer.py'
+      - 'tests/test_oril_v2_student_metadata_claims.py'
+      - 'docs/oril_v2_slot1_student_metadata_claims.md'
+      - '.github/workflows/oril-v2-student-metadata-claims.yml'
+permissions:
+  contents: read
+jobs:
+  metadata-claims:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: git rev-parse HEAD
+      - name: Adversarial metadata and inherited student schema suites
+        run: |
+          python3 -m unittest discover -s tests -p 'test_oril_v2_student_metadata_claims.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_distill_student_train_schema.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_distill_pinned_consumer.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_distill_pair_marker.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_teacher_distillation_pack.py' -v
