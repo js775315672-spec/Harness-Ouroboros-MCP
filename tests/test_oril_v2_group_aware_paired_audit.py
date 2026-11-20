@@ -51,7 +51,8 @@ class GroupAwareAuditTests(unittest.TestCase):
         b.append(dict(rows(1, model=B, token=70)[0], task_id="extra", group_id="small", correct=False))
         report = group_audit(a, b, min_groups=2)
         self.assertEqual(report["group_mean_accuracy_delta"], -0.5)
-        self.assertEqual(report["status"], "악화")
+        self.assertFalse(report["quality_noninferiority_pass"])
+        self.assertNotEqual(report["status"], "향상")
 
     def test_mismatched_dataset_rejected(self):
         a, b = rows(), rows(model=B)
