@@ -1,0 +1,8 @@
+Cycle 01 public task
+
+Base commit: 068cbd75f70a272094f22cfea27dc1e44fc9b0de.
+Propose one minimal Python patch for scripts/p3l_hydra_standing.py.
+
+The normal model_result_proof path reads GitHub run metadata twice for the same run ID. Reuse the identical metadata response within one proof so the normal path makes three metadata reads total and one independent grade archive download.
+
+Preserve exact repository, workflow, job, step, receipt, and archive validation; error semantics; and all retry and approval gates. Preserve split regrade semantics. Never cache across proof calls. Do not modify tests, workflows, approval records, or public interfaces. Return only a unified diff.
