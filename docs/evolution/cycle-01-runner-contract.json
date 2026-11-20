@@ -1,0 +1,15 @@
+{
+  "qualification_run": 44647435458,
+  "runner_label": "ubuntu-24.04",
+  "container": "python@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535",
+  "cpu_affinity": "same two schedulable logical CPUs for both arms on the same runner; record actual IDs",
+  "cache_protocol": {
+    "cold": "fresh process and empty application cache per observation; host page cache uncontrolled",
+    "warm": "one unmeasured warm-up per arm with isolated persistent application cache",
+    "order": "ABBA with alternating starting arm"
+  },
+  "status": "qualified_public_container_pending_independent_evaluation_binding",
+  "hidden_evaluation_digest": null,
+  "independent_grader_sha256": null,
+  "model_calls": 0
+}

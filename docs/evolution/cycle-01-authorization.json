@@ -1,0 +1,11 @@
+{
+  "cycle": 1,
+  "status": "approved_pending_manifest_binding",
+  "approved_qwen_calls": 1,
+  "max_aggregate_cpu_seconds": 1200,
+  "manifest_sha256": null,
+  "prompt_sha256": null,
+  "operational_replay_status": "pending_verified_candidate",
+  "dispatch_status": "blocked_pending_frozen_evaluation",
+  "source": "User approval in the project conversation after the Cycle 01 limits were presented."
+}

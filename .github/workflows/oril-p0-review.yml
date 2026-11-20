@@ -1,0 +1,46 @@
+name: ORIL P0 evidence review
+on:
+  pull_request:
+    branches: [main]
+    paths: [docs/evolution/**, .github/workflows/oril-p0-review.yml]
+permissions:
+  contents: read
+jobs:
+  review:
+    if: github.head_ref == 'review/oril-v1-1-p0' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Check historical approval manifests and public workload hashes
+        run: |
+          git fetch --no-tags origin 068cbd75f70a272094f22cfea27dc1e44fc9b0de 8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc
+          python3 - <<'PY'
+          import hashlib, json, statistics, subprocess
+          from pathlib import Path
+
+          def read(ref, path):
+              return subprocess.check_output(["git", "show", f"{ref}:{path}"])
+
+          root = Path("docs/evolution")
+          rows = [json.loads(line) for line in (root / "ledger.jsonl").read_text().splitlines()]
+          baseline = json.loads((root / "baseline-manifest.json").read_bytes())
+          assert len(rows) == 9
+          assert all(r["source"] == "historical" and r["audit_status"] == "verified" for r in rows)
+          for key in ("run", "model_result_run", "cycle_id"):
+              assert len({r[key] for r in rows}) == 9
+          assert [r["predecessor"] for r in rows] == [None, *(r["cycle_id"] for r in rows[:-1])]
+          for row in rows:
+              approval, = [a for a in json.loads(read(row["head"], "hydra/approvals.json"))["approvals"] if a["id"] == row["task"]]
+              assert (approval["head"], approval["model_result_run"]) == (row["candidate_head"], row["model_result_run"])
+          for workload in baseline["public_workloads"].values():
+              raw = read(baseline["public_workload_commit"], workload["path"])
+              assert hashlib.sha256(raw).hexdigest() == workload["sha256"]
+          metrics = ("model_worker_seconds", "independent_seconds", "production_seconds")
+          assert [statistics.median(row[k] for row in rows) for k in metrics] == [46,11,25]
+          assert baseline["budget"]["approved_calls"] == baseline["budget"]["approved_operational_replays"] == 0
+          print("9 historical approval receipts and 3 public workload hashes verified")
+          PY
