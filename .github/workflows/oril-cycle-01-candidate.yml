@@ -1,0 +1,108 @@
+name: ORIL Cycle 01 candidate verification
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+    paths:
+      - .github/workflows/oril-cycle-01-candidate.yml
+      - docs/evolution/cycle-01-public-regression.py
+      - docs/evolution/cycle-01-worker-result.json
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/oril-cycle-01-baseline'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      BASE: 068cbd75f70a272094f22cfea27dc1e44fc9b0de
+      TARGET: scripts/p3l_hydra_standing.py
+      IMAGE: python@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Collect public proof fixtures from GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fixtures="$RUNNER_TEMP/fixtures"
+          mkdir "$fixtures"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/44613839140" > "$fixtures/run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/jobs/135877882125" > "$fixtures/job.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14572374289" > "$fixtures/artifact.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14572374289/zip" > "$fixtures/grade.zip"
+          cp docs/evolution/cycle-01-public-regression.py "$fixtures/grade.py"
+      - name: Verify the worker candidate archive when supplied
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          descriptor=docs/evolution/cycle-01-worker-result.json
+          if [[ ! -f "$descriptor" ]]; then exit 0; fi
+          worker=js775315672-spec/our-oboros-worker
+          worker_head=7ff0c85479a7728e8e10154c05d372e973de326b
+          run=$(jq -er '.run_id | select(type=="number" and .>0 and floor==.)' "$descriptor")
+          gh api "repos/$worker/actions/runs/$run" | jq -e --arg sha "$worker_head" '
+            .head_sha == $sha and .head_branch == "main" and .event == "push" and
+            .path == ".github/workflows/oril-cycle-01-generate.yml" and .run_attempt == 1 and
+            .repository.full_name == "js775315672-spec/our-oboros-worker" and .conclusion == "success"
+          ' >/dev/null
+          artifact=$(gh api "repos/$worker/actions/runs/$run/artifacts" | jq -ce '
+            [.artifacts[] | select(.name == "oril-cycle-01-candidate" and .expired == false)] |
+            select(length==1) | .[0] | select(.size_in_bytes<=32768 and .size_in_bytes>0)
+          ')
+          id=$(jq -er '.id | select(type=="number" and .>0 and floor==.)' <<< "$artifact")
+          digest=$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$")) | split(":")[1]' <<< "$artifact")
+          gh api "repos/$worker/actions/artifacts/$id/zip" > "$RUNNER_TEMP/candidate.zip"
+          printf '%s  %s\n' "$digest" "$RUNNER_TEMP/candidate.zip" | sha256sum -c -
+          python3 - "$run" "$worker_head" <<'PY'
+          import hashlib, json, os, re, sys, zipfile
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          with zipfile.ZipFile(root / "candidate.zip") as archive:
+              assert sorted(archive.namelist()) == ["candidate.patch", "receipt.json"]
+              assert all(0 < entry.file_size <= 16000 for entry in archive.infolist())
+              patch = archive.read("candidate.patch")
+              receipt = json.loads(archive.read("receipt.json"))
+          assert re.fullmatch(r"[0-9a-f]{64}", receipt.pop("binary_sha256"))
+          assert receipt == {
+              "task": "oril-cycle-01", "run": int(sys.argv[1]), "worker_head": sys.argv[2],
+              "base_sha": os.environ["BASE"], "model_calls": 1,
+              "input_sha256": "6b6807de14ac04bb5f3cdca04918a63bbd0fd1b83c4dc8b656d6b1451d1c205d",
+              "patch_sha256": hashlib.sha256(patch).hexdigest(),
+          }
+          (root / "candidate.patch").write_bytes(patch)
+          PY
+      - name: Compare baseline and candidate with network disabled
+        run: |
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/upstream"
+          fixtures="$RUNNER_TEMP/fixtures"
+          git init -q "$upstream"
+          git -C "$upstream" fetch --no-tags --depth 1 "https://github.com/$GITHUB_REPOSITORY.git" "$BASE"
+          git -C "$upstream" checkout --detach -q FETCH_HEAD
+          test "$(git -C "$upstream" rev-parse HEAD)" = "$BASE"
+          docker pull "$IMAGE"
+          grade() {
+            timeout --signal=KILL 65s docker run --rm --pull=never --network none --read-only \
+              --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 --cpus 2 --pids-limit 64 --memory 256m \
+              --mount "type=bind,src=$upstream,dst=/work,readonly" \
+              --mount "type=bind,src=$fixtures,dst=/fixtures,readonly" \
+              --workdir /work "$IMAGE" timeout --signal=KILL 60s python -IB /fixtures/grade.py "$1"
+          }
+          grade 4 | tee "$RUNNER_TEMP/baseline.json"
+          if [[ ! -f "$RUNNER_TEMP/candidate.patch" ]]; then
+            echo "Public baseline verified. No candidate receipt supplied."
+            exit 0
+          fi
+          git -C "$upstream" apply --check --index "$RUNNER_TEMP/candidate.patch"
+          git -C "$upstream" apply --index "$RUNNER_TEMP/candidate.patch"
+          test "$(git -C "$upstream" diff --cached --name-only)" = "$TARGET"
+          test -z "$(git -C "$upstream" diff --cached --summary)"
+          grade 3 | tee "$RUNNER_TEMP/candidate.json"
+          jq -e -s '.[0].proof_sha256 == .[1].proof_sha256 and .[1].proof_checks == 6' \
+            "$RUNNER_TEMP/baseline.json" "$RUNNER_TEMP/candidate.json" >/dev/null

@@ -1,0 +1,20 @@
+{
+  "cycle": 1,
+  "status": "model_timeout_no_candidate",
+  "failed_start": {
+    "run_id": 44670321642,
+    "reason": "dynamic_loader_dependency_mismatch",
+    "model_calls": 0,
+    "diagnostic_run_id": 44670527543
+  },
+  "inference": {
+    "run_id": 44670681345,
+    "head_sha": "7ff0c85479a7728e8e10154c05d372e973de326b",
+    "model_calls": 1,
+    "wall_limit_seconds": 240,
+    "exit_code": 137,
+    "candidate_artifact": null
+  },
+  "candidate_verified": false,
+  "next_task_started": false
+}
