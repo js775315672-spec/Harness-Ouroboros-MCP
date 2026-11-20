@@ -112,5 +112,34 @@ class PhaseTraceTests(unittest.TestCase):
         self.assertFalse(result["independently_attested"])
 
 
+    @unittest.skipUnless(hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY"), "POSIX fd required")
+    def test_symlinked_parent_is_rejected_without_touching_victim(self):
+        outside = pathlib.Path(self.tmp.name) / "outside"
+        outside.mkdir()
+        victim = outside / "trace.jsonl"
+        victim.write_text("preserve", encoding="utf-8")
+        link = pathlib.Path(self.tmp.name) / "redirect"
+        link.symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(OSError):
+            run_timed("model_call", [sys.executable, "-c", "pass"],
+                      link / "trace.jsonl", sha=SHA, run_id=123)
+        self.assertEqual(victim.read_text(encoding="utf-8"), "preserve")
+
+    @unittest.skipUnless(hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY"), "POSIX fd required")
+    def test_nested_regular_directories_still_work(self):
+        folder = pathlib.Path(self.tmp.name) / "safe" / "nested"
+        folder.mkdir(parents=True)
+        dest = folder / "trace.jsonl"
+        self.assertEqual(run_timed("model_call", [sys.executable, "-c", "pass"],
+                                   dest, sha=SHA, run_id=123), 0)
+        self.assertEqual(len(dest.read_text().splitlines()), 1)
+
+    def test_parent_traversal_rejected(self):
+        dest = pathlib.Path(self.tmp.name) / "safe" / ".." / "trace.jsonl"
+        with self.assertRaisesRegex(ValueError, "parent traversal"):
+            run_timed("model_call", [sys.executable, "-c", "pass"],
+                      dest, sha=SHA, run_id=123)
+
+
 if __name__ == "__main__":
     unittest.main()
