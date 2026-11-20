@@ -26,9 +26,27 @@ class PairedBenchmarkAudit(unittest.TestCase):
         self.assertEqual(r["independent_quality_n"], 0)
 
     def test_balanced_order(self):
-        r = summarize([pair()] * 4, "b" * 64)
+        r = summarize([pair()] * 4, "b" * 64,
+                      observed_orders=["compact_first", "verbose_first"] * 2)
         self.assertEqual(r["pair_orders"],
                          ["compact_first", "verbose_first"] * 2)
+        self.assertTrue(r["pair_order_observed"])
+
+    def test_unobserved_order_is_not_invented(self):
+        r = summarize([pair()] * 4, "b" * 64)
+        self.assertIsNone(r["pair_orders"])
+        self.assertFalse(r["pair_order_observed"])
+
+    def test_rejects_unbalanced_observed_order(self):
+        with self.assertRaisesRegex(ValueError, "unbalanced"):
+            summarize([pair()] * 4, "b" * 64,
+                      observed_orders=["compact_first"] * 4)
+
+    def test_rejects_invalid_or_mismatched_order(self):
+        for bad in (["compact_first"], ["compact_first", "bad"] * 2,
+                    "compact_first", [True] * 4, []):
+            with self.subTest(bad=str(bad)), self.assertRaises(ValueError):
+                summarize([pair()] * 4, "b" * 64, observed_orders=bad)
 
     def test_missing_variant_rejected(self):
         with self.assertRaises(ValueError):
