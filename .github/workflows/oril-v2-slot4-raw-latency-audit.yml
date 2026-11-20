@@ -1,0 +1,24 @@
+name: ORIL v2 slot4 raw latency sidecar audit (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_cpu_raw_latency_sidecar_audit.py'
+      - 'tests/test_oril_v2_cpu_raw_latency_sidecar_audit.py'
+      - 'docs/oril_v2_slot4_raw_latency_sidecar_audit.md'
+      - '.github/workflows/oril-v2-slot4-raw-latency-audit.yml'
+permissions:
+  contents: read
+jobs:
+  independent-raw-arithmetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Record tested commit and environment
+        run: |
+          git rev-parse HEAD
+          python3 --version
+      - name: Verify raw-sidecar arithmetic and unsupported model claims
+        run: python3 -m unittest discover -s tests -p test_oril_v2_cpu_raw_latency_sidecar_audit.py -v
