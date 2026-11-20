@@ -1,0 +1,23 @@
+name: ORIL v2 evidence ancestor symlink boundary (experimental)
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_evidence_path_components.py
+      - tests/test_oril_v2_evidence_path_components.py
+      - .github/workflows/oril-v2-evidence-path-components.yml
+permissions:
+  contents: read
+jobs:
+  evidence-path-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: New symlink ancestor regression
+        run: python3 -m unittest discover -s tests -p 'test_oril_v2_evidence_path_components.py' -v
+      - name: Parent GPU evidence regressions
+        run: |
+          python3 -m unittest discover -s tests -p 'test_oril_v2_training_evidence_audit.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_gpu_log_byte_audit.py' -v
