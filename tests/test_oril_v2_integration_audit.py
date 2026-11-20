@@ -124,6 +124,31 @@ class ReadinessAuditTests(unittest.TestCase):
         self.assertEqual(result["pull_requests"][1]["independent_model_evaluation"], "unmeasured")
         self.assertFalse(result["pull_requests"][1]["merge_approved"])
 
+    def test_cross_repository_run_rejected_when_identity_supplied(self):
+        data = fixture()
+        data["repository_full_name"] = "trusted/oril"
+        item = audit(data)["pull_requests"][1]
+        self.assertEqual(item["ci_snapshot_status"], "unverified")
+        self.assertIn("ci_missing_or_stale", item["blockers"])
+
+    def test_same_repository_run_accepted_when_identity_supplied(self):
+        data = fixture()
+        data["repository_full_name"] = "trusted/oril"
+        data["workflow_runs"][0]["html_url"] = "https://github.com/trusted/oril/actions/runs/123"
+        self.assertEqual(audit(data)["pull_requests"][1]["ci_snapshot_status"], "snapshot_success")
+
+    def test_repository_prefix_spoof_rejected(self):
+        data = fixture()
+        data["repository_full_name"] = "trusted/oril"
+        data["workflow_runs"][0]["html_url"] = "https://github.com/trusted/oril-evil/actions/runs/123"
+        self.assertEqual(audit(data)["pull_requests"][1]["ci_snapshot_status"], "unverified")
+
+    def test_malformed_repository_identity_rejected(self):
+        data = fixture()
+        data["repository_full_name"] = "https://github.com/trusted/oril"
+        with self.assertRaises(ValueError):
+            audit(data)
+
 
 if __name__ == "__main__":
     unittest.main()
