@@ -44,10 +44,10 @@ jobs:
           descriptor=docs/evolution/cycle-01-worker-result.json
           if [[ ! -f "$descriptor" ]]; then exit 0; fi
           worker=js775315672-spec/our-oboros-worker
-          worker_head=97f0f419a3719eb0364fa177dc0f75d3b3af718b
+          worker_head=7ff0c85479a7728e8e10154c05d372e973de326b
           run=$(jq -er '.run_id | select(type=="number" and .>0 and floor==.)' "$descriptor")
           gh api "repos/$worker/actions/runs/$run" | jq -e --arg sha "$worker_head" '
-            .head_sha == $sha and .head_branch == "main" and .event == "workflow_dispatch" and
+            .head_sha == $sha and .head_branch == "main" and .event == "push" and
             .path == ".github/workflows/oril-cycle-01-generate.yml" and .run_attempt == 1 and
             .repository.full_name == "js775315672-spec/our-oboros-worker" and .conclusion == "success"
           ' >/dev/null
@@ -60,7 +60,7 @@ jobs:
           gh api "repos/$worker/actions/artifacts/$id/zip" > "$RUNNER_TEMP/candidate.zip"
           printf '%s  %s\n' "$digest" "$RUNNER_TEMP/candidate.zip" | sha256sum -c -
           python3 - "$run" "$worker_head" <<'PY'
-          import hashlib, json, os, sys, zipfile
+          import hashlib, json, os, re, sys, zipfile
           from pathlib import Path
           root = Path(os.environ["RUNNER_TEMP"])
           with zipfile.ZipFile(root / "candidate.zip") as archive:
@@ -68,6 +68,7 @@ jobs:
               assert all(0 < entry.file_size <= 16000 for entry in archive.infolist())
               patch = archive.read("candidate.patch")
               receipt = json.loads(archive.read("receipt.json"))
+          assert re.fullmatch(r"[0-9a-f]{64}", receipt.pop("binary_sha256"))
           assert receipt == {
               "task": "oril-cycle-01", "run": int(sys.argv[1]), "worker_head": sys.argv[2],
               "base_sha": os.environ["BASE"], "model_calls": 1,
@@ -87,11 +88,11 @@ jobs:
           test "$(git -C "$upstream" rev-parse HEAD)" = "$BASE"
           docker pull "$IMAGE"
           grade() {
-            timeout --signal=KILL 60s docker run --rm --pull=never --network none --read-only \
+            timeout --signal=KILL 65s docker run --rm --pull=never --network none --read-only \
               --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 --cpus 2 --pids-limit 64 --memory 256m \
               --mount "type=bind,src=$upstream,dst=/work,readonly" \
               --mount "type=bind,src=$fixtures,dst=/fixtures,readonly" \
-              --workdir /work "$IMAGE" python -IB /fixtures/grade.py "$1"
+              --workdir /work "$IMAGE" timeout --signal=KILL 60s python -IB /fixtures/grade.py "$1"
           }
           grade 4 | tee "$RUNNER_TEMP/baseline.json"
           if [[ ! -f "$RUNNER_TEMP/candidate.patch" ]]; then
