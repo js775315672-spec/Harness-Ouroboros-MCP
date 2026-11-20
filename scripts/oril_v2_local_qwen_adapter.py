@@ -57,6 +57,21 @@ def ensure_local_model(model_dir):
         raise ValueError("local config.json must not be a symlink")
     if not config.is_file():
         raise ValueError("local config.json missing")
+    # A local config is still untrusted input. Reject malformed or oversized
+    # metadata before importing torch/transformers or touching model weights.
+    # This is NOT a full checkpoint integrity proof; other weight files can
+    # change and must be externally pinned before any trusted evaluation.
+    with config.open("rb") as stream:
+        raw = stream.read(1048577)
+    if len(raw) > 1048576:
+        raise ValueError("local config.json exceeds 1 MiB")
+    try:
+        data = json.loads(raw.decode("utf-8"), object_pairs_hook=unique,
+                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite config JSON")))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid local config JSON") from exc
+    if not isinstance(data, dict):
+        raise ValueError("local config JSON must be an object")
     return str(path.resolve())
 
 
