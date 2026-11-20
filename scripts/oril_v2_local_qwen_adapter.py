@@ -100,18 +100,24 @@ def run_inference(request, *, model_dir, device="cpu", max_new_tokens=64):
         torch.cuda.manual_seed_all(request["seed"])
     tokenizer = AutoTokenizer.from_pretrained(
         model_path, local_files_only=True, trust_remote_code=False)
+    # Tokenize and enforce the context budget BEFORE allocating model weights.
+    # A 4000-character request may expand beyond 4096 tokens; rejecting it
+    # after from_pretrained() needlessly consumes CPU/GPU memory and time.
+    prompt = render_question(request["question"], tokenizer)
+    encoded = tokenizer(prompt, return_tensors="pt")
+    ids = encoded["input_ids"]
+    if len(ids.shape) != 2 or ids.shape[0] != 1 or not 0 < ids.shape[-1] <= 4096:
+        raise ValueError("prompt must contain 1..4096 input tokens")
+    mask = encoded.get("attention_mask")
+    if mask is not None and mask.shape != ids.shape:
+        raise ValueError("attention mask shape mismatch")
     model = AutoModelForCausalLM.from_pretrained(
         model_path, local_files_only=True, trust_remote_code=False)
     model.to(device)
     model.eval()
-    prompt = render_question(request["question"], tokenizer)
-    encoded = tokenizer(prompt, return_tensors="pt")
-    ids = encoded["input_ids"].to(device)
-    mask = encoded.get("attention_mask")
+    ids = ids.to(device)
     if mask is not None:
         mask = mask.to(device)
-    if ids.shape[-1] > 4096:
-        raise ValueError("prompt exceeds 4096 input tokens")
     kwargs = {"input_ids": ids, "max_new_tokens": max_new_tokens,
               "do_sample": False}
     if mask is not None:
