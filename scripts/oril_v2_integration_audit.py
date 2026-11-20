@@ -110,7 +110,7 @@ def audit(snapshot):
                     latest = candidates[0]
                 elif len(candidates) > 1 and all(
                         isinstance(r.get("created_at"), str) and
-                        re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z", r["created_at"])
+                        re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", r["created_at"])
                         and type(r.get("run_attempt", 1)) is int and r.get("run_attempt", 1) > 0
                         for r in candidates):
                     order = sorted(candidates, key=lambda r: (r["created_at"], r.get("run_attempt", 1)))
