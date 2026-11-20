@@ -1,0 +1,13 @@
+{
+  "status": "local_evaluator_verified_pending_isolated_runner",
+  "base_sha": "068cbd75f70a272094f22cfea27dc1e44fc9b0de",
+  "evaluation_contract_sha256": "c1a4c86a2ff830ad3476f124f89783d4feae2bdc625ada9bc021cf4790228297",
+  "grader_and_embedded_fixture_sha256": "60ec608e2009836db53601835f5db36cc1d285ef1b223050e649cf5aa362ef93",
+  "local_baseline": {
+    "passed": 7,
+    "metadata_reads": 4,
+    "archive_reads": 1
+  },
+  "candidate_metadata_read_target": 3,
+  "model_calls": 0
+}
