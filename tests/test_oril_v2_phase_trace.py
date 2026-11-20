@@ -1,5 +1,6 @@
 """Runtime model/verification/operations phase tracer: measured but unattested."""
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -60,6 +61,30 @@ class PhaseTraceTests(unittest.TestCase):
         self.assertIsNone(summary["spans_seconds"]["independent_verification"])
         self.assertIsNone(summary["spans_seconds"]["whole_cycle"])
         self.assertGreater(summary["spans_seconds"]["operational_followup"], 0)
+
+
+    @unittest.skipUnless(hasattr(os, "O_NOFOLLOW") and hasattr(os, "symlink"), "POSIX nofollow required")
+    def test_symlink_output_does_not_overwrite_target(self):
+        target = pathlib.Path(self.tmp.name) / "victim.txt"
+        target.write_text("untouched", encoding="utf-8")
+        self.target.symlink_to(target)
+        with self.assertRaises(OSError):
+            run_timed("model_call", [sys.executable, "-c", "pass"],
+                      self.target, sha=SHA, run_id=123)
+        self.assertEqual(target.read_text(encoding="utf-8"), "untouched")
+
+    def test_existing_world_readable_output_rejected(self):
+        self.target.write_text("original\\n", encoding="utf-8")
+        os.chmod(self.target, 0o644)
+        with self.assertRaises(PermissionError):
+            run_timed("model_call", [sys.executable, "-c", "pass"],
+                      self.target, sha=SHA, run_id=123)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "original\\n")
+
+    def test_trace_file_private_mode(self):
+        run_timed("model_call", [sys.executable, "-c", "pass"],
+                  self.target, sha=SHA, run_id=123)
+        self.assertEqual(self.target.stat().st_mode & 0o077, 0)
 
     def test_cross_run_rejection(self):
         run_timed("model_call", [sys.executable, "-c", "pass"],
