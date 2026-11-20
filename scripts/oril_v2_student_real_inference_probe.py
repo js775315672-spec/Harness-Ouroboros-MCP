@@ -194,3 +194,7 @@ def main():
             # Temp file is private to this invocation; no report is published
             # when an adapter fails. Parent-directory races remain out of scope.
             os.unlink(pending)
+
+
+if __name__ == "__main__":
+    main()
