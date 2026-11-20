@@ -1,0 +1,27 @@
+name: ORIL v2 distillation second-open rollback (experimental)
+on:
+  push:
+    branches:
+      - 'fix/oril-v2-distill-output-second-open-rollback-slot1-20261121'
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_teacher_distillation_pack.py'
+      - 'tests/test_oril_v2_distillation_second_open_rollback.py'
+      - '.github/workflows/oril-v2-distillation-second-open-rollback.yml'
+permissions:
+  contents: read
+jobs:
+  offline-rollback-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: git rev-parse HEAD
+      - name: Second-open failure rollback and no-clobber
+        run: python3 -m unittest discover -s tests -p 'test_oril_v2_distillation_second_open_rollback.py' -v
+      - name: Existing distillation safety and curation regressions
+        run: |
+          python3 -m unittest discover -s tests -p 'test_oril_v2_distillation_export_safety.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_teacher_distillation_pack.py' -v
