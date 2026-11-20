@@ -213,5 +213,30 @@ class DistillTests(unittest.TestCase):
             self.assertEqual(len(path.read_text().splitlines()), 1)
 
 
+    def test_zero_width_space_cannot_hide_train_heldout_alias(self):
+        # NFKC preserves U+200B; reject ambiguous question rather than
+        # accidentally treating it as a separate heldout task.
+        with self.assertRaisesRegex(ValueError, "invisible format"):
+            compile_examples([
+                case(1, question="repair dependency boundary"),
+                case(2, split="heldout", question="repair\u200b dependency boundary"),
+            ])
+
+    def test_bidi_override_question_rejected(self):
+        with self.assertRaisesRegex(ValueError, "invisible format"):
+            compile_examples([case(1, question="repair \u202eimportant")])
+
+    def test_zero_width_joiner_question_rejected(self):
+        with self.assertRaisesRegex(ValueError, "invisible format"):
+            compile_examples([case(1, question="file\u200d integrity")])
+
+    def test_normal_multilingual_question_remains_valid(self):
+        examples, _ = compile_examples([
+            case(1, question="의존성 경계 확인"),
+            case(2, question="검증 오류 복구"),
+        ])
+        self.assertEqual(len(examples), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
