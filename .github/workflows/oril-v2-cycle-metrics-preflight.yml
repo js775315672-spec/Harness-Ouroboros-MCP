@@ -5,6 +5,7 @@ on:
       - scripts/oril_v2_cycle_metrics.py
       - tests/test_oril_v2_cycle_metrics.py
       - tests/test_oril_v2_cycle_metrics_nonfinite.py
+      - tests/test_oril_v2_cycle_metrics_overflow.py
       - .github/workflows/oril-v2-cycle-metrics-preflight.yml
 permissions:
   contents: read
@@ -20,3 +21,5 @@ jobs:
         run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics.py -v
       - name: Reject nonfinite metrics
         run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_nonfinite.py -v
+      - name: Reject overflow and invalid JSON metrics
+        run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_overflow.py -v
