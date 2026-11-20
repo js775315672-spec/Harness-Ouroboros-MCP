@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import stat
 
 from oril_v2_bounded_adapter_capture import capture_adapter
 
@@ -33,14 +34,37 @@ def read_prefix(path, expected_sha):
     """Pin the exact bytes, reject symlink ancestry, require operator-provided SHA."""
     if not isinstance(expected_sha, str) or len(expected_sha) != 64 or any(c not in "0123456789abcdef" for c in expected_sha):
         raise ValueError("expected SHA-256 must be lowercase 64-hex")
-    p = Path(path).absolute()
-    for item in (p, *p.parents):
-        if item.is_symlink():
-            raise ValueError("symlinked prompt path rejected")
-    if not p.is_file():
-        raise ValueError("prompt prefix must be a regular local file")
-    with p.open("rb") as f:
-        raw = f.read(3001)
+    # POSIX descriptor-relative traversal pins every directory after open.
+    # Refuse unsupported platforms rather than falling back to racy Path checks.
+    if os.name != "posix" or not hasattr(os, "O_NOFOLLOW"):
+        raise ValueError("descriptor-pinned prefix requires POSIX O_NOFOLLOW")
+    p = Path(os.path.abspath(os.fspath(path)))
+    parts = p.parts[1:]
+    if not parts or any(x in ("", ".", "..") for x in parts):
+        raise ValueError("invalid prompt path")
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open("/", dir_flags)
+    try:
+        for component in parts[:-1]:
+            next_fd = os.open(component, dir_flags, dir_fd=fd)
+            os.close(fd)
+            fd = next_fd
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        try:
+            file_fd = os.open(parts[-1], flags, dir_fd=fd)
+        except OSError as exc:
+            raise ValueError("symlinked or unreadable prompt path rejected") from exc
+        try:
+            if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+                raise ValueError("prompt prefix must be a regular local file")
+            with os.fdopen(file_fd, "rb", closefd=False) as stream:
+                raw = stream.read(3001)
+        finally:
+            os.close(file_fd)
+    except OSError as exc:
+        raise ValueError("symlinked or unreadable prompt path rejected") from exc
+    finally:
+        os.close(fd)
     if len(raw) > 3000 or not raw:
         raise ValueError("prompt prefix must be 1..3000 bytes")
     if hashlib.sha256(raw).hexdigest() != expected_sha:
