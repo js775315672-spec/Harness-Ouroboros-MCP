@@ -9,16 +9,16 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
-from test_oril_v2_training_evidence_audit import TrainingEvidenceAuditTests
+import test_oril_v2_training_evidence_audit as fixtures
 from oril_v2_gpu_log_byte_audit import check_log_bytes
 
 
 class GPUByteEvidenceTests(unittest.TestCase):
     def write(self):
-        TrainingEvidenceAuditTests.write(self)
+        fixtures.TrainingEvidenceAuditTests.write(self)
 
     def setUp(self):
-        TrainingEvidenceAuditTests.setUp(self)
+        fixtures.TrainingEvidenceAuditTests.setUp(self)
         self.log = self.root / "gpu.log"
         self.log.write_bytes(b"synthetic-log")
 
