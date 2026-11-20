@@ -1,0 +1,22 @@
+name: ORIL v2 slot1 telemetry preflight
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_phase_trace.py'
+      - 'tests/test_oril_v2_slot1_preflight.py'
+      - '.github/workflows/oril-v2-slot1-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify telemetry and preflight regression
+        run: python -m unittest discover -s tests -p 'test_oril_v2_*trace*.py' -v
+      - name: Verify new fail-closed tests
+        run: python -m unittest discover -s tests -p 'test_oril_v2_slot1_preflight.py' -v
