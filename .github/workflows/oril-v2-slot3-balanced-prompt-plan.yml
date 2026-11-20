@@ -1,0 +1,20 @@
+name: ORIL v2 slot3 balanced prompt run plan
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_balanced_prompt_run_plan.py
+      - tests/test_oril_v2_balanced_prompt_run_plan.py
+      - docs/oril_v2_slot3_balanced_prompt_run_plan.md
+      - .github/workflows/oril-v2-slot3-balanced-prompt-plan.yml
+permissions:
+  contents: read
+jobs:
+  offline-plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate deterministic answer-free paired schedule
+        run: python3 -m unittest discover -s tests -p 'test_oril_v2_balanced_prompt_run_plan.py' -v
