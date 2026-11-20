@@ -25,7 +25,7 @@ class PairMarkerTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_unpublished_pair_fails_closed(self):
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaisesRegex(ValueError, "regular file required"):
             verify(self.train, self.report, self.marker)
 
     def test_published_pair_verifies(self):
@@ -76,7 +76,7 @@ class PairMarkerTests(unittest.TestCase):
 
     def test_cross_directory_rejected(self):
         with tempfile.TemporaryDirectory() as other:
-            with self.assertRaisesRegex(ValueError, "same directory"):
+            with self.assertRaisesRegex(ValueError, "one directory"):
                 publish(self.train, self.report, Path(other) / "marker")
 
     def test_marker_payload_corruption_rejected(self):
