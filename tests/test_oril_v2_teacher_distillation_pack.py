@@ -68,6 +68,33 @@ class DistillTests(unittest.TestCase):
             compile_examples([case(1, question=" Hello   WORLD "),
                               case(2, split="heldout", question="hello world")])
 
+    def test_nfkc_fullwidth_question_cannot_cross_heldout_split(self):
+        # NFKC maps fullwidth Latin letters to ASCII; old split guard missed it.
+        train = case(1, question="Fix dependency boundary")
+        heldout = case(2, split="heldout", question="Ｆｉｘ dependency boundary")
+        with self.assertRaisesRegex(ValueError, "question leakage"):
+            compile_examples([train, heldout])
+
+    def test_nfkc_ligature_question_cannot_cross_validation_split(self):
+        train = case(1, question="file integrity check")
+        validation = case(2, split="validation", question="ﬁle integrity check")
+        with self.assertRaisesRegex(ValueError, "question leakage"):
+            compile_examples([train, validation])
+
+    def test_nfkc_alias_same_train_split_deduplicates(self):
+        rows = [case(1, question="File review"),
+                case(2, question="Ｆｉｌｅ review")]
+        examples, report = compile_examples(rows)
+        self.assertEqual(len(examples), 1)
+        self.assertEqual(report["selected_train_rows"], 1)
+
+    def test_nfkc_does_not_collapse_semantically_distinct_questions(self):
+        rows = [case(1, question="repair failure"),
+                case(2, question="repair success")]
+        examples, report = compile_examples(rows)
+        self.assertEqual(len(examples), 2)
+        self.assertEqual(report["selected_train_rows"], 2)
+
     def test_duplicate_case_id_rejected(self):
         a = case(1)
         b = case(2, case_id=a["case_id"])

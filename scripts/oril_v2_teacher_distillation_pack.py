@@ -11,6 +11,7 @@ import json
 import math
 from pathlib import Path
 import re
+import unicodedata
 
 FIELDS = {"case_id", "group_id", "split", "task_type", "question",
           "teacher_answer", "checks", "quality", "review_accepted",
@@ -23,7 +24,7 @@ TEXT_LIMIT = 4000
 
 
 def norm(value):
-    return " ".join(value.split()).casefold()
+    return " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
 
 
 def digest(value):
