@@ -9,6 +9,8 @@ import argparse
 import hashlib
 import json
 import math
+import os
+from contextlib import ExitStack
 from pathlib import Path
 import re
 import unicodedata
@@ -213,12 +215,23 @@ def main():
              Path(args.output_report).resolve()}
     if len(paths) != 3:
         raise ValueError("input and outputs must be distinct")
-    Path(args.output_train).write_text(
-        "".join(json.dumps(x, sort_keys=True, ensure_ascii=False) + "\n" for x in training),
-        encoding="utf-8")
-    Path(args.output_report).write_text(
-        json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8")
+    # A dataset compiler must never overwrite an existing (possibly heldout)
+    # file or follow a symlink output. O_EXCL rejects even dangling symlinks.
+    # Restrict newly created files to owner access, regardless of process umask.
+    # Open BOTH outputs before writing either, so a pre-existing second output
+    # cannot cause a partial overwrite of the first output.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    with ExitStack() as stack:
+        train_fd = os.open(args.output_train, flags, 0o600)
+        train_file = stack.enter_context(os.fdopen(train_fd, "w", encoding="utf-8"))
+        report_fd = os.open(args.output_report, flags, 0o600)
+        report_file = stack.enter_context(os.fdopen(report_fd, "w", encoding="utf-8"))
+        train_file.write(
+            "".join(json.dumps(x, sort_keys=True, ensure_ascii=False) + "\n" for x in training))
+        report_file.write(
+            json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 if __name__ == "__main__":
