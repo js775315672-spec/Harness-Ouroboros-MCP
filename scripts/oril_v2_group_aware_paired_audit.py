@@ -11,8 +11,14 @@ import json
 import math
 from pathlib import Path
 import random
+import unicodedata
 
 from oril_v2_paired_student_eval import check, read
+
+def canonical_group_id(raw):
+    """Normalize Unicode compatibility, whitespace and casing aliases."""
+    return " ".join(unicodedata.normalize("NFKC", raw).split()).casefold()
+
 
 def group_audit(baseline, candidate, *, min_groups=30, samples=2000,
                 noninferiority_margin=0.02, token_target=20):
@@ -34,7 +40,7 @@ def group_audit(baseline, candidate, *, min_groups=30, samples=2000,
     grouped = defaultdict(list)
     for k in keys:
         # Case-fold grouping to prevent easy group ID casing bypasses.
-        grouped[a[k]["group_id"].strip().casefold()].append(k)
+        grouped[canonical_group_id(a[k]["group_id"])].append(k)
     groups = sorted(grouped)
     n_groups = len(groups)
     # Use equal-weight group means, not per-task weighting, to prevent a
@@ -65,6 +71,7 @@ def group_audit(baseline, candidate, *, min_groups=30, samples=2000,
         "schema_version": 1,
         "task_rows": len(keys),
         "independent_groups_proxy": n_groups,
+        "group_id_normalization": "NFKC+collapse-whitespace+casefold",
         "max_rows_per_group": max(map(len, grouped.values())),
         "group_mean_accuracy_delta": round(sum(changes) / n_groups, 6),
         "group_bootstrap_95ci": [round(low, 6), round(high, 6)],

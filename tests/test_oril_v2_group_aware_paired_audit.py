@@ -45,6 +45,31 @@ class GroupAwareAuditTests(unittest.TestCase):
             a[i]["group_id"] = b[i]["group_id"] = "Family" if i % 2 else "family"
         self.assertEqual(group_audit(a, b)["independent_groups_proxy"], 1)
 
+    def test_whitespace_aliases_do_not_inflate_independent_groups(self):
+        a, b = rows(), rows(model=B, token=70)
+        aliases = ["Family Alpha", "Family  Alpha", "  Family\tAlpha ", "family alpha"]
+        for i in range(40):
+            a[i]["group_id"] = b[i]["group_id"] = aliases[i % len(aliases)]
+        report = group_audit(a, b)
+        self.assertEqual(report["independent_groups_proxy"], 1)
+        self.assertEqual(report["status"], "판단불가")
+
+    def test_unicode_compatibility_aliases_do_not_inflate_groups(self):
+        a, b = rows(), rows(model=B, token=70)
+        aliases = ["Team 12", "Ｔｅａｍ １２", "team 12", "Team\u00a012"]
+        for i in range(40):
+            a[i]["group_id"] = b[i]["group_id"] = aliases[i % len(aliases)]
+        report = group_audit(a, b)
+        self.assertEqual(report["independent_groups_proxy"], 1)
+        self.assertFalse(report["quality_noninferiority_pass"])
+
+    def test_distinct_groups_remain_distinct_after_normalization(self):
+        a, b = rows(), rows(model=B, token=70)
+        report = group_audit(a, b)
+        self.assertEqual(report["independent_groups_proxy"], 40)
+        self.assertEqual(report["group_id_normalization"],
+                         "NFKC+collapse-whitespace+casefold")
+
     def test_group_weighting_does_not_hide_regression(self):
         a, b = rows(39, group="large"), rows(39, model=B, token=70, group="large")
         a.append(dict(rows(1)[0], task_id="extra", group_id="small", correct=True))
