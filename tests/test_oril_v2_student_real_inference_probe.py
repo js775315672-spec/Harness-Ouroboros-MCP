@@ -125,6 +125,40 @@ print(json.dumps({"answer":"wrong","input_tokens":3,"output_tokens":1,"model_id"
             self.assertNotEqual(run.returncode, 0)
             self.assertFalse(report.exists())
 
+    def test_reject_nfkc_fullwidth_group_alias(self):
+        with tempfile.TemporaryDirectory() as t:
+            path = heldout(Path(t))
+            path.write_text(path.read_text().replace('"g1"', '"ｇ０"'))
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                read_manifest(path)
+
+    def test_reject_case_and_invisible_group_alias(self):
+        with tempfile.TemporaryDirectory() as t:
+            path = heldout(Path(t))
+            path.write_text(path.read_text().replace('"g1"', '"G\\u200b0"'))
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                read_manifest(path)
+
+    def test_reject_whitespace_group_alias(self):
+        with tempfile.TemporaryDirectory() as t:
+            path = heldout(Path(t))
+            path.write_text(path.read_text().replace('"g1"', '"g 0"'))
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                read_manifest(path)
+
+    def test_reject_invisible_only_group(self):
+        with tempfile.TemporaryDirectory() as t:
+            path = heldout(Path(t))
+            path.write_text(path.read_text().replace('"g1"', '"\\u200b"'))
+            with self.assertRaisesRegex(ValueError, "empty canonical"):
+                read_manifest(path)
+
+    def test_distinct_groups_still_allowed(self):
+        with tempfile.TemporaryDirectory() as t:
+            rows, digest = read_manifest(heldout(Path(t)))
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(len(digest), 64)
+
 
 if __name__ == "__main__":
     unittest.main()
