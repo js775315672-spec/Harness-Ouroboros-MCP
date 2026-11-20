@@ -34,17 +34,19 @@ def compare(records, current_id, window=12):
         vals = [r[field] for r in history if type(r.get(field)) in (int, float)
                 and math.isfinite(r[field]) and r[field] >= 0]
         val = current.get(field)
-        entry = {"n": len(vals), "previous_median": None, "current": val, "change_pct": None,
+        valid_current = type(val) in (int, float) and math.isfinite(val) and val >= 0
+        entry = {"n": len(vals), "previous_median": None, "current": val if valid_current else None, "change_pct": None,
                  "verdict": "판단불가"}
-        if type(val) in (int, float) and math.isfinite(val) and val >= 0 and len(vals) >= 3:
+        if valid_current and len(vals) >= 3:
             median = statistics.median(vals)
             entry["previous_median"] = median
             if median > 0:
                 change = (val - median) / median * 100
-                entry["change_pct"] = round(change, 2)
-                direction = DIRECTIONS[field]
-                entry["verdict"] = ("유지" if abs(change) < 1 else
-                                    "향상" if change * direction > 0 else "악화")
+                if math.isfinite(change):
+                    entry["change_pct"] = round(change, 2)
+                    direction = DIRECTIONS[field]
+                    entry["verdict"] = ("유지" if abs(change) < 1 else
+                                        "향상" if change * direction > 0 else "악화")
             elif val == 0:
                 entry["change_pct"] = 0
                 entry["verdict"] = "유지"
