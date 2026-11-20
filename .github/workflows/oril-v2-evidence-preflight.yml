@@ -1,0 +1,19 @@
+name: ORIL v2 offline evidence preflight tests
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_training_evidence.py
+      - tests/test_oril_v2_training_evidence.py
+      - .github/workflows/oril-v2-evidence-preflight.yml
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run offline synthetic negative tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_training_evidence.py -v
