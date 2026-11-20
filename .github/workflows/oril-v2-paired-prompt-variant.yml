@@ -1,0 +1,21 @@
+name: ORIL v2 paired prompt variant protocol (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_paired_prompt_variant_adapter.py'
+      - 'tests/test_oril_v2_paired_prompt_variant_adapter.py'
+      - 'docs/oril_v2_paired_prompt_variant.md'
+      - '.github/workflows/oril-v2-paired-prompt-variant.yml'
+permissions:
+  contents: read
+jobs:
+  protocol-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p test_oril_v2_paired_prompt_variant_adapter.py -v
