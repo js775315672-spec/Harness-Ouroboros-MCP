@@ -1,0 +1,21 @@
+name: ORIL v2 CPU same-prompt independent arithmetic audit (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_cpu_negative_control_independent_audit.py'
+      - 'tests/test_oril_v2_cpu_negative_control_independent_audit.py'
+      - 'docs/oril_v2_slot2_cpu_negative_control_audit.md'
+      - '.github/workflows/oril-v2-slot2-negative-control-audit.yml'
+permissions:
+  contents: read
+jobs:
+  independent-raw-arithmetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p 'test_oril_v2_cpu_negative_control_independent_audit.py' -v
