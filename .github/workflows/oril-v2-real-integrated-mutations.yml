@@ -1,0 +1,25 @@
+name: ORIL v2 real integrated suite mutation proof (experimental)
+on:
+  pull_request:
+    paths:
+      - tests/test_oril_v2_real_integrated_mutations.py
+      - .github/workflows/oril-v2-real-integrated-mutations.yml
+      - scripts/oril_v2_exact_test_count_audit.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-integration-mutations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Required runtime
+        run: |
+          python3 --version
+          command -v openssl
+          command -v sha256sum
+      - name: Baseline and real-suite removed/skip mutations
+        run: python3 -m unittest discover -s tests -p test_oril_v2_real_integrated_mutations.py -v
