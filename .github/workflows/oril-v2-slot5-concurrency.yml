@@ -1,5 +1,8 @@
 name: ORIL slot5 concurrent trace boundary (experimental)
 on:
+  push:
+    branches:
+      - 'oril-v2-slot5-concurrent-trace-20261120'
   pull_request:
     paths:
       - 'tests/test_oril_v2_slot5_concurrency.py'
