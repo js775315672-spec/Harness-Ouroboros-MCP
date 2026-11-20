@@ -1,0 +1,19 @@
+name: ORIL v2 synthetic training evidence contract (experimental)
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_training_evidence_audit.py
+      - tests/test_oril_v2_training_evidence_audit.py
+      - .github/workflows/oril-v2-training-evidence-audit.yml
+permissions:
+  contents: read
+jobs:
+  offline-evidence-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Synthetic evidence contract tests (no GPU training)
+        run: python3 -m unittest discover -s tests -p test_oril_v2_training_evidence_audit.py -v
