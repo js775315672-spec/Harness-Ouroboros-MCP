@@ -99,13 +99,48 @@ def consume(train, report, marker, *, before_read=None):
             report_data.get("student_weights_updated") is not False or
             report_data.get("heldout_evaluation_performed") is not False):
         raise ValueError("report cannot assert trained or evaluated student")
-    # Training rows must be JSON objects; no model inference is performed.
-    for line in train_bytes.splitlines():
-        row = _strict_json(line)
-        if not isinstance(row, dict) or not isinstance(row.get("messages"), list):
-            raise ValueError("invalid train row")
+    # Strict student training schema: integrity alone does not make an
+    # attacker-controlled training row safe. Reject role injection, hidden
+    # evaluation rows, unexpected fields and ambiguous empty conversations.
     if not train_bytes.strip():
         raise ValueError("empty train export")
+    seen_cases = set()
+    for line in train_bytes.splitlines():
+        if not line.strip():
+            raise ValueError("blank train row")
+        row = _strict_json(line)
+        if not isinstance(row, dict) or not {"messages"} <= set(row) or (
+                set(row) - {"messages", "metadata"}):
+            raise ValueError("invalid train row")
+        messages = row["messages"]
+        if (not isinstance(messages, list) or len(messages) != 2 or
+                any(not isinstance(msg, dict) or set(msg) != {"role", "content"}
+                    for msg in messages) or
+                [msg["role"] for msg in messages] != ["user", "assistant"] or
+                any(not isinstance(msg["content"], str) or
+                    not msg["content"].strip() or
+                    len(msg["content"]) > 4000 or
+                    "\x00" in msg["content"] for msg in messages)):
+            raise ValueError("invalid student conversation")
+        if "metadata" in row:
+            metadata = row["metadata"]
+            required = {"case_id", "group_id", "task_type",
+                        "review_assertion_url", "candidate_sha",
+                        "quality_assertion"}
+            if not isinstance(metadata, dict) or set(metadata) != required:
+                raise ValueError("invalid student metadata")
+            for key in ("case_id", "group_id", "task_type",
+                        "review_assertion_url", "candidate_sha"):
+                if not isinstance(metadata[key], str) or not metadata[key]:
+                    raise ValueError("invalid student metadata")
+            case_id = metadata["case_id"]
+            if case_id in seen_cases:
+                raise ValueError("duplicate student case")
+            seen_cases.add(case_id)
+            quality = metadata["quality_assertion"]
+            if (type(quality) not in (float, int) or
+                    not 0 <= quality <= 1):
+                raise ValueError("invalid student quality")
     return train_bytes, report_bytes
 
 
