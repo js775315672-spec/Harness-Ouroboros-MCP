@@ -24,6 +24,44 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+
+def open_secure_trace(path):
+    """Walk every parent through pinned directory FDs, never follow symlinks.
+
+    Relative paths are rooted in the current directory FD. The final file is
+    opened relative to the pinned parent, so renaming a parent cannot redirect
+    the write through an attacker-controlled replacement path.
+    """
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    directory = getattr(os, "O_DIRECTORY", None)
+    if nofollow is None or directory is None or not hasattr(os, "supports_dir_fd") or os.open not in os.supports_dir_fd:
+        raise OSError("secure trace output requires O_NOFOLLOW, O_DIRECTORY and dir_fd")
+    raw = os.fspath(path)
+    if not isinstance(raw, (str, bytes)) or not raw:
+        raise ValueError("nonempty trace path required")
+    parts = Path(raw).parts
+    if ".." in parts:
+        raise ValueError("parent traversal is forbidden")
+    basename = Path(raw).name
+    if basename in ("", ".", ".."):
+        raise ValueError("regular filename required")
+    root = "/" if os.path.isabs(raw) else "."
+    fd = os.open(root, os.O_RDONLY | directory | nofollow | getattr(os, "O_CLOEXEC", 0))
+    try:
+        parents = parts[1:-1] if os.path.isabs(raw) else parts[:-1]
+        for part in parents:
+            if part in ("", "."):
+                continue
+            child = os.open(part, os.O_RDONLY | directory | nofollow |
+                            getattr(os, "O_CLOEXEC", 0), dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return os.open(basename, os.O_WRONLY | os.O_APPEND | os.O_CREAT |
+                       nofollow | getattr(os, "O_CLOEXEC", 0), 0o600, dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
 def run_timed(phase, command, output, *, sha=None, run_id=None):
     if phase not in PHASES:
         raise ValueError("unknown telemetry phase")
@@ -53,13 +91,7 @@ def run_timed(phase, command, output, *, sha=None, run_id=None):
     target = Path(output)
     # Append a single small JSONL record; no subprocess command, tokens, or env.
     payload = (json.dumps(row, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
-    # A candidate-controlled symlink must never redirect trace writes to an
-    # unrelated file. Fail closed on platforms without O_NOFOLLOW.
-    nofollow = getattr(os, "O_NOFOLLOW", None)
-    if nofollow is None:
-        raise OSError("secure trace output requires O_NOFOLLOW")
-    descriptor = os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT |
-                         nofollow | getattr(os, "O_CLOEXEC", 0), 0o600)
+    descriptor = open_secure_trace(target)
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode):
