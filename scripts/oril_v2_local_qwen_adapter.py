@@ -49,7 +49,7 @@ def ensure_local_model(model_dir):
     path = Path(model_dir).absolute()
     for component in (path, *path.parents):
         if component.is_symlink():
-            raise ValueError("model directory ancestry must not contain symlinks")
+            raise ValueError("model must have non-symlink directory ancestry")
     if not path.is_dir():
         raise ValueError("model must be an existing non-symlink local directory")
     config = path / "config.json"
