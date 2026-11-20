@@ -101,7 +101,7 @@ def invoke(cmd, question, case_id, seed, timeout):
         result = json.loads(proc.stdout, object_pairs_hook=strict_json_pairs,
                             parse_constant=reject_nonfinite_json)
     except (ValueError, TypeError) as exc:
-        raise ValueError("adapter must emit one JSON object") from exc
+        raise ValueError("invalid adapter JSON: " + str(exc)) from exc
     if not isinstance(result, dict) or set(result) != {"answer", "input_tokens", "output_tokens", "model_id"}:
         raise ValueError("adapter response schema invalid")
     if not isinstance(result["answer"], str) or len(result["answer"]) > 20000:
