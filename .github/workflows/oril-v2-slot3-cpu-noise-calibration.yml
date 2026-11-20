@@ -1,0 +1,23 @@
+name: ORIL v2 slot3 CPU null-calibrated diagnostic (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_cpu_noise_calibrated_diagnostic.py'
+      - 'tests/test_oril_v2_cpu_noise_calibrated_diagnostic.py'
+      - 'docs/oril_v2_slot3_cpu_noise_calibration.md'
+      - '.github/workflows/oril-v2-slot3-cpu-noise-calibration.yml'
+permissions:
+  contents: read
+jobs:
+  null-calibrated-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p 'test_oril_v2_cpu_noise_calibrated_diagnostic.py' -v
+      - name: Regress inherited null arithmetic
+        run: python3 -m unittest discover -s tests -p 'test_oril_v2_cpu_negative_control_independent_audit.py' -v
