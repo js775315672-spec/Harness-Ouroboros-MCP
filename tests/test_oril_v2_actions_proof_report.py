@@ -39,9 +39,10 @@ class SourceProofTests(unittest.TestCase):
         row = summarize_run(run, jobs)
         self.assertEqual(row["queue_seconds"], 3)
         self.assertEqual(row["ci_job_wall_seconds"], 15)
-        self.assertEqual(row["job_checkout_shas"], ["b" * 40])
+        self.assertEqual(row["job_api_head_shas"], ["b" * 40])
+        self.assertIsNone(row["actual_checkout_sha"])
         self.assertEqual(row["head_sha"], "a" * 40)
-        self.assertNotEqual(row["head_sha"], row["job_checkout_shas"][0])
+        self.assertNotEqual(row["head_sha"], row["job_api_head_shas"][0])
 
     def test_missing_timestamps_are_null_not_zero(self):
         run, jobs = sample()
