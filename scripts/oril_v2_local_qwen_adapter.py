@@ -41,10 +41,21 @@ def parse_request(raw):
 
 
 def ensure_local_model(model_dir):
-    path = Path(model_dir)
-    if not path.is_dir() or path.is_symlink():
+    """Reject symlinked ancestors/config before local model loading.
+
+    This is a best-effort static preflight, NOT an atomic filesystem trust
+    boundary: concurrent path swaps and other model files remain untrusted.
+    """
+    path = Path(model_dir).absolute()
+    for component in (path, *path.parents):
+        if component.is_symlink():
+            raise ValueError("model directory ancestry must not contain symlinks")
+    if not path.is_dir():
         raise ValueError("model must be an existing non-symlink local directory")
-    if not (path / "config.json").is_file():
+    config = path / "config.json"
+    if config.is_symlink():
+        raise ValueError("local config.json must not be a symlink")
+    if not config.is_file():
         raise ValueError("local config.json missing")
     return str(path.resolve())
 
