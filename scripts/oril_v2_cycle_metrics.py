@@ -12,6 +12,16 @@ DIRECTIONS = {"total_seconds": -1, "model_seconds": -1, "verification_seconds": 
               "retries": -1, "failures": -1, "regressions": -1, "rollbacks": -1}
 
 
+def valid_nonnegative(value):
+    """Reject booleans, nonfinite values and unrepresentably large integers."""
+    if type(value) not in (int, float) or value < 0:
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def compare(records, current_id, window=12):
     """Compare only matching task_type and difficulty; missing data is not zero."""
     if not isinstance(records, list) or not 5 <= window <= 12:
@@ -31,10 +41,9 @@ def compare(records, current_id, window=12):
                r.get("difficulty") == current["difficulty"]][-window:]
     result = {"cycle_id": current_id, "comparison_n": len(history), "metrics": {}}
     for field in FIELDS:
-        vals = [r[field] for r in history if type(r.get(field)) in (int, float)
-                and math.isfinite(r[field]) and r[field] >= 0]
+        vals = [r[field] for r in history if valid_nonnegative(r.get(field))]
         val = current.get(field)
-        valid_current = type(val) in (int, float) and math.isfinite(val) and val >= 0
+        valid_current = valid_nonnegative(val)
         entry = {"n": len(vals), "previous_median": None, "current": val if valid_current else None, "change_pct": None,
                  "verdict": "판단불가"}
         if valid_current and len(vals) >= 3:
