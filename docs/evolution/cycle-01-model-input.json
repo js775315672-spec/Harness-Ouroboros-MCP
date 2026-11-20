@@ -1,0 +1,42 @@
+{
+  "cycle": 1,
+  "status": "input_and_model_options_frozen_before_dispatch",
+  "input": {
+    "path": "docs/evolution/cycle-01-model-input.chatml",
+    "sha256": "6b6807de14ac04bb5f3cdca04918a63bbd0fd1b83c4dc8b656d6b1451d1c205d",
+    "bytes": 19596,
+    "target_source_sha256": "47eb3304379749699b4fc04af4bf70f223cf9785742af3d5821f9422a83db1a2",
+    "read_only_verifier_source_sha256": "dc7f277b2370d03d63d469def2000f5470df401cc41876e50bdc103ca64d4b30"
+  },
+  "llama_flags": [
+    "--n-predict",
+    "800",
+    "--ctx-size",
+    "8192",
+    "--threads",
+    "4",
+    "--temp",
+    "0",
+    "--seed",
+    "1085",
+    "--no-display-prompt",
+    "--simple-io",
+    "--offline",
+    "--log-verbosity",
+    "1",
+    "--color",
+    "off",
+    "-no-cnv",
+    "--no-escape"
+  ],
+  "model": {
+    "revision": "13fb94bfda8c8cf22497dc57b78f391a9acb426a",
+    "weights_sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+    "binary_sha256": "76f4fb11d626bddcb10edb6ee4a28aaea8ad8a089a21a5c171f26566ce62ded4"
+  },
+  "dispatch_gates": [
+    "Check tokenizer fit before inference.",
+    "Verify the candidate evaluator independently and enforce the one-call and aggregate CPU limits."
+  ],
+  "model_calls": 0
+}
