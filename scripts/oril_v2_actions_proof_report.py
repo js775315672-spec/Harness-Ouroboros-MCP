@@ -184,12 +184,15 @@ def github_json(url, token=None):
 
 
 def collect(repo, workflow_name, event, window=12, token=None, api=github_json):
-    if not isinstance(repo, str) or not REPO.fullmatch(repo):
+    if (not isinstance(repo, str) or not REPO.fullmatch(repo)
+            or any(part in (".", "..") for part in repo.split("/"))):
         raise ValueError("owner/repo required")
     root = "https://api.github.com/repos/" + repo
     # Most recent 100 includes failed/queued/other workflows. Never claim
     # exhaustive historical coverage, especially if older runs are absent.
     payload = api(root + "/actions/runs?per_page=100", token)
+    if not isinstance(payload, dict):
+        raise ValueError("invalid GitHub Actions runs response")
     runs = payload.get("workflow_runs")
     if not isinstance(runs, list):
         raise ValueError("GitHub Actions runs response missing")
