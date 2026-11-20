@@ -71,6 +71,18 @@ def run_timed(phase, command, output, *, sha=None, run_id=None):
         raise ValueError("commit SHA must be exact 40 lowercase hexadecimal characters")
     if run_id is not None and (type(run_id) is not int or run_id <= 0):
         raise ValueError("positive run ID required")
+    # Preflight output before executing a potentially side-effecting command.
+    # Keep the verified descriptor open through execution to avoid pathname swaps.
+    descriptor = open_secure_trace(output)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError("trace output must be a regular file")
+        if info.st_mode & 0o077:
+            raise PermissionError("trace output must not be accessible by group/others")
+    except BaseException:
+        os.close(descriptor)
+        raise
     began = utc_now()
     start = time.monotonic_ns()
     try:
@@ -91,13 +103,7 @@ def run_timed(phase, command, output, *, sha=None, run_id=None):
     target = Path(output)
     # Append a single small JSONL record; no subprocess command, tokens, or env.
     payload = (json.dumps(row, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
-    descriptor = open_secure_trace(target)
     try:
-        info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode):
-            raise OSError("trace output must be a regular file")
-        if info.st_mode & 0o077:
-            raise PermissionError("trace output must not be accessible by group/others")
         # Small fixed-size record; write fully even if interrupted/short.
         view = memoryview(payload)
         while view:
