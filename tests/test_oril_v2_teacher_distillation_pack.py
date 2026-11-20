@@ -52,6 +52,17 @@ class DistillTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "group leakage"):
             compile_examples([case(1, group="same"), case(2, split="heldout", group="same")])
 
+    def test_case_variant_group_id_across_splits_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "group leakage"):
+            compile_examples([case(1, group="Repair-42"),
+                              case(2, split="heldout", group="repair-42")])
+
+    def test_case_variant_group_within_train_is_permitted(self):
+        result, stats = compile_examples([case(1, group="Repair-42"),
+                                          case(2, group="repair-42")])
+        self.assertEqual(len(result), 2)
+        self.assertEqual(stats["selected_train_rows"], 2)
+
     def test_duplicate_question_normalized_across_splits_rejected(self):
         with self.assertRaisesRegex(ValueError, "question leakage"):
             compile_examples([case(1, question=" Hello   WORLD "),
