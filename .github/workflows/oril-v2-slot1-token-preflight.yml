@@ -5,7 +5,7 @@ on:
       - 'scripts/oril_v2_local_qwen_adapter.py'
       - 'tests/test_oril_v2_slot1_token_preflight.py'
       - 'tests/test_oril_v2_local_qwen_adapter.py'
-      - 'tests/test_oril_v2_slot4_qwen_path_preflight.py'
+      - 'tests/test_oril_v2_slot4_qwen_model_path.py'
       - 'tests/test_oril_v2_slot5_qwen_config_preflight.py'
       - '.github/workflows/oril-v2-slot1-token-preflight.yml'
 permissions:
@@ -28,5 +28,5 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_oril_v2_local_qwen_adapter.py' -v
       - name: Validate inherited model path and config guards
         run: |
-          python3 -m unittest discover -s tests -p 'test_oril_v2_slot4_qwen_path_preflight.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_slot4_qwen_model_path.py' -v
           python3 -m unittest discover -s tests -p 'test_oril_v2_slot5_qwen_config_preflight.py' -v
