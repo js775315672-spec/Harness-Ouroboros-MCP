@@ -1,0 +1,23 @@
+name: ORIL v2 telemetry offline preflight
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_job_telemetry.py
+      - tests/test_oril_v2_job_telemetry.py
+      - scripts/oril_v2_actions_snapshot.py
+      - tests/test_oril_v2_actions_snapshot.py
+      - .github/workflows/oril-v2-telemetry-preflight.yml
+permissions:
+  contents: read
+jobs:
+  offline-telemetry-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run telemetry identity and timestamp tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_job_telemetry.py -v
+      - name: Run cross-run snapshot consistency tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_actions_snapshot.py -v
