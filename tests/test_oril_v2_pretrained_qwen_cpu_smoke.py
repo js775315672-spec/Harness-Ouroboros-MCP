@@ -17,7 +17,7 @@ def fixture():
         "gpu_lora_training_proven": False,
         "independent_heldout_accuracy_proven": False,
         "inferences": [{"input_tokens": 5, "generated_tokens": 3,
-                        "elapsed_seconds": 0.2, "output": "some text"}] * 2,
+                        "elapsed_seconds": 0.2, "attention_mask_explicit": True, "output": "some text"}] * 2,
     }
 
 

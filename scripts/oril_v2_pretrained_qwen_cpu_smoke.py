@@ -47,11 +47,28 @@ def validate_report(report):
         if (not isinstance(result.get("input_tokens"), int) or result["input_tokens"] < 1
                 or not isinstance(result.get("generated_tokens"), int)
                 or result["generated_tokens"] < 1
+                or result.get("attention_mask_explicit") is not True
                 or not isinstance(result.get("elapsed_seconds"), (int, float))
                 or result["elapsed_seconds"] <= 0
                 or not isinstance(result.get("output"), str) or not result["output"].strip()):
             raise ValueError("invalid inference evidence")
     return True
+
+
+def build_masked_inputs(tokenizer, chat, torch_module):
+    """Pass an explicit all-ones mask for a single unpadded Qwen chat.
+
+    EOS and PAD can share a token ID; never infer attention from token values.
+    """
+    token_ids = tokenizer.apply_chat_template(
+        chat, tokenize=True, add_generation_prompt=True, return_tensors="pt")
+    if (getattr(token_ids, "ndim", None) != 2 or
+            token_ids.shape[0] != 1 or token_ids.shape[1] < 1):
+        raise ValueError("expected nonempty single unpadded token batch")
+    mask = torch_module.ones_like(token_ids)
+    if mask.shape != token_ids.shape:
+        raise ValueError("attention mask shape mismatch")
+    return {"input_ids": token_ids, "attention_mask": mask}
 
 
 def main():
@@ -85,19 +102,18 @@ def main():
     inferences = []
     for prompt in PROMPTS:
         chat = [{"role": "user", "content": prompt}]
-        inputs = tokenizer.apply_chat_template(chat, tokenize=True,
-                                                add_generation_prompt=True,
-                                                return_tensors="pt")
+        inputs = build_masked_inputs(tokenizer, chat, torch)
         start = time.perf_counter()
         with torch.inference_mode():
-            output = model.generate(inputs, do_sample=False, max_new_tokens=args.max_new_tokens,
+            output = model.generate(**inputs, do_sample=False, max_new_tokens=args.max_new_tokens,
                                     pad_token_id=tokenizer.eos_token_id)
         elapsed = time.perf_counter() - start
-        generated = output[0][inputs.shape[1]:]
+        generated = output[0][inputs['input_ids'].shape[1]:]
         decoded = tokenizer.decode(generated, skip_special_tokens=True)
         inferences.append({
             "prompt_id": len(inferences) + 1,
-            "input_tokens": int(inputs.shape[1]),
+            "input_tokens": int(inputs["input_ids"].shape[1]),
+            "attention_mask_explicit": True,
             "generated_tokens": int(generated.shape[0]),
             "elapsed_seconds": round(elapsed, 6),
             "output": decoded,
