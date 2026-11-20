@@ -13,7 +13,7 @@ def read_from_trusted_root_fd(root_fd, relative_path, expected_sha256, max_bytes
         raise RuntimeError("POSIX descriptor traversal required")
     if type(root_fd) is not int or root_fd < 0:
         raise ValueError("trusted root fd required")
-    if type(relative_path) is not str or not relative_path or "\\\\" in relative_path or "\\x00" in relative_path:
+    if type(relative_path) is not str or not relative_path or "\\" in relative_path or "\x00" in relative_path:
         raise ValueError("unsafe relative path")
     parts = relative_path.split("/")
     if any(p in ("", ".", "..") for p in parts):
