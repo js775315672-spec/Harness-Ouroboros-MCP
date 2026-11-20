@@ -19,7 +19,7 @@ SUITES = (
     ("test_oril_v2_signed_ledger_boundary.py", 10),
     ("test_oril_v2_anchored_ledger_boundary.py", 14),
 )
-SUMMARY = re.compile(r"^Ran ([0-9]+) tests? in ([0-9]+(?:\\.[0-9]+)?)s$", re.MULTILINE)
+SUMMARY = re.compile(r"^Ran ([0-9]+) tests? in ([0-9]+(?:\.[0-9]+)?)s$", re.MULTILINE)
 
 
 def check_result(output, returncode, expected):
@@ -32,9 +32,9 @@ def check_result(output, returncode, expected):
     count = int(summaries[0][0])
     if count != expected:
         raise ValueError(f"test count drift: expected {expected}, got {count}")
-    if re.search(r"(?im)^\\s*.*\\.\\.\\. skipped", output) or re.search(r"(?i)skipped\\s*=\\s*[0-9]+", output):
+    if re.search(r"(?im)^\s*.*\.\.\. skipped", output) or re.search(r"(?i)skipped\s*=\s*[0-9]+", output):
         raise ValueError("skipped test detected")
-    if not re.search(r"(?m)^OK\\s*$", output):
+    if not re.search(r"(?m)^OK\s*$", output):
         raise ValueError("missing final OK")
     if re.search(r"(?m)^(?:FAILED|ERROR|FAIL):", output):
         raise ValueError("failure marker in test output")
