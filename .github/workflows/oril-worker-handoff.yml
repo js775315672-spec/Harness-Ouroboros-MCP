@@ -1,0 +1,41 @@
+name: ORIL worker handoff check
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+    paths: [.github/workflows/oril-worker-handoff.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-handoff:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/oril-cycle-01-baseline'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Read the worker run and its artifact identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          worker=js775315672-spec/our-oboros-worker
+          run=44669641804
+          gh api "repos/$worker/actions/runs/$run" | jq -e '
+            .id == 44669641804 and .head_sha == "bdb34cc27aa1c3712bbfc2ef9c17817e01aae022" and
+            .repository.full_name == "js775315672-spec/our-oboros-worker" and
+            .path == ".github/workflows/oril-cycle-01-worker.yml" and
+            .head_branch == "main" and .event == "push" and .run_attempt == 1 and
+            .status == "completed" and .conclusion == "success"
+          '
+          gh api "repos/$worker/actions/runs/$run/artifacts" | jq -e '
+            [.artifacts[] | select(.name == "oril-cycle-01-handoff")] |
+            length == 1 and .[0].id == 14599328196 and
+            .[0].digest == "sha256:da1d9eceb7b7d4d6c13062d6082c1981249dbd436b86e3521a8568870635ea9f" and .[0].expired == false
+          '
+          gh api "repos/$worker/actions/artifacts/14599328196/zip" > "$RUNNER_TEMP/handoff.zip"
+          printf '%s  %s\n' da1d9eceb7b7d4d6c13062d6082c1981249dbd436b86e3521a8568870635ea9f "$RUNNER_TEMP/handoff.zip" | sha256sum -c -
+          unzip -p "$RUNNER_TEMP/handoff.zip" handoff.json | jq -e '
+            .model_calls == 0 and .task.task == "oril-cycle-01" and
+            .task.base_sha == "068cbd75f70a272094f22cfea27dc1e44fc9b0de" and
+            .task.input_sha256 == "6b6807de14ac04bb5f3cdca04918a63bbd0fd1b83c4dc8b656d6b1451d1c205d"
+          '
