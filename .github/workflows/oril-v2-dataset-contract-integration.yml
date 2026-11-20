@@ -4,6 +4,7 @@ on:
     paths:
       - scripts/oril_v2_dataset_contract_bridge.py
       - tests/test_oril_v2_dataset_contract_bridge.py
+      - tests/test_oril_v2_dataset_contract_cli.py
       - .github/workflows/oril-v2-dataset-contract-integration.yml
 permissions:
   contents: read
@@ -42,3 +43,5 @@ jobs:
           sha256sum scripts/oril_v2_dataset_*py
       - name: Execute cross-PR integration and tamper cases
         run: python3 -m unittest discover -s tests -p test_oril_v2_dataset_contract_bridge.py -v
+      - name: Independently verify actual CLI behavior with sha256sum
+        run: python3 -m unittest discover -s tests -p test_oril_v2_dataset_contract_cli.py -v
