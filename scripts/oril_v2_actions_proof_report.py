@@ -56,16 +56,16 @@ def summarize_run(run, jobs):
         raise ValueError("only completed runs with known conclusions")
     if not jobs:
         raise ValueError("job evidence required; empty job list is not a pass")
-    spans, checkouts = [], []
+    spans, job_api_head_shas = [], []
     for job in jobs:
         if not isinstance(job, dict) or type(job.get("id")) is not int:
             raise ValueError("job ID required")
         a, b = _dt(job.get("started_at")), _dt(job.get("completed_at"))
         if a and b and b >= a:
             spans.append((a, b))
-        # PR jobs may use temporary merge SHA. Never pretend this equals head.
+        # Job API head_sha is a reported ref field, NOT observed checkout SHA.
         if isinstance(job.get("head_sha"), str) and SHA40.fullmatch(job["head_sha"]):
-            checkouts.append(job["head_sha"])
+            job_api_head_shas.append(job["head_sha"])
     queue = seconds(run.get("created_at"),
                     min((a for a, _ in spans)).isoformat() if spans else None)
     job_wall = (max(b for _, b in spans) - min(a for a, _ in spans)).total_seconds() if spans else None
@@ -77,7 +77,8 @@ def summarize_run(run, jobs):
         "workflow_name": run.get("name"),
         "event": run.get("event"),
         "head_sha": sha,
-        "job_checkout_shas": sorted(set(checkouts)),
+        "job_api_head_shas": sorted(set(job_api_head_shas)),
+        "actual_checkout_sha": None,  # requires checkout step log evidence; API head_sha is not checkout
         "run_attempt": run.get("run_attempt") if type(run.get("run_attempt")) is int else None,
         "conclusion": run["conclusion"],
         "job_count": len(jobs),
