@@ -1,0 +1,28 @@
+name: ORIL v2 externally pinned ledger boundary (experimental)
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_signed_ledger_boundary.py
+      - scripts/oril_v2_anchored_ledger_boundary.py
+      - tests/test_oril_v2_signed_ledger_boundary.py
+      - tests/test_oril_v2_anchored_ledger_boundary.py
+      - .github/workflows/oril-v2-anchored-ledger-boundary.yml
+permissions:
+  contents: read
+jobs:
+  offline-pinned-anchor-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Require crypto test dependencies (never skip)
+        run: |
+          command -v openssl
+          python3 --version
+          openssl version
+      - name: Original signed-ledger regressions
+        run: python3 -m unittest discover -s tests -p test_oril_v2_signed_ledger_boundary.py -v
+      - name: Externally pinned anchor boundary regressions
+        run: python3 -m unittest discover -s tests -p test_oril_v2_anchored_ledger_boundary.py -v
