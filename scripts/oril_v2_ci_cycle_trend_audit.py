@@ -81,7 +81,7 @@ def analyze(payload, workflow, *, window=12, min_n=5):
     def median(rows, field):
         return statistics.median(x[field] for x in rows) if rows else None
     old_m, new_m = median(older, "wall_seconds"), median(newer, "wall_seconds")
-    change = None if old_m is None or old_m == 0 or new_m is None else round(
+    change = None if len(sample) < min_n or len(newer) < 2 or len(older) < 2 or old_m is None or old_m == 0 or new_m is None else round(
         100 * (new_m / old_m - 1), 2)
     # The underlying run durations include workflow setup and test runtime.
     # Comparing heterogeneous SHA/tasks is descriptive, not causal speed gain.
