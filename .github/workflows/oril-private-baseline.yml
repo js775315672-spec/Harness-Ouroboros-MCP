@@ -1,0 +1,29 @@
+name: ORIL private baseline check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == '1'
+    runs-on: [self-hosted, linux, oril-private-verifier]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 068cbd75f70a272094f22cfea27dc1e44fc9b0de
+          persist-credentials: false
+      - name: Run pinned evaluation and validate its aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          verifier=/opt/oril/private/cycle-01/verify-baseline.sh
+          printf '%s  %s\n' 878eb4baea181a8c41985a277492bf3d4d35cfe9117418c34dd00771202f381e "$verifier" | sha256sum --check --status -
+          bash "$verifier" "$GITHUB_WORKSPACE" > "$RUNNER_TEMP/oril-baseline.log" 2>&1
+          tail -n 1 "$RUNNER_TEMP/oril-baseline.log" | jq -ce 'select(.proof_checks_passed == 7 and .metadata_reads == 4 and .archive_reads == 1)' > "$RUNNER_TEMP/oril-baseline-result.json"
+          cat "$RUNNER_TEMP/oril-baseline-result.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: oril-baseline-aggregate
+          path: ${{ runner.temp }}/oril-baseline-result.json
+          if-no-files-found: error
