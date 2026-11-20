@@ -19,7 +19,7 @@ LONG = ("verbose explanation and clear steps and reason with safe test "
         "and fix a bug. Question: fix a bug.")
 
 
-def summarize(pairs, config_sha):
+def summarize(pairs, config_sha, observed_orders=None):
     if not pairs:
         raise ValueError("at least one real pair required")
     for pair in pairs:
@@ -39,6 +39,18 @@ def summarize(pairs, config_sha):
         if pair["compact"]["input_tokens"] >= pair["verbose"]["input_tokens"]:
             raise ValueError("compact tokenizer input is not smaller")
     n = len(pairs)
+    # Never fabricate execution order from an index: the order is a
+    # measurement supplied by the caller, not a property of pair position.
+    if observed_orders is not None:
+        if (not isinstance(observed_orders, list) or
+                len(observed_orders) != n or
+                any(type(order) is not str or order not in
+                    ("compact_first", "verbose_first") for order in observed_orders)):
+            raise ValueError("invalid observed pair execution order")
+        compact_first = observed_orders.count("compact_first")
+        verbose_first = observed_orders.count("verbose_first")
+        if abs(compact_first - verbose_first) > 1:
+            raise ValueError("unbalanced observed pair execution order")
     token_savings = [
         100 * (1 - p["compact"]["input_tokens"] / p["verbose"]["input_tokens"])
         for p in pairs
@@ -60,8 +72,8 @@ def summarize(pairs, config_sha):
         "paired_verbose_minus_compact_seconds_median":
             round(statistics.median(paired_seconds), 3),
         "paired_elapsed_differences_seconds": paired_seconds,
-        "pair_orders": ["compact_first" if i % 2 == 0 else "verbose_first"
-                        for i in range(n)],
+        "pair_orders": observed_orders,
+        "pair_order_observed": observed_orders is not None,
         "pretrained_weights": False, "gpu_used": False,
         "optimizer_steps": 0, "lora_adapter_created": False,
         "independent_heldout_evaluation": False, "model_intelligence_gain": None,
@@ -84,15 +96,17 @@ def run(n_pairs=6):
         config_sha = build_tiny_checkpoint(model_dir)
         adapter = Path(__file__).resolve().parent / "oril_v2_local_qwen_adapter.py"
         pairs = []
+        observed_orders = []
         for i in range(n_pairs):
             order = [("compact", SHORT), ("verbose", LONG)]
             if i % 2:
                 order.reverse()
+            observed_orders.append(order[0][0] + "_first")
             pair = {}
             for label, question in order:
                 pair[label] = invoke(adapter, model_dir, question)
             pairs.append(pair)
-        return summarize(pairs, config_sha)
+        return summarize(pairs, config_sha, observed_orders=observed_orders)
 
 
 if __name__ == "__main__":
