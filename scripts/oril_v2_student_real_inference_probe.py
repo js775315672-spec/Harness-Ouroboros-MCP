@@ -35,13 +35,13 @@ def strict_json_pairs(pairs):
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError("duplicate JSON key in heldout manifest")
+            raise ValueError("duplicate JSON key in input")
         result[key] = value
     return result
 
 
 def reject_nonfinite_json(value):
-    raise ValueError("nonfinite JSON constant in heldout manifest")
+    raise ValueError("nonfinite JSON constant in input")
 
 
 def read_manifest(path):
