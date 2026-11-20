@@ -7,6 +7,7 @@ on:
       - tests/test_oril_v2_cycle_metrics_nonfinite.py
       - tests/test_oril_v2_cycle_metrics_overflow.py
       - tests/test_oril_v2_cycle_metrics_median.py
+      - tests/test_oril_v2_cycle_metrics_discrete.py
       - .github/workflows/oril-v2-cycle-metrics-preflight.yml
 permissions:
   contents: read
@@ -26,3 +27,5 @@ jobs:
         run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_overflow.py -v
       - name: Keep even-size medians finite
         run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_median.py -v
+      - name: Reject fractional improvement and failure counts
+        run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_discrete.py -v

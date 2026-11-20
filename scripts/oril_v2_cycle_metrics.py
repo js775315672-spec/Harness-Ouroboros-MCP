@@ -6,6 +6,7 @@ from pathlib import Path
 
 FIELDS = ("total_seconds", "model_seconds", "verification_seconds", "followup_seconds",
           "queue_seconds", "accepted_improvements", "retries", "failures", "regressions", "rollbacks")
+COUNT_FIELDS = frozenset(("accepted_improvements", "retries", "failures", "regressions", "rollbacks"))
 DIRECTIONS = {"total_seconds": -1, "model_seconds": -1, "verification_seconds": -1,
               "followup_seconds": -1, "queue_seconds": -1, "accepted_improvements": 1,
               "retries": -1, "failures": -1, "regressions": -1, "rollbacks": -1}
@@ -19,6 +20,15 @@ def valid_nonnegative(value):
         return math.isfinite(value)
     except OverflowError:
         return False
+
+
+def valid_metric(field, value):
+    """Discrete event counts must be nonnegative integers, never fractional or boolean."""
+    if not valid_nonnegative(value):
+        return False
+    if field in COUNT_FIELDS:
+        return type(value) is int
+    return True
 
 
 def finite_median(values):
@@ -51,9 +61,9 @@ def compare(records, current_id, window=12):
                r.get("difficulty") == current["difficulty"]][-window:]
     result = {"cycle_id": current_id, "comparison_n": len(history), "metrics": {}}
     for field in FIELDS:
-        vals = [r[field] for r in history if valid_nonnegative(r.get(field))]
+        vals = [r[field] for r in history if valid_metric(field, r.get(field))]
         val = current.get(field)
-        valid_current = valid_nonnegative(val)
+        valid_current = valid_metric(field, val)
         entry = {"n": len(vals), "previous_median": None, "current": val if valid_current else None, "change_pct": None,
                  "verdict": "판단불가"}
         if valid_current and len(vals) >= 3:
