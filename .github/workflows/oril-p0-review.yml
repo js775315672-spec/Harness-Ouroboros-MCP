@@ -17,7 +17,7 @@ jobs:
           persist-credentials: false
       - name: Check historical approval manifests and public workload hashes
         run: |
-          git fetch --no-tags origin 068cbd75f70a272094f22cfea27dc1e44fc9b0de 3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267
+          git fetch --no-tags origin 068cbd75f70a272094f22cfea27dc1e44fc9b0de 8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc
           python3 - <<'PY'
           import hashlib, json, statistics, subprocess
           from pathlib import Path
