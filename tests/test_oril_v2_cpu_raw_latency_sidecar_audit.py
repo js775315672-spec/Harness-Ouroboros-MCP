@@ -122,7 +122,7 @@ class RawLatencyAuditTests(unittest.TestCase):
             with self.subTest(invalid=str(invalid)):
                 report, sidecar = fixture()
                 sidecar["pairs"][0]["compact_elapsed_seconds"] = invalid
-                with self.assertRaisesRegex(ValueError, "raw numeric"):
+                with self.assertRaisesRegex(ValueError, "raw numeric|negative or zero raw measurement"):
                     audit(report, sidecar)
 
     def test_unbalanced_order_rejected(self):
