@@ -144,7 +144,7 @@ class LocalAdapterTests(unittest.TestCase):
             cuda=types.SimpleNamespace(is_available=lambda: False))
         with tempfile.TemporaryDirectory() as root:
             (Path(root) / "config.json").write_text("{}")
-            with patch.dict(sys.modules, {"torch": fake_torch}):
+            with patch.dict(sys.modules, {"torch": fake_torch, "transformers": types.SimpleNamespace(AutoTokenizer=MockTokenizer, AutoModelForCausalLM=MockModel)}):
                 with self.assertRaisesRegex(RuntimeError, "CUDA"):
                     run_inference(req(), model_dir=root, device="cuda")
 
