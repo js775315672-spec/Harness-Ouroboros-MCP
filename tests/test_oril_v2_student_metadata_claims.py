@@ -40,6 +40,9 @@ class ProvenanceClaimTests(unittest.TestCase):
         self.temp.cleanup()
 
     def run_pair(self, row):
+        # Each synthetic subtest represents a fresh producer transaction.
+        # The production publisher deliberately rejects an existing marker.
+        self.marker.unlink(missing_ok=True)
         self.train.write_text(json.dumps(row) + "\n")
         publish(self.train, self.report, self.marker)
         return consume(self.train, self.report, self.marker)
