@@ -1,0 +1,22 @@
+name: ORIL v2 real subprocess mutation proof (experimental)
+on:
+  pull_request:
+    paths:
+      - tests/test_oril_v2_real_subprocess_mutations.py
+      - scripts/oril_v2_exact_test_count_audit.py
+      - .github/workflows/oril-v2-real-subprocess-mutations.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  subprocess-mutation-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Require Python
+        run: python3 --version
+      - name: Execute real unittest subprocess mutation proofs
+        run: python3 -m unittest discover -s tests -p test_oril_v2_real_subprocess_mutations.py -v
