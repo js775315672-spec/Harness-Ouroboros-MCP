@@ -2,7 +2,6 @@
 import argparse
 import json
 import math
-import statistics
 from pathlib import Path
 
 FIELDS = ("total_seconds", "model_seconds", "verification_seconds", "followup_seconds",
@@ -20,6 +19,17 @@ def valid_nonnegative(value):
         return math.isfinite(value)
     except OverflowError:
         return False
+
+
+def finite_median(values):
+    """Median of nonnegative finite samples without overflow in even-size averaging."""
+    ordered = sorted(values)
+    size = len(ordered)
+    if size % 2:
+        return ordered[size // 2]
+    lower, upper = ordered[size // 2 - 1], ordered[size // 2]
+    # (lower + upper) / 2 can overflow for two finite large floats.
+    return lower + (upper - lower) / 2
 
 
 def compare(records, current_id, window=12):
@@ -47,7 +57,7 @@ def compare(records, current_id, window=12):
         entry = {"n": len(vals), "previous_median": None, "current": val if valid_current else None, "change_pct": None,
                  "verdict": "판단불가"}
         if valid_current and len(vals) >= 3:
-            median = statistics.median(vals)
+            median = finite_median(vals)
             entry["previous_median"] = median
             if median > 0:
                 change = (val - median) / median * 100

@@ -6,6 +6,7 @@ on:
       - tests/test_oril_v2_cycle_metrics.py
       - tests/test_oril_v2_cycle_metrics_nonfinite.py
       - tests/test_oril_v2_cycle_metrics_overflow.py
+      - tests/test_oril_v2_cycle_metrics_median.py
       - .github/workflows/oril-v2-cycle-metrics-preflight.yml
 permissions:
   contents: read
@@ -23,3 +24,5 @@ jobs:
         run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_nonfinite.py -v
       - name: Reject overflow and invalid JSON metrics
         run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_overflow.py -v
+      - name: Keep even-size medians finite
+        run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_median.py -v
