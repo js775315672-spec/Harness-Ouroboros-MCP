@@ -29,9 +29,38 @@ def canonical_group(value):
                    and unicodedata.category(ch) != "Cf")
 
 
+def strict_json_pairs(pairs):
+    """Reject ambiguous repeated keys instead of accepting last-value-wins."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key in heldout manifest")
+        result[key] = value
+    return result
+
+
+def reject_nonfinite_json(value):
+    raise ValueError("nonfinite JSON constant in heldout manifest")
+
+
 def read_manifest(path):
-    raw = Path(path).read_bytes()
-    rows = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line.strip()]
+    # A private heldout dataset must be bounded BEFORE model execution.
+    # Streaming read also avoids unbounded read_bytes() allocations.
+    max_bytes, max_cases = 4 * 1024 * 1024, 1000
+    with Path(path).open("rb") as handle:
+        raw = handle.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise ValueError("heldout manifest exceeds 4 MiB limit")
+    rows = []
+    for line in raw.decode("utf-8").splitlines():
+        if not line.strip():
+            continue
+        if len(rows) >= max_cases:
+            raise ValueError("heldout manifest exceeds 1000 cases")
+        if len(line) > 24000:
+            raise ValueError("heldout manifest line too large")
+        rows.append(json.loads(line, object_pairs_hook=strict_json_pairs,
+                               parse_constant=reject_nonfinite_json))
     if len(rows) < 2:
         raise ValueError("at least two heldout cases required")
     ids, groups = set(), set()
