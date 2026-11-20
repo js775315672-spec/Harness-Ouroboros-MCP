@@ -27,6 +27,11 @@ def norm(value):
     return " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
 
 
+def has_invisible_format(value):
+    """Reject invisible Unicode format controls in evaluation question text."""
+    return any(unicodedata.category(ch) == "Cf" for ch in value)
+
+
 def digest(value):
     return hashlib.sha256(norm(value).encode("utf-8")).hexdigest()
 
@@ -56,6 +61,8 @@ def validate(items):
             if (not isinstance(value, str) or not value.strip()
                     or len(value) > TEXT_LIMIT or "\x00" in value):
                 raise ValueError("invalid " + field)
+        if has_invisible_format(row["question"]):
+            raise ValueError("invisible format character in question")
         q = digest(row["question"])
         if q in seen_question and seen_question[q] != row["split"]:
             raise ValueError("duplicate question leakage across splits")
