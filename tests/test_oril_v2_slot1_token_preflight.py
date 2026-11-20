@@ -35,7 +35,8 @@ class FakeTokenizer:
 
 
 class FakeGenerated:
-    shape = (1, 4)
+    def __init__(self, input_length):
+        self.shape = (1, input_length + 1)
     def __getitem__(self, key):
         return Tensor((1, 1))
 
@@ -51,7 +52,7 @@ class FakeModel:
     def eval(self):
         return self
     def generate(self, **kwargs):
-        return FakeGenerated()
+        return FakeGenerated(kwargs["input_ids"].shape[-1])
 
 
 class FakeInferenceMode:
