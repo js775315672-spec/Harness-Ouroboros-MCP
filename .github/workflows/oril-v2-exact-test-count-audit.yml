@@ -1,0 +1,27 @@
+name: ORIL v2 exact integration count audit (experimental)
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_exact_test_count_audit.py
+      - tests/test_oril_v2_exact_test_count_audit.py
+      - .github/workflows/oril-v2-exact-test-count-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exact-count-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify runtime and crypto dependencies
+        run: |
+          python3 --version
+          command -v openssl
+          command -v sha256sum
+      - name: Audit parser mutation tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_exact_test_count_audit.py -v
+      - name: Verify exact 100 integrated tests, no skips
+        run: python3 scripts/oril_v2_exact_test_count_audit.py
