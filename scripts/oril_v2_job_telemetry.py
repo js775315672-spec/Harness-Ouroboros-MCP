@@ -2,6 +2,7 @@
 import argparse
 import datetime as dt
 import json
+import re
 from pathlib import Path
 
 
@@ -21,7 +22,7 @@ def seconds(start, end):
 
 def extract(payload, expected_sha):
     """Fail closed on missing/mismatched run SHA; never equate CI with improvement."""
-    if not isinstance(payload, dict) or not isinstance(expected_sha, str) or len(expected_sha) != 40:
+    if not isinstance(payload, dict) or not isinstance(expected_sha, str) or re.fullmatch(r"[0-9a-fA-F]{40}", expected_sha) is None:
         raise ValueError("40-character expected commit SHA required")
     if payload.get("head_sha") != expected_sha:
         raise ValueError("workflow head_sha mismatch or missing")
@@ -29,10 +30,16 @@ def extract(payload, expected_sha):
     if not isinstance(jobs, list):
         raise ValueError("jobs list required")
     rows = []
+    seen_ids = set()
     for job in jobs:
         if not isinstance(job, dict) or not isinstance(job.get("id"), int):
             raise ValueError("job id required")
+        if job["id"] <= 0 or job["id"] in seen_ids or isinstance(job["id"], bool):
+            raise ValueError("duplicate or invalid job id")
+        seen_ids.add(job["id"])
         elapsed = seconds(job.get("started_at"), job.get("completed_at"))
+        if job.get("status") != "completed":
+            elapsed = None
         rows.append({
             "job_id": job["id"],
             "name": job.get("name"),

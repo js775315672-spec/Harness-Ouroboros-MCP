@@ -41,5 +41,25 @@ class JobTelemetryTests(unittest.TestCase):
         self.assertEqual(out["independent_verification"], "unverified")
 
 
+    def test_non_hex_sha_rejected(self):
+        with self.assertRaises(ValueError):
+            extract({"head_sha": "z" * 40, "jobs": []}, "z" * 40)
+
+    def test_duplicate_job_id_rejected(self):
+        with self.assertRaises(ValueError):
+            extract({"head_sha": SHA, "jobs": [{"id": 7}, {"id": 7}]}, SHA)
+
+    def test_boolean_job_id_rejected(self):
+        with self.assertRaises(ValueError):
+            extract({"head_sha": SHA, "jobs": [{"id": True}]}, SHA)
+
+    def test_running_job_with_end_timestamp_is_not_measured(self):
+        result = extract({"head_sha": SHA, "jobs": [{
+            "id": 5, "status": "in_progress",
+            "started_at": "2026-11-20T01:00:00Z",
+            "completed_at": "2026-11-20T01:00:12Z"}]}, SHA)
+        self.assertIsNone(result["jobs"][0]["duration_seconds"])
+
+
 if __name__ == "__main__":
     unittest.main()
