@@ -1,5 +1,8 @@
 name: ORIL v2 slot4 frozen plan observation audit (experimental)
 on:
+  push:
+    branches:
+      - feat/oril-v2-slot4-plan-observation-binding-20261121
   pull_request:
     paths:
       - 'scripts/oril_v2_slot4_plan_observation_audit.py'
