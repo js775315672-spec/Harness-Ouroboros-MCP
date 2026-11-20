@@ -97,13 +97,13 @@ class ReportSafetyTests(unittest.TestCase):
         self.assertEqual(report.read_bytes(), original)
         self.assertFalse(self.side_effect.exists())
 
-    def test_adapter_failure_does_not_produce_valid_json_report(self):
+    def test_adapter_failure_leaves_no_published_report(self):
         self.adapter.write_text("import sys\nsys.exit(4)\n")
         report = self.root / "report.json"
         result = self.run_probe(report)
         self.assertNotEqual(result.returncode, 0)
-        self.assertTrue(report.exists())
-        self.assertEqual(report.read_bytes(), b"")
+        self.assertFalse(report.exists())
+        self.assertEqual(list(self.root.glob(".oril-pending-*")), [])
 
     def test_no_report_created_on_malformed_heldout(self):
         self.manifest.write_text('{"bad":"data"}\n')
