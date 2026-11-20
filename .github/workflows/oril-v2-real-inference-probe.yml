@@ -1,0 +1,22 @@
+name: ORIL v2 real student inference probe protocol (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_student_real_inference_probe.py'
+      - 'tests/test_oril_v2_student_real_inference_probe.py'
+      - 'docs/oril_v2_real_student_inference_probe.md'
+      - '.github/workflows/oril-v2-real-inference-probe.yml'
+permissions:
+  contents: read
+jobs:
+  adapter-protocol-negative-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Report exact source SHA
+        run: git rev-parse HEAD
+      - name: Run adapter protocol tests with SYNTHETIC subprocesses only
+        run: python3 -m unittest discover -s tests -p 'test_oril_v2_student_real_inference_probe.py' -v
