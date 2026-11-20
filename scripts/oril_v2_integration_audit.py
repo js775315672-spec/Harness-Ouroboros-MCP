@@ -99,12 +99,27 @@ def audit(snapshot):
             for name in sorted(set(names)):
                 candidates = [r for r in runs if r.get("head_sha") == sha and
                               r.get("name") == name and r.get("event") == "pull_request" and
-                              r.get("status") == "completed" and r.get("conclusion") == "success" and
                               isinstance(r.get("html_url"), str) and
                               r["html_url"].startswith("https://github.com/") and
                               (repository is None or r["html_url"].startswith(
                                   "https://github.com/" + repository + "/actions/runs/"))]
-                checks.append({"name": name, "matching_success_runs": len(candidates)})
+                # Never allow an old successful attempt to mask a newer failure.
+                # Multiple runs without comparable timestamps are ambiguous: fail closed.
+                latest = None
+                if len(candidates) == 1:
+                    latest = candidates[0]
+                elif len(candidates) > 1 and all(
+                        isinstance(r.get("created_at"), str) and
+                        re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z", r["created_at"])
+                        and type(r.get("run_attempt", 1)) is int and r.get("run_attempt", 1) > 0
+                        for r in candidates):
+                    order = sorted(candidates, key=lambda r: (r["created_at"], r.get("run_attempt", 1)))
+                    if (order[-1]["created_at"], order[-1].get("run_attempt", 1)) != (
+                            order[-2]["created_at"], order[-2].get("run_attempt", 1)):
+                        latest = order[-1]
+                success = (latest is not None and latest.get("status") == "completed"
+                           and latest.get("conclusion") == "success")
+                checks.append({"name": name, "matching_success_runs": int(success)})
             ci = "snapshot_success" if all(c["matching_success_runs"] for c in checks) else "unverified"
             if ci == "unverified":
                 reasons.append("ci_missing_or_stale")
