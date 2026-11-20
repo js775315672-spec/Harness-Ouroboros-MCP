@@ -1,6 +1,7 @@
 """ORIL cycle trend comparison. Observational only; never a promotion gate."""
 import argparse
 import json
+import math
 import statistics
 from pathlib import Path
 
@@ -31,11 +32,11 @@ def compare(records, current_id, window=12):
     result = {"cycle_id": current_id, "comparison_n": len(history), "metrics": {}}
     for field in FIELDS:
         vals = [r[field] for r in history if type(r.get(field)) in (int, float)
-                and r[field] >= 0]
+                and math.isfinite(r[field]) and r[field] >= 0]
         val = current.get(field)
         entry = {"n": len(vals), "previous_median": None, "current": val, "change_pct": None,
                  "verdict": "판단불가"}
-        if type(val) in (int, float) and val >= 0 and len(vals) >= 3:
+        if type(val) in (int, float) and math.isfinite(val) and val >= 0 and len(vals) >= 3:
             median = statistics.median(vals)
             entry["previous_median"] = median
             if median > 0:
