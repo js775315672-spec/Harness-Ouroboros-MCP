@@ -109,6 +109,9 @@ class NoiseCalibratedTests(unittest.TestCase):
     def test_wrong_experiment_rejected(self):
         a, b, c = fixtures()
         a["experiment"] = "not a Qwen experiment"
+        canonical = json.dumps(a, sort_keys=True, ensure_ascii=False,
+                               separators=(",", ":"), allow_nan=False)
+        b["report_sha256"] = hashlib.sha256(canonical.encode()).hexdigest()
         with self.assertRaisesRegex(ValueError, "wrong paired"):
             diagnose(a, b, c)
 
