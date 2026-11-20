@@ -11,9 +11,14 @@ import math
 from pathlib import Path
 import time
 
-from oril_v2_pretrained_qwen_cpu_smoke import (
-    MODEL_ID, build_masked_inputs, sha256_file,
-)
+try:
+    from .oril_v2_pretrained_qwen_cpu_smoke import (
+        MODEL_ID, build_masked_inputs, sha256_file,
+    )
+except ImportError:
+    from oril_v2_pretrained_qwen_cpu_smoke import (
+        MODEL_ID, build_masked_inputs, sha256_file,
+    )
 
 # Public diagnostic questions, never call these "heldout".
 QUESTIONS = [
