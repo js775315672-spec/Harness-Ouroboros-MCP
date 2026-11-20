@@ -2,7 +2,7 @@
   "schema": "oril-baseline-v1",
   "status": "blocked_before_execution",
   "source_commit": "068cbd75f70a272094f22cfea27dc1e44fc9b0de",
-  "public_workload_commit": "3cbbf0adb1bc3e958e0a7430fbcfea3fa710e267",
+  "public_workload_commit": "8ba5fa0117b1acee6061b5d1fcd8518b1998bdcc",
   "public_workloads": {
     "regression": {
       "path": "tests/test_resumable_task_queue.py",
