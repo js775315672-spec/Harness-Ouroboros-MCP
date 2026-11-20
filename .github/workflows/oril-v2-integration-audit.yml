@@ -1,0 +1,19 @@
+name: ORIL v2 PR integration audit offline tests
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_integration_audit.py
+      - tests/test_oril_v2_integration_audit.py
+      - .github/workflows/oril-v2-integration-audit.yml
+permissions:
+  contents: read
+jobs:
+  offline-integration-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Audit stacked PR dependency and exact-SHA CI matching
+        run: python3 -m unittest discover -s tests -p test_oril_v2_integration_audit.py -v
