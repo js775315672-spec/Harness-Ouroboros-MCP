@@ -38,6 +38,10 @@ def audit(snapshot):
         raise ValueError("pull_requests, workflow_runs, required_workflows required")
     if not isinstance(default, str) or not default:
         raise ValueError("default_branch required")
+    repository = snapshot.get("repository_full_name")
+    if repository is not None and (not isinstance(repository, str) or
+                                   re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None):
+        raise ValueError("invalid repository_full_name")
     by_number = {}
     by_head = {}
     for pr in prs:
@@ -97,7 +101,9 @@ def audit(snapshot):
                               r.get("name") == name and r.get("event") == "pull_request" and
                               r.get("status") == "completed" and r.get("conclusion") == "success" and
                               isinstance(r.get("html_url"), str) and
-                              r["html_url"].startswith("https://github.com/")]
+                              r["html_url"].startswith("https://github.com/") and
+                              (repository is None or r["html_url"].startswith(
+                                  "https://github.com/" + repository + "/actions/runs/"))]
                 checks.append({"name": name, "matching_success_runs": len(candidates)})
             ci = "snapshot_success" if all(c["matching_success_runs"] for c in checks) else "unverified"
             if ci == "unverified":
