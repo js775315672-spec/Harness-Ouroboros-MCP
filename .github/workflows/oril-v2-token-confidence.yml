@@ -1,0 +1,24 @@
+name: ORIL v2 grouped token confidence (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_token_confidence_audit.py'
+      - 'tests/test_oril_v2_token_confidence_audit.py'
+      - 'docs/oril_v2_token_confidence_audit.md'
+      - '.github/workflows/oril-v2-token-confidence.yml'
+permissions:
+  contents: read
+jobs:
+  grouped-token-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Exact SHA and regression tests
+        run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p test_oril_v2_paired_student_eval.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_group_aware_paired_audit.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_token_confidence_audit.py -v
