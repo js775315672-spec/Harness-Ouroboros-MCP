@@ -1,0 +1,12 @@
+{
+  "cycle": 1,
+  "status": "blocked_no_private_isolated_runner",
+  "base_commit": "068cbd75f70a272094f22cfea27dc1e44fc9b0de",
+  "public_prompt_sha256": "7861b7dbc8df353b6b50b38f757655721858a5440b83af785e9ffc70d3476af1",
+  "approved_qwen_calls": 1,
+  "approved_aggregate_cpu_seconds": 1200,
+  "grader_and_fixture_sha256": "60ec608e2009836db53601835f5db36cc1d285ef1b223050e649cf5aa362ef93",
+  "runner_qualification_run": 44647435458,
+  "required_next_evidence": "Run the pinned private baseline checks on a Linux Docker runner under verifier control, preserve only opaque hashes and aggregate results, then bind the final execution manifest.",
+  "dispatch_count": 0
+}
