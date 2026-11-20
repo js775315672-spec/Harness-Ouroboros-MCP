@@ -1,0 +1,19 @@
+{
+  "source_commit": "068cbd75f70a272094f22cfea27dc1e44fc9b0de",
+  "function": "p3l_hydra_standing.model_result_proof",
+  "method": "local diagnostic with mocked GitHub metadata and the historical grade ZIP",
+  "historical_model_run": 44613839140,
+  "proof_passed": true,
+  "metadata_reads": {
+    "runs/44613839140": 2,
+    "jobs/135877882125": 1,
+    "artifacts/14572374289": 1
+  },
+  "metadata_reads_total": 4,
+  "archive_reads": 1,
+  "hypothesis": "Reuse a run metadata snapshot within one proof. Preserve exact identity and rejection behavior.",
+  "target_metadata_reads_total": 3,
+  "live_network_timing_s": null,
+  "demonstrated_gain": null,
+  "new_model_calls": 0
+}
