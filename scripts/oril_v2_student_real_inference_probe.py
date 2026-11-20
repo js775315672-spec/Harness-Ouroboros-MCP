@@ -18,6 +18,8 @@ import tempfile
 import time
 import unicodedata
 
+from oril_v2_bounded_adapter_capture import capture_adapter
+
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
@@ -88,17 +90,14 @@ def invoke(cmd, question, case_id, seed, timeout):
     request = json.dumps({"question": question, "case_id": case_id, "seed": seed})
     start = time.monotonic_ns()
     try:
-        proc = subprocess.run(cmd, input=request, text=True, capture_output=True,
-                              timeout=timeout, check=False, env=os.environ.copy())
-    except subprocess.TimeoutExpired as exc:
+        stdout = capture_adapter(cmd, request, timeout, max_stdout=200000)
+    except TimeoutError as exc:
         raise ValueError("model adapter timed out") from exc
     elapsed = (time.monotonic_ns() - start) / 1e9
-    if proc.returncode or len(proc.stdout) > 200000:
-        raise ValueError("adapter failed or returned excessive output")
     try:
         # Adapter output is untrusted: reject duplicate keys and nonfinite JSON.
         # Do not silently accept last-value-wins token/answer/model claims.
-        result = json.loads(proc.stdout, object_pairs_hook=strict_json_pairs,
+        result = json.loads(stdout, object_pairs_hook=strict_json_pairs,
                             parse_constant=reject_nonfinite_json)
     except (ValueError, TypeError) as exc:
         raise ValueError("invalid adapter JSON: " + str(exc)) from exc
