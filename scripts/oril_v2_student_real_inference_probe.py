@@ -14,6 +14,7 @@ import math
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 import unicodedata
 
@@ -169,10 +170,30 @@ def main():
     if Path(a.report).resolve() == Path(a.heldout).resolve():
         raise ValueError("report must not overwrite heldout manifest")
     rows, digest = read_manifest(a.heldout)
-    result = evaluate(rows, digest, json.loads(a.baseline_cmd_json),
-                      json.loads(a.candidate_cmd_json), a.timeout, a.seed)
-    # No partial report on failed adapter execution.
-    Path(a.report).write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    baseline_cmd = json.loads(a.baseline_cmd_json)
+    candidate_cmd = json.loads(a.candidate_cmd_json)
+    # Preflight writable output directory BEFORE any adapter subprocess.
+    # Stage a private temp file; only publish a completed report with
+    # atomic no-clobber hardlink, so failed adapters leave NO final report.
+    if os.path.lexists(a.report):
+        raise FileExistsError("report path already exists")
+    report_path = Path(a.report)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                     dir=report_path.parent,
+                                     prefix=".oril-pending-", delete=False) as handle:
+        pending = handle.name
+        try:
+            result = evaluate(rows, digest, baseline_cmd, candidate_cmd,
+                              a.timeout, a.seed)
+            handle.write(json.dumps(result, sort_keys=True, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+            # Hardlink refuses to replace any existing report or symlink.
+            os.link(pending, a.report, follow_symlinks=False)
+        finally:
+            # Temp file is private to this invocation; no report is published
+            # when an adapter fails. Parent-directory races remain out of scope.
+            os.unlink(pending)
 
 
 if __name__ == "__main__":
