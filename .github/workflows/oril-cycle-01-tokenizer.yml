@@ -1,18 +1,20 @@
 name: ORIL Cycle 01 tokenizer preflight
 on:
-  push:
-    branches: [review/oril-cycle-01-baseline]
-    paths: [.github/workflows/oril-cycle-01-tokenizer.yml]
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+    paths: [.github/workflows/oril-cycle-01-tokenizer.yml, docs/evolution/cycle-01-model-input.chatml]
 permissions:
   contents: read
 jobs:
   tokenize:
-    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.run_attempt == '1'
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/oril-cycle-01-baseline' && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
