@@ -226,7 +226,20 @@ def main():
     with ExitStack() as stack:
         train_fd = os.open(args.output_train, flags, 0o600)
         train_file = stack.enter_context(os.fdopen(train_fd, "w", encoding="utf-8"))
-        report_fd = os.open(args.output_report, flags, 0o600)
+        # Best-effort cleanup if the second exclusive output cannot be
+        # created. Match inode/device to avoid deleting a substituted file.
+        # This is not an atomic two-file transaction.
+        try:
+            report_fd = os.open(args.output_report, flags, 0o600)
+        except OSError:
+            created = os.fstat(train_file.fileno())
+            try:
+                current = os.lstat(args.output_train)
+                if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                    os.unlink(args.output_train)
+            except FileNotFoundError:
+                pass
+            raise
         report_file = stack.enter_context(os.fdopen(report_fd, "w", encoding="utf-8"))
         train_file.write(
             "".join(json.dumps(x, sort_keys=True, ensure_ascii=False) + "\n" for x in training))
