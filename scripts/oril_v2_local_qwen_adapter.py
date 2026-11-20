@@ -7,7 +7,6 @@ Does NOT perform LoRA training, verify GPU attestation, or independently attest
 its own token counts/model identity. One model load per request: slow by design.
 """
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
