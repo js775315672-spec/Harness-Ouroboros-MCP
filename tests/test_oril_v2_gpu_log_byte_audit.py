@@ -14,6 +14,9 @@ from oril_v2_gpu_log_byte_audit import check_log_bytes
 
 
 class GPUByteEvidenceTests(unittest.TestCase):
+    def write(self):
+        TrainingEvidenceAuditTests.write(self)
+
     def setUp(self):
         TrainingEvidenceAuditTests.setUp(self)
         self.log = self.root / "gpu.log"
