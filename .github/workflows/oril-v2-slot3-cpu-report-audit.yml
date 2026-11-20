@@ -1,0 +1,24 @@
+name: ORIL v2 slot3 CPU report arithmetic audit (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_cpu_pair_report_audit.py'
+      - 'tests/test_oril_v2_cpu_pair_report_audit.py'
+      - 'docs/oril_v2_slot3_cpu_pair_report_audit.md'
+      - '.github/workflows/oril-v2-slot3-cpu-report-audit.yml'
+permissions:
+  contents: read
+jobs:
+  independent-report-arithmetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Record SHA and Python
+        run: |
+          git rev-parse HEAD
+          python3 --version
+      - name: Audit independent arithmetic without model dependency
+        run: python3 -m unittest discover -s tests -p test_oril_v2_cpu_pair_report_audit.py -v

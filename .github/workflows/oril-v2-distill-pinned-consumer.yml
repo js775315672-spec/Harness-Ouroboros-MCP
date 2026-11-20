@@ -1,0 +1,25 @@
+name: ORIL v2 distillation pinned consumer (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_distill_pinned_consumer.py'
+      - 'tests/test_oril_v2_distill_pinned_consumer.py'
+      - 'docs/oril_v2_distill_pinned_consumer_slot3.md'
+      - '.github/workflows/oril-v2-distill-pinned-consumer.yml'
+permissions:
+  contents: read
+jobs:
+  pinned-consumer-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Exact SHA
+        run: git rev-parse HEAD
+      - name: Pinned consumer and inherited marker tests
+        run: |
+          python3 -m unittest discover -s tests -p test_oril_v2_distill_pinned_consumer.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_distill_pair_marker.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_teacher_distillation_pack.py -v

@@ -1,0 +1,25 @@
+name: ORIL v2 slot5 local Qwen config preflight (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_local_qwen_adapter.py'
+      - 'tests/test_oril_v2_local_qwen_adapter.py'
+      - 'tests/test_oril_v2_slot4_qwen_model_path.py'
+      - 'tests/test_oril_v2_slot5_qwen_config_preflight.py'
+      - '.github/workflows/oril-v2-slot5-qwen-config-preflight.yml'
+permissions:
+  contents: read
+jobs:
+  offline-config-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify exact SHA and synthetic regression suites
+        run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p 'test_oril_v2_local_qwen_adapter.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_slot4_qwen_model_path.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_slot5_qwen_config_preflight.py' -v

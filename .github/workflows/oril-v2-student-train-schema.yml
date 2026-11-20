@@ -1,0 +1,25 @@
+name: ORIL v2 student training row schema (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_distill_pinned_consumer.py'
+      - 'tests/test_oril_v2_distill_student_train_schema.py'
+      - 'docs/oril_v2_slot5_student_train_schema.md'
+      - '.github/workflows/oril-v2-student-train-schema.yml'
+permissions:
+  contents: read
+jobs:
+  student-train-schema:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: git rev-parse HEAD
+      - name: Adversarial training row and previous regression suites
+        run: |
+          python3 -m unittest discover -s tests -p 'test_oril_v2_distill_student_train_schema.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_distill_pinned_consumer.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_distill_pair_marker.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_teacher_distillation_pack.py' -v

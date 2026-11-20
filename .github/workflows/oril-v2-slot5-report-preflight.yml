@@ -1,0 +1,22 @@
+name: ORIL v2 slot5 private report preflight (experimental)
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_student_real_inference_probe.py
+      - tests/test_oril_v2_slot5_report_preflight.py
+      - .github/workflows/oril-v2-slot5-report-preflight.yml
+      - docs/oril_v2_slot5_report_preflight.md
+permissions:
+  contents: read
+jobs:
+  report-no-clobber:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: git rev-parse HEAD
+      - run: python3 -m unittest discover -s tests -p test_oril_v2_student_real_inference_probe.py -v
+      - run: python3 -m unittest discover -s tests -p test_oril_v2_slot4_strict_heldout_json.py -v
+      - run: python3 -m unittest discover -s tests -p test_oril_v2_slot5_report_preflight.py -v

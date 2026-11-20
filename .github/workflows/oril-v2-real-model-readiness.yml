@@ -1,0 +1,30 @@
+name: ORIL v2 real model readiness audit (read-only)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_real_model_readiness_audit.py'
+      - 'tests/test_oril_v2_real_model_readiness_audit.py'
+      - 'docs/oril_v2_real_model_readiness.md'
+      - '.github/workflows/oril-v2-real-model-readiness.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Test fail-closed evidence logic
+        run: python3 -m unittest discover -s tests -p test_oril_v2_real_model_readiness_audit.py -v
+      - name: Produce actual runner prerequisite report
+        run: |
+          python3 scripts/oril_v2_real_model_readiness_audit.py --output readiness.json
+          cat readiness.json
+      - name: Upload only non-sensitive audit report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: oril-readiness-report
+          path: readiness.json
+          retention-days: 7

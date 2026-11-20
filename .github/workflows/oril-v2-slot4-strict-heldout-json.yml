@@ -1,0 +1,23 @@
+name: ORIL v2 slot4 strict heldout JSON preflight (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_student_real_inference_probe.py'
+      - 'tests/test_oril_v2_student_real_inference_probe.py'
+      - 'tests/test_oril_v2_slot4_strict_heldout_json.py'
+      - '.github/workflows/oril-v2-slot4-strict-heldout-json.yml'
+permissions:
+  contents: read
+jobs:
+  strict-heldout-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: git rev-parse HEAD
+      - name: Synthetic protocol and fail-closed JSON tests (not model inference)
+        run: |
+          python3 -m unittest discover -s tests -p test_oril_v2_student_real_inference_probe.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_slot4_strict_heldout_json.py -v

@@ -1,0 +1,32 @@
+name: ORIL v2 slot1 Qwen token preflight (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_local_qwen_adapter.py'
+      - 'tests/test_oril_v2_slot1_token_preflight.py'
+      - 'tests/test_oril_v2_local_qwen_adapter.py'
+      - 'tests/test_oril_v2_slot4_qwen_model_path.py'
+      - 'tests/test_oril_v2_slot5_qwen_config_preflight.py'
+      - '.github/workflows/oril-v2-slot1-token-preflight.yml'
+permissions:
+  contents: read
+jobs:
+  token-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: SHA and Python
+        run: |
+          git rev-parse HEAD
+          python3 --version
+      - name: Validate new token budget before model load
+        run: python3 -m unittest discover -s tests -p 'test_oril_v2_slot1_token_preflight.py' -v
+      - name: Validate inherited Qwen adapter contract
+        run: python3 -m unittest discover -s tests -p 'test_oril_v2_local_qwen_adapter.py' -v
+      - name: Validate inherited model path and config guards
+        run: |
+          python3 -m unittest discover -s tests -p 'test_oril_v2_slot4_qwen_model_path.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_slot5_qwen_config_preflight.py' -v

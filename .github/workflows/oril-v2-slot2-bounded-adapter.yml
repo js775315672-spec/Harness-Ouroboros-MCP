@@ -1,0 +1,33 @@
+name: ORIL v2 slot2 bounded adapter stdout (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_student_real_inference_probe.py'
+      - 'scripts/oril_v2_bounded_adapter_capture.py'
+      - 'tests/test_oril_v2_slot2_bounded_adapter_capture.py'
+      - '.github/workflows/oril-v2-slot2-bounded-adapter.yml'
+  push:
+    branches:
+      - 'fix/oril-v2-slot2-bounded-adapter-output-20261121'
+permissions:
+  contents: read
+jobs:
+  bounded-adapter-output:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Record SHA and runtime
+        run: |
+          git rev-parse HEAD
+          python3 --version
+      - name: Adversarial bounded-output tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_slot2_bounded_adapter_capture.py -v
+      - name: Existing strict adapter and heldout regression
+        run: |
+          python3 -m unittest discover -s tests -p test_oril_v2_slot1_adapter_json_integrity.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_student_real_inference_probe.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_slot5_report_preflight.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_slot4_strict_heldout_json.py -v
