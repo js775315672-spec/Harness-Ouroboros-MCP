@@ -15,10 +15,18 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import unicodedata
 
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def canonical_group(value):
+    """Conservative alias detection; not semantic identity or a privacy guarantee."""
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return "".join(ch for ch in normalized if not ch.isspace()
+                   and unicodedata.category(ch) != "Cf")
 
 
 def read_manifest(path):
@@ -34,10 +42,13 @@ def read_manifest(path):
             raise ValueError("only heldout cases accepted")
         if not all(isinstance(row[x], str) and 0 < len(row[x]) <= 4000 for x in ("case_id", "group_id", "question", "expected_answer")):
             raise ValueError("invalid case text")
-        if row["case_id"] in ids or row["group_id"] in groups:
+        canonical = canonical_group(row["group_id"])
+        if not canonical:
+            raise ValueError("empty canonical heldout group")
+        if row["case_id"] in ids or canonical in groups:
             raise ValueError("duplicate case or correlated group")
         ids.add(row["case_id"])
-        groups.add(row["group_id"])
+        groups.add(canonical)
     return rows, sha(raw)
 
 
