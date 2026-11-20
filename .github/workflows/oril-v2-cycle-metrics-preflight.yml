@@ -1,0 +1,22 @@
+name: ORIL v2 cycle metrics offline tests
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_cycle_metrics.py
+      - tests/test_oril_v2_cycle_metrics.py
+      - tests/test_oril_v2_cycle_metrics_nonfinite.py
+      - .github/workflows/oril-v2-cycle-metrics-preflight.yml
+permissions:
+  contents: read
+jobs:
+  offline-cycle-metrics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run original cycle metrics regression suite
+        run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics.py -v
+      - name: Reject nonfinite metrics
+        run: python3 -m unittest discover -s tests -p test_oril_v2_cycle_metrics_nonfinite.py -v
