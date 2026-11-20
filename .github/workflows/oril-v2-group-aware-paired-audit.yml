@@ -1,0 +1,24 @@
+name: ORIL v2 group-aware paired audit (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_group_aware_paired_audit.py'
+      - 'tests/test_oril_v2_group_aware_paired_audit.py'
+      - 'docs/oril_v2_group_aware_paired_audit.md'
+      - '.github/workflows/oril-v2-group-aware-paired-audit.yml'
+permissions:
+  contents: read
+jobs:
+  grouped-heldout-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify exact SHA and existing paired evaluation regression
+        run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p test_oril_v2_paired_student_eval.py -v
+      - name: Verify independent-group sample guard
+        run: python3 -m unittest discover -s tests -p test_oril_v2_group_aware_paired_audit.py -v
