@@ -115,6 +115,15 @@ class PairedDiagnostic(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "provenance"):
             validate_report(r)
 
+    def test_package_import_from_repo_root(self):
+        import subprocess
+        run = subprocess.run([sys.executable, "-c",
+            "from scripts.oril_v2_slot2_pretrained_paired_diagnostic import validate_report; print(validate_report.__name__)"],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("validate_report", run.stdout)
+
     def test_rejects_extra_pair(self):
         r = fixture()
         r["pairs"].append(copy.deepcopy(r["pairs"][-1]))
