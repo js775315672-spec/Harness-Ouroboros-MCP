@@ -1,0 +1,19 @@
+name: ORIL v2 externally pinned test source boundary (experimental)
+on:
+  pull_request:
+    paths:
+      - scripts/oril_v2_external_test_source_pin.py
+      - tests/test_oril_v2_external_test_source_pin.py
+      - .github/workflows/oril-v2-external-test-source-pin.yml
+permissions:
+  contents: read
+jobs:
+  external-test-source-pin-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run six strict trust boundary tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_external_test_source_pin.py -v
