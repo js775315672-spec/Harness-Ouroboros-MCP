@@ -46,7 +46,7 @@ def validate(items):
         seen_ids.add(row["case_id"])
         if row["split"] not in SPLITS:
             raise ValueError("invalid split")
-        group = row["group_id"]
+        group = row["group_id"].casefold()  # Prevent case-variant group leakage
         if group in groups and groups[group] != row["split"]:
             raise ValueError("group leakage across splits")
         groups[group] = row["split"]
