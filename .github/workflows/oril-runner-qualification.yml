@@ -1,0 +1,26 @@
+name: ORIL runner qualification
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/oril-runner-qualification.yml]
+permissions:
+  contents: read
+jobs:
+  qualify:
+    if: github.head_ref == 'review/oril-v1-1-p0' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Resolve sandbox image and confirm two-CPU affinity
+        run: |
+          docker pull python:3.11-slim
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' python:3.11-slim)
+          cpus=$(python3 -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0))[:2])))')
+          docker run --rm --pull=never --network none --read-only --cpuset-cpus "$cpus" "$digest" python -B -c 'import os; assert len(os.sched_getaffinity(0)) == 2'
+          jq -n --arg host "${ImageVersion:-unknown}" --arg digest "$digest" --arg cpus "$cpus" --arg cpu "$(lscpu | awk -F: '/^Model name/ {gsub(/^ +/,"",$2); print $2}')" '{runner:"ubuntu-24.04",runner_image_version:$host,container_digest:$digest,cpu_model:$cpu,affinity:$cpus,model_calls:0}' > "$RUNNER_TEMP/oril-runner.json"
+          cat "$RUNNER_TEMP/oril-runner.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: oril-runner-qualification
+          path: ${{ runner.temp }}/oril-runner.json
+          if-no-files-found: error
