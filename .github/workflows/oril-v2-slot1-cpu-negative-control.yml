@@ -1,0 +1,37 @@
+name: ORIL v2 slot1 real CPU same-prompt negative control (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_cpu_same_prompt_negative_control.py'
+      - 'tests/test_oril_v2_cpu_same_prompt_negative_control.py'
+      - 'docs/oril_v2_slot1_cpu_same_prompt_negative_control.md'
+      - '.github/workflows/oril-v2-slot1-cpu-negative-control.yml'
+permissions:
+  contents: read
+jobs:
+  negative-control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Exact SHA and runner
+        run: |
+          git rev-parse HEAD
+          python3 --version
+      - name: Independent offline contract regressions
+        run: python3 -m unittest discover -s tests -p test_oril_v2_cpu_same_prompt_negative_control.py -v
+      - name: CPU dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check 'torch==2.6.0' 'transformers==4.51.3' 'tokenizers==0.21.1'
+      - name: Real random-weight Qwen2 CPU same-prompt calls
+        run: |
+          python3 scripts/oril_v2_cpu_same_prompt_negative_control.py --output negative_control.json --pairs 6
+          python3 -m json.tool negative_control.json
+      - name: Upload raw CPU negative-control evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cpu-same-prompt-negative-control
+          path: negative_control.json
+          retention-days: 7
