@@ -42,7 +42,10 @@ class PinnedConsumerTests(unittest.TestCase):
             original = path.with_name("original.jsonl")
             os.rename(path, original)
             path.write_bytes(original.read_bytes())
-        with self.assertRaisesRegex(ValueError, "path replaced"):
+        # The open FD is already pinned when before_read replaces the path.
+        # The intended fail-closed signal is the snapshot's post-read
+        # metadata change, not the earlier path-replacement check.
+        with self.assertRaisesRegex(ValueError, "file changed during snapshot"):
             self.read(before_read=replace)
 
     def test_same_size_tamper_after_publish_rejected(self):
