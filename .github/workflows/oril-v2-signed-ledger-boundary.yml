@@ -1,0 +1,22 @@
+name: ORIL v2 signed ledger boundary (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_signed_ledger_boundary.py'
+      - 'tests/test_oril_v2_signed_ledger_boundary.py'
+      - '.github/workflows/oril-v2-signed-ledger-boundary.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-signature-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime versions
+        run: |
+          python --version
+          openssl version
+      - name: Eight isolated regression cases
+        run: python -m unittest discover -s tests -p 'test_oril_v2_signed_ledger_boundary.py' -v
