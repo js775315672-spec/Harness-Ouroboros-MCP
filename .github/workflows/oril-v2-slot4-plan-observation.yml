@@ -1,0 +1,27 @@
+name: ORIL v2 slot4 frozen plan observation audit (experimental)
+on:
+  push:
+    branches:
+      - feat/oril-v2-slot4-plan-observation-binding-20261121
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_slot4_plan_observation_audit.py'
+      - 'tests/test_oril_v2_slot4_plan_observation_audit.py'
+      - 'docs/oril_v2_slot4_plan_observation_binding.md'
+      - '.github/workflows/oril-v2-slot4-plan-observation.yml'
+permissions:
+  contents: read
+jobs:
+  offline-binding:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Report tested SHA
+        run: git rev-parse HEAD
+      - name: Audit frozen plan binding and inherited schedule tests
+        run: |
+          python3 -m unittest discover -s tests -p test_oril_v2_balanced_prompt_run_plan.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_slot4_plan_observation_audit.py -v
