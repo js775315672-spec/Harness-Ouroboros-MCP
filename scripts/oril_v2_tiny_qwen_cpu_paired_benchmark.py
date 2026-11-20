@@ -87,7 +87,7 @@ def summarize(pairs, config_sha, observed_orders=None):
     }
 
 
-def run(n_pairs=6):
+def run(n_pairs=6, *, include_raw=False):
     if type(n_pairs) is not int or not 2 <= n_pairs <= 20:
         raise ValueError("pair count outside bounded range")
     with tempfile.TemporaryDirectory(prefix="oril-cpu-paired-") as td:
@@ -106,8 +106,50 @@ def run(n_pairs=6):
             for label, question in order:
                 pair[label] = invoke(adapter, model_dir, question)
             pairs.append(pair)
-        return summarize(pairs, config_sha, observed_orders=observed_orders)
+        report = summarize(pairs, config_sha, observed_orders=observed_orders)
+        if not include_raw:
+            return report
+        raw_pairs = [
+            {
+                "order": order,
+                "compact_elapsed_seconds": pair["compact"]["elapsed_seconds"],
+                "verbose_elapsed_seconds": pair["verbose"]["elapsed_seconds"],
+                "compact_input_tokens": pair["compact"]["input_tokens"],
+                "verbose_input_tokens": pair["verbose"]["input_tokens"],
+            }
+            for pair, order in zip(pairs, observed_orders)
+        ]
+        canonical = json.dumps(report, sort_keys=True, ensure_ascii=False,
+                               separators=(",", ":"), allow_nan=False)
+        sidecar = {
+            "schema_version": 1,
+            "report_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            "measurement_kind": "synthetic_random_weight_qwen2_cpu_subprocess",
+            "pairs": raw_pairs,
+        }
+        return report, sidecar
 
 
 if __name__ == "__main__":
-    print(json.dumps(run(), ensure_ascii=False, sort_keys=True))
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--report", help="write real CPU summary JSON")
+    parser.add_argument("--sidecar", help="write raw per-call timings JSON (requires --report)")
+    args = parser.parse_args()
+    if bool(args.report) != bool(args.sidecar):
+        parser.error("--report and --sidecar must be supplied together")
+    if args.report:
+        report_path, sidecar_path = Path(args.report), Path(args.sidecar)
+        if report_path.resolve() == sidecar_path.resolve():
+            parser.error("report and sidecar paths must differ")
+        if report_path.exists() or sidecar_path.exists():
+            parser.error("refusing to overwrite existing evidence")
+        report, sidecar = run(include_raw=True)
+        with report_path.open("x", encoding="utf-8") as f:
+            json.dump(report, f, sort_keys=True, ensure_ascii=False, allow_nan=False)
+            f.write("\n")
+        with sidecar_path.open("x", encoding="utf-8") as f:
+            json.dump(sidecar, f, sort_keys=True, ensure_ascii=False, allow_nan=False)
+            f.write("\n")
+    else:
+        print(json.dumps(run(), ensure_ascii=False, sort_keys=True))
