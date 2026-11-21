@@ -201,6 +201,28 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
         self.tx("record", value=op + "=" + json.dumps(good, sort_keys=True))
         self.assertIsNone(self.tx("inspect")["pending"])
 
+    def test_signature_is_cryptographically_bound_to_independent_agent_domain(self):
+        op = self.op()
+        good = json.loads(self.receipt(op))
+        self.assertTrue(r.r2_verify_signed_receipt(good))
+        with patch.object(r, "AGENT", "unrelated-agent"):
+            with self.assertRaisesRegex(r.Blocked, "signature invalid"):
+                r.r2_verify_signed_receipt(good)
+
+    def test_wrong_signing_secret_and_key_rotation_block(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        signed = self.receipt(op)
+        before = self.tip()
+        with patch.dict(os.environ, {"OFC_R2_VERIFIER_KEY": "other-secret-" + "x" * 48}):
+            with self.assertRaisesRegex(r.Blocked, "signature invalid"):
+                self.tx("record", value=op + "=" + signed)
+        with patch.dict(os.environ, {"OFC_R2_VERIFIER_KEY_ID": "rotated-key"}):
+            with self.assertRaisesRegex(r.Blocked, "trusted verifier key missing"):
+                self.tx("record", value=op + "=" + signed)
+        self.assertEqual(before, self.tip())
+        self.assertEqual(self.tx("inspect")["pending"], op)
+
     def test_missing_trusted_verifier_key_blocks_even_well_formed_signature(self):
         op = self.op()
         self.tx("reserve", value=op)
