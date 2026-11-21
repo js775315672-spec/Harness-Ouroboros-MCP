@@ -2,10 +2,10 @@ name: Hydra next task proposal
 on:
   pull_request:
     branches: [main]
-    paths: [.github/workflows/hydra-next-task.yml, scripts/p3l_hydra_next_task.py]
+    paths: [.github/workflows/hydra-next-task.yml, scripts/p3l_hydra_next_task.py, tests/test_hydra_next_task.py, docs/evolution/cycle-01-dispatch-preflight.json, 'experiments/hydra-lora/run-01/**']
   push:
     branches: [main]
-    paths: [.github/workflows/hydra-next-task.yml, scripts/p3l_hydra_next_task.py]
+    paths: [.github/workflows/hydra-next-task.yml, scripts/p3l_hydra_next_task.py, tests/test_hydra_next_task.py, docs/evolution/cycle-01-dispatch-preflight.json, 'experiments/hydra-lora/run-01/**']
   workflow_run:
     workflows: [Hydra standing approved tasks]
     branches: [main]
@@ -14,7 +14,16 @@ permissions:
   contents: read
   actions: read
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python3 -B -m unittest discover -s tests
   propose:
+    needs: test
     if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'review/hydra-next-task'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -23,29 +32,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Test deterministic selection and recovery
-        shell: bash
-        run: |
-          PYTHONPATH=scripts python3 -B - <<'PY'
-          from p3l_hydra_next_task import select
-          def run(id):
-              return dict(id=id, event="push", head_branch="main", status="completed",
-                          run_attempt=1, head_sha="a"*40)
-          def job(id, name, conclusion):
-              return dict(id=id, name=name, conclusion=conclusion)
-          runs=[run(12), run(13)]
-          jobs={12:[job(1,"admit","failure"),job(2,"Worker peer","failure")],
-                13:[job(3,"admit","success"),job(4,"Worker peer","skipped")]}
-          first=select(runs,jobs)
-          assert first["proposal"]["job_id"] == 2
-          assert select(list(reversed(runs)),jobs)==first
-          jobs[13].append(job(5,"Worker peer","success"))
-          assert select(runs,jobs)["decision"]=="no_unresolved_failure"
-          jobs[13][0]["conclusion"]="failure"
-          jobs[12].append(job(7,"Worker second","timed_out"))
-          assert select(runs,jobs)["proposal"]["job_id"]==3
-          print("SELECTION 4/4")
-          PY
       - name: Select the next task from live read-only evidence
         env:
           GH_TOKEN: ${{ github.token }}

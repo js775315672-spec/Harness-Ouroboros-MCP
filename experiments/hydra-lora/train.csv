@@ -1,0 +1,21 @@
+label,text
+failure,Admission rejected the task because the approval digest was invalid.
+success,Admission accepted every approved task in the queue.
+failure,The worker timed out before producing its evidence archive.
+success,The worker finished on time and uploaded its evidence archive.
+failure,The verifier found a mismatch between the artifact and its recorded hash.
+success,The verifier confirmed that the artifact matches its recorded hash.
+failure,The candidate broke a regression test during replay.
+success,All regression tests passed during candidate replay.
+failure,The grading process exited with an error and produced no verdict.
+success,The grading process completed normally and returned a passing verdict.
+failure,The required manifest was missing from the worker output.
+success,The worker output includes the complete signed manifest.
+failure,The replay could not load its checkpoint.
+success,The replay loaded the checkpoint and finished normally.
+failure,The model worker crashed before writing any output.
+success,The model worker saved its output and closed normally.
+failure,The task failed after exhausting the retry limit.
+success,The task succeeded on its final retry.
+failure,The job was rejected after verification failed.
+success,The job was accepted after verification passed.
