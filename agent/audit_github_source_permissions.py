@@ -70,7 +70,7 @@ def workflow_permissions():
             "workflow permissions must be limited to three read-only scopes")
     require("persist-credentials: false" in contents,
             "checkout may persist credentials")
-    require("ref: \${{ github.event.pull_request.head.sha }}" in contents,
+    require("ref: ${{ github.event.pull_request.head.sha }}" in contents,
             "checkout is not pinned to exact PR head")
     return grants
 
