@@ -1,6 +1,8 @@
 """Repository-owned P0 cycle registry. Invoke from a GitHub Actions checkout."""
 import argparse
 import json
+import hashlib
+import re
 import os
 import subprocess
 import sys
@@ -42,6 +44,130 @@ def assert_canonical_registry_tree(remote, commit):
 
 
 
+
+R1_PROTOCOL = "OFC-R1"
+R1_RECEIPT = "OFC-R1-RECEIPT"
+R1_ID = re.compile(r"^[A-Za-z0-9_.:/-]{8,160}$")
+
+
+def r1_ledger(state):
+    """Only forward-written R1 tombstones are authoritative; legacy history is not."""
+    guard = state.get("r1_guard")
+    if guard is None:
+        guard = {"operations": {}, "effects": {}, "receipts": {}}
+    if (not isinstance(guard, dict) or set(guard) !=
+            {"operations", "effects", "receipts"} or
+            any(not isinstance(guard[k], dict) for k in guard)):
+        raise Blocked("malformed global idempotency guard")
+    return guard
+
+
+def r1_intent(raw, state):
+    """Return None for legacy/merge JSON, and validate explicitly opted-in R1."""
+    if not isinstance(raw, str) or not raw.lstrip().startswith("{"):
+        return None
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("protocol") != R1_PROTOCOL:
+        if isinstance(data, dict) and data.get("protocol") is not None:
+            raise Blocked("unsupported external-operation protocol")
+        return None
+    required = {"protocol", "agent", "cycle_id", "operation_id", "effect_id", "source"}
+    if (set(data) != required or data["agent"] != AGENT or
+            data["cycle_id"] != state["cycle"] or data["source"] != state["source"] or
+            any(not isinstance(data[k], str) or not R1_ID.fullmatch(data[k])
+                for k in ("operation_id", "effect_id"))):
+        raise Blocked("R1 cycle, operation, effect or source identity mismatch")
+    return data
+
+
+def r1_reserve(state, operation):
+    intent = r1_intent(operation, state)
+    if intent is None:
+        return
+    ledger = r1_ledger(state)
+    operation_id, effect_id = intent["operation_id"], intent["effect_id"]
+    if operation_id in ledger["operations"] or effect_id in ledger["effects"]:
+        raise Blocked("globally reserved or completed operation/effect replay")
+    # The pre-effect reservation is written with the same registry CAS as pending.
+    ledger["operations"][operation_id] = {
+        "cycle_id": state["cycle"], "effect_id": effect_id,
+        "status": "reserved"}
+    ledger["effects"][effect_id] = operation_id
+    state["r1_guard"] = ledger
+
+
+def r1_record(state, operation, evidence):
+    intent = r1_intent(operation, state)
+    if intent is None:
+        raise Blocked("merge operations require authenticated recovery, not generic record")
+    try:
+        receipt = json.loads(evidence)
+    except (TypeError, ValueError) as exc:
+        raise Blocked("invalid R1 receipt JSON") from exc
+    required = {"protocol", "agent", "cycle_id", "operation_id",
+                "effect_id", "source", "receipt_id", "proof"}
+    if (not isinstance(receipt, dict) or set(receipt) != required or
+            receipt["protocol"] != R1_RECEIPT or receipt["agent"] != AGENT or
+            any(receipt[k] != intent[k] for k in
+                ("agent", "cycle_id", "operation_id", "effect_id", "source")) or
+            not isinstance(receipt["receipt_id"], str) or
+            not R1_ID.fullmatch(receipt["receipt_id"]) or
+            not isinstance(receipt["proof"], str) or not receipt["proof"].strip()):
+        raise Blocked("R1 receipt is not bound to reserved cycle/operation/effect")
+    ledger = r1_ledger(state)
+    id_ = intent["operation_id"]
+    reserved = ledger["operations"].get(id_)
+    if (reserved != {"cycle_id": state["cycle"],
+                     "effect_id": intent["effect_id"], "status": "reserved"} or
+            ledger["effects"].get(intent["effect_id"]) != id_):
+        raise Blocked("R1 reservation record missing or inconsistent")
+    if receipt["receipt_id"] in ledger["receipts"]:
+        raise Blocked("global receipt ID replay")
+    fingerprint = hashlib.sha256(
+        json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    ledger["operations"][id_] = {
+        "cycle_id": state["cycle"], "effect_id": intent["effect_id"],
+        "status": "recorded", "receipt_id": receipt["receipt_id"],
+        "receipt_sha256": fingerprint}
+    ledger["receipts"][receipt["receipt_id"]] = id_
+    state["r1_guard"] = ledger
+
+
+def r1_note_verified_merge(state, operation, evidence):
+    """Add global tombstones only after recover_merged_pr verified the merge."""
+    try:
+        intent, receipt = json.loads(operation), json.loads(evidence)
+    except (ValueError, TypeError) as exc:
+        raise Blocked("invalid verified merge identity") from exc
+    if not isinstance(intent, dict) or not isinstance(receipt, dict):
+        raise Blocked("invalid verified merge objects")
+    repository, pr, op = (intent.get("repository"), intent.get("pr"),
+                          intent.get("operation_id"))
+    merge_sha = receipt.get("merge_commit_sha")
+    if (not isinstance(repository, str) or
+            not isinstance(pr, int) or isinstance(pr, bool) or pr < 1 or
+            not isinstance(op, str) or not R1_ID.fullmatch(op) or
+            not isinstance(merge_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", merge_sha)):
+        raise Blocked("invalid verified merge tombstone")
+    effect_id = "github-pr:" + repository + ":" + str(pr)
+    ledger = r1_ledger(state)
+    if (op in ledger["operations"] or effect_id in ledger["effects"] or
+            merge_sha in ledger["receipts"]):
+        raise Blocked("verified PR merge or receipt already executed")
+    ledger["operations"][op] = {"cycle_id": state["cycle"],
+                                "effect_id": effect_id, "status": "recorded",
+                                "receipt_id": merge_sha,
+                                "receipt_sha256": hashlib.sha256(
+                                    evidence.encode("utf-8")).hexdigest()}
+    ledger["effects"][effect_id] = op
+    ledger["receipts"][merge_sha] = op
+    state["r1_guard"] = ledger
+
+
 def transition(state, command, owner, generation, source, value, now, ttl):
     if state and (state["agent"] != AGENT or state["schema"] != 1):
         raise Blocked("unexpected registry identity or schema")
@@ -60,8 +186,12 @@ def transition(state, command, owner, generation, source, value, now, ttl):
             if state["pending"]:
                 raise Blocked("unresolved external operation: " + state["pending"])
         else:
+            # Persist all new R1 operation/effect/receipt tombstones across cycles.
+            previous_r1 = json.loads(json.dumps(r1_ledger(state))) if state else r1_ledger({})
             state = dict(schema=1, agent=AGENT, cycle=uuid.uuid4().hex, source=source,
-                         phase="open", generation=state.get("generation", 0), checkpoint=None, pending=None, results={})
+                         phase="open", generation=state.get("generation", 0),
+                         checkpoint=None, pending=None, results={},
+                         r1_guard=previous_r1)
         state.update(owner=owner, expires=now + ttl, generation=state["generation"] + 1)
         return state, True
     if not state or (owner, generation, source) != (state["owner"], state["generation"], state["source"]):
@@ -71,13 +201,13 @@ def transition(state, command, owner, generation, source, value, now, ttl):
     if command == "stop":
         state["phase"] = "blocked"
     elif command == "record":
-        if state["pending"] and state["pending"].lstrip().startswith("{"):
-            raise Blocked("merge operations require authenticated recovery, not generic record")
         if not state["pending"] or not value:
             raise Blocked("pending operation and evidence required")
         key, separator, evidence = value.partition("=")
         if not separator or key != state["pending"] or not evidence:
             raise Blocked("operation key or evidence mismatch")
+        if state["pending"].lstrip().startswith("{"):
+            r1_record(state, key, evidence)
         state["results"][key] = evidence
         state["pending"] = None
     elif state["pending"]:
@@ -85,6 +215,7 @@ def transition(state, command, owner, generation, source, value, now, ttl):
     elif command == "reserve":
         if not value or "=" in value or value in state["results"]:
             raise Blocked("invalid or previously executed operation")
+        r1_reserve(state, value)
         state["pending"] = value
     elif command == "checkpoint" and value:
         state["checkpoint"] = value
@@ -143,6 +274,7 @@ def reconcile_expired(state, *, owner, source, operation, evidence, verified, no
         raise Blocked("invalid recovery lease or duplicate operation")
     recovered = dict(state)
     recovered["results"] = dict(state["results"])
+    r1_note_verified_merge(recovered, operation, evidence)
     recovered["results"][operation] = evidence
     recovered["pending"] = None
     recovered["owner"] = owner
