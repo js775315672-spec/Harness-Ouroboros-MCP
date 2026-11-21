@@ -13,14 +13,27 @@ jobs:
   regression:
     runs-on: ubuntu-24.04
     timeout-minutes: 4
+    outputs:
+      experiment_changed: ${{ steps.scope.outputs.changed }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - id: scope
+        env:
+          PREVIOUS: ${{ github.event.before }}
+          SOURCE: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=true
+          if [[ "${{ github.event.action }}" == synchronize ]] && git cat-file -e "$PREVIOUS^{commit}" && git diff --quiet "$PREVIOUS" "$SOURCE" -- oril/orchestrator.py oril/public_handoff.py oril/lease.py scripts .github/workflows/oril-v3-cycle.yml; then
+            changed=false
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
       - run: python3 -B -m unittest discover -s tests
   first:
     needs: regression
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.regression.outputs.experiment_changed == 'true'
     uses: ./.github/workflows/oril-v3-cycle.yml
     with:
       cycle: 1
