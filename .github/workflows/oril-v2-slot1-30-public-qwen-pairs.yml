@@ -1,0 +1,49 @@
+name: ORIL v2 slot1 pretrained Qwen 30 public pairs (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_slot1_30_public_qwen_pairs.py'
+      - 'tests/test_oril_v2_slot1_30_public_qwen_pairs.py'
+      - 'docs/oril_v2_slot1_30_public_qwen_pairs.md'
+      - '.github/workflows/oril-v2-slot1-30-public-qwen-pairs.yml'
+permissions:
+  contents: read
+jobs:
+  real-pretrained-public-pairs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Record exact SHA and offline integrity tests
+        run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p test_oril_v2_slot1_30_public_qwen_pairs.py -v
+      - name: Install pinned pretrained CPU dependencies
+        run: python3 -m pip install --disable-pip-version-check 'torch==2.5.1' 'transformers==4.46.3' 'huggingface_hub==0.26.5' 'safetensors==0.4.5'
+      - name: Execute 60 actual pretrained Qwen CPU calls (public questions only)
+        run: python3 scripts/oril_v2_slot1_30_public_qwen_pairs.py --output public_30_pairs.json
+      - name: Recompute public answers and totals without trusting summary
+        run: |
+          python3 - <<'PY'
+          import json,sys
+          sys.path.insert(0, "scripts")
+          from oril_v2_slot1_30_public_qwen_pairs import summarize
+          with open("public_30_pairs.json", encoding="utf-8") as f:
+              report=json.load(f)
+          recomputed=summarize(report["rows"])
+          assert report["summary"] == recomputed
+          assert report["weights_trained_this_run"] is False
+          assert report["gpu_lora_training_proven"] is False
+          assert report["independent_heldout_accuracy_proven"] is False
+          print(json.dumps(recomputed, sort_keys=True))
+          PY
+      - name: Preserve raw public diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: slot1-pretrained-public-30-pairs
+          path: public_30_pairs.json
+          if-no-files-found: warn
+          retention-days: 7
