@@ -26,7 +26,7 @@ jobs:
           SOURCE: ${{ github.event.pull_request.head.sha }}
         run: |
           changed=true
-          if [[ "${{ github.event.action }}" == synchronize ]] && git cat-file -e "$PREVIOUS^{commit}" && git diff --quiet "$PREVIOUS" "$SOURCE" -- oril/orchestrator.py oril/public_handoff.py oril/lease.py scripts .github/workflows/oril-v3-cycle.yml; then
+          if [[ "${{ github.event.action }}" == synchronize ]] && git cat-file -e "$PREVIOUS^{commit}" && git diff --quiet "$PREVIOUS" "$SOURCE" -- oril/orchestrator.py oril/public_handoff.py scripts .github/workflows/oril-v3-cycle.yml; then
             changed=false
           fi
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
