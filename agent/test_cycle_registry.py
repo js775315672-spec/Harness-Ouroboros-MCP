@@ -21,6 +21,13 @@ class RegistryTest(unittest.TestCase):
     def call(self, command, owner="slot", gen=1, value=""):
         return transact(self.remote, command, owner, gen, self.source, value)
 
+    def test_registry_tree_has_exact_portable_filename(self):
+        self.call("acquire")
+        ref = git("ls-remote", self.remote, "refs/heads/ofc-cycle-registry-v1")
+        commit = ref.split()[0]
+        names = git("--git-dir=" + self.remote, "ls-tree", "--name-only", commit)
+        self.assertEqual(names.splitlines(), ["state.json"])
+
     def test_ten_contenders(self):
         def acquire(i):
             try:
