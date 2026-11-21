@@ -9,10 +9,20 @@ permissions:
   contents: read
 jobs:
   registry:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - run: python agent/test_cycle_registry.py -v
+      - name: Confirm exact PR head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Run P0 registry regression tests
+        run: python agent/test_cycle_registry.py -v
