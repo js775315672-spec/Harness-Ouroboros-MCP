@@ -8,6 +8,7 @@ on:
       - 'agent/test_p0_independent_audit.py'
       - 'agent/audit_operational_history.py'
       - 'agent/audit_github_source_permissions.py'
+      - 'agent/test_c2_registry_safety.py'
       - '.github/workflows/ofc-registry.yml'
 permissions:
   contents: read
@@ -37,6 +38,8 @@ jobs:
           python agent/test_a1_recovery_safety.py -v
       - name: Run isolated P0 recovery audit
         run: python agent/test_p0_independent_audit.py -v
+      - name: C2 isolated Windows CR and operation reuse safety tests
+        run: python agent/test_c2_registry_safety.py -v
       - name: Read-only audit of real operational registry history
         env:
           GITHUB_TOKEN: ${{ github.token }}
