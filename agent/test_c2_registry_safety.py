@@ -259,6 +259,63 @@ class C2HistoricalAuditRules(unittest.TestCase):
         self.assertEqual(mocked.call_count, 1)
         self.assertNotIn("pulls/7", a.api_modes)
 
+    def test_b2_live_public_fallback_after_confirmed_app_quota(self):
+        import io
+        from urllib.error import HTTPError
+
+        path = pathlib.Path(__file__).resolve().parent / "audit_github_source_permissions.py"
+        spec = importlib.util.spec_from_file_location("ofc_b2_testable", path)
+        b2 = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ, {
+                "GITHUB_REPOSITORY": "isolated/c2-fixture",
+                "OFC_EXPECTED_PR": "7", "OFC_AGENT": r.AGENT,
+                "GITHUB_RUN_ID": "1", "GITHUB_TOKEN": "test-fixture",
+                "GITHUB_EVENT_PATH": "no-real-file-used"}):
+            spec.loader.exec_module(b2)
+        first = HTTPError(
+            b2.API_ROOT + "pulls/7", 403, "Forbidden",
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Resource": "core"},
+            io.BytesIO(b'{"message":"API rate limit exceeded for installation"}'))
+        requests = []
+        class Response(io.BytesIO):
+            status = 200
+        def fake(request, timeout=25):
+            requests.append((request.full_url,
+                             request.get_header("Authorization")))
+            if len(requests) == 1:
+                raise first
+            return Response(b'{"number":7,"state":"open","merged":false}')
+        with patch.object(b2, "urlopen", side_effect=fake):
+            self.assertEqual(b2.get("pulls/7")["number"], 7)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0][0], requests[1][0])
+        self.assertIsNotNone(requests[0][1])
+        self.assertIsNone(requests[1][1])
+        self.assertEqual(b2.api_calls[-1]["source"],
+                         "public_GitHub_TLS_after_core_quota")
+
+    def test_b2_actual_permission_denial_remains_blocked(self):
+        import io
+        from urllib.error import HTTPError
+
+        path = pathlib.Path(__file__).resolve().parent / "audit_github_source_permissions.py"
+        spec = importlib.util.spec_from_file_location("ofc_b2_denied", path)
+        b2 = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ, {
+                "GITHUB_REPOSITORY": "isolated/c2-fixture",
+                "OFC_EXPECTED_PR": "7", "OFC_AGENT": r.AGENT,
+                "GITHUB_RUN_ID": "1", "GITHUB_TOKEN": "test-fixture",
+                "GITHUB_EVENT_PATH": "no-real-file-used"}):
+            spec.loader.exec_module(b2)
+        err = HTTPError(
+            b2.API_ROOT + "pulls/7", 403, "Forbidden",
+            {"X-RateLimit-Remaining": "12", "X-RateLimit-Resource": "core"},
+            io.BytesIO(b'{"message":"Resource not accessible by integration"}'))
+        with patch.object(b2, "urlopen", side_effect=err) as api:
+            with self.assertRaisesRegex(RuntimeError, "rate_remaining=12"):
+                b2.get("pulls/7")
+        self.assertEqual(api.call_count, 1)
+
     def test_legacy_cr_in_history_is_allowed_but_current_tip_is_not(self):
         a = self.audit
         historical = self.synthetic_history("receipt-cycle-two")
