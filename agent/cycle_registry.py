@@ -104,6 +104,40 @@ def r1_reserve(state, operation):
     state["r1_guard"] = ledger
 
 
+
+def r2_verify_signed_receipt(receipt):
+    """Verify an R2 HMAC attestation before any R1 receipt can be committed.
+
+    The secret must be provisioned separately by a trusted external verifier.
+    No secret/unknown key ID => fail closed. This does not itself attest the
+    real-world external effect unless the keyholder independently checked it.
+    """
+    import hmac
+    attestation = receipt.get("attestation")
+    if (not isinstance(attestation, dict) or set(attestation) !=
+            {"scheme", "key_id", "signature"} or
+            attestation.get("scheme") != "hmac-sha256" or
+            not isinstance(attestation.get("key_id"), str) or
+            not isinstance(attestation.get("signature"), str) or
+            not re.fullmatch(r"[0-9a-f]{64}", attestation["signature"])):
+        raise Blocked("R2 signed external attestation required")
+    key_id = os.environ.get("OFC_R2_VERIFIER_KEY_ID", "")
+    key = os.environ.get("OFC_R2_VERIFIER_KEY", "").encode("utf-8")
+    if (not key_id or not hmac.compare_digest(key_id, attestation["key_id"])
+            or len(key) < 32):
+        raise Blocked("R2 trusted verifier key missing or does not match")
+    payload = dict(receipt)
+    del payload["attestation"]
+    message = (b"OFC-R2-RECEIPT-V1\x00" +
+               AGENT.encode("ascii") + b"\x00" +
+               json.dumps(payload, sort_keys=True, ensure_ascii=False,
+                          separators=(",", ":")).encode("utf-8"))
+    expected = hmac.new(key, message, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, attestation["signature"]):
+        raise Blocked("R2 external receipt signature invalid")
+    return True
+
+
 def r1_record(state, operation, evidence):
     intent = r1_intent(operation, state)
     if intent is None:
@@ -113,7 +147,7 @@ def r1_record(state, operation, evidence):
     except (TypeError, ValueError) as exc:
         raise Blocked("invalid R1 receipt JSON") from exc
     required = {"protocol", "agent", "cycle_id", "operation_id",
-                "effect_id", "source", "receipt_id", "proof"}
+                "effect_id", "source", "receipt_id", "proof", "attestation"}
     if (not isinstance(receipt, dict) or set(receipt) != required or
             receipt["protocol"] != R1_RECEIPT or receipt["agent"] != AGENT or
             any(receipt[k] != intent[k] for k in
@@ -122,6 +156,7 @@ def r1_record(state, operation, evidence):
             not R1_ID.fullmatch(receipt["receipt_id"]) or
             not isinstance(receipt["proof"], str) or not receipt["proof"].strip()):
         raise Blocked("R1 receipt is not bound to reserved cycle/operation/effect")
+    r2_verify_signed_receipt(receipt)
     ledger = r1_ledger(state)
     id_ = intent["operation_id"]
     reserved = ledger["operations"].get(id_)
