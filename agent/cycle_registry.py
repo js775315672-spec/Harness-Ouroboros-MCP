@@ -95,6 +95,50 @@ def transact(remote, command, owner="", generation=0, source="", value="", ttl=6
     return state
 
 
+def reconcile_expired(state, *, owner, source, operation, evidence, verified, now, ttl=600):
+    """Reconcile an expired pending operation only after trusted external verification."""
+    if not state or state.get("schema") != 1 or state.get("agent") != AGENT:
+        raise Blocked("registry identity mismatch")
+    if state.get("phase") != "open" or not state.get("pending"):
+        raise Blocked("no recoverable pending operation")
+    if state.get("expires", 0) > now:
+        raise Blocked("existing lease still active")
+    if state.get("source") != source or not owner or not operation or operation != state["pending"]:
+        raise Blocked("recovery identity or operation mismatch")
+    if verified is not True or not isinstance(evidence, str) or not evidence.strip():
+        raise Blocked("independent authenticated outcome required")
+    if not 1 <= ttl <= 3600 or operation in state.get("results", {}):
+        raise Blocked("invalid recovery lease or duplicate operation")
+    recovered = dict(state)
+    recovered["results"] = dict(state["results"])
+    recovered["results"][operation] = evidence
+    recovered["pending"] = None
+    recovered["owner"] = owner
+    recovered["generation"] = state["generation"] + 1
+    recovered["expires"] = now + ttl
+    return recovered
+
+
+def recover_verified(remote, *, owner, source, operation, evidence, verifier, ttl=600):
+    """CAS recovery; trusted verifier must authenticate repo, PR, and merge evidence."""
+    refs = git("ls-remote", remote, REF, "refs/heads/main")
+    heads = dict(line.split()[::-1] for line in refs.splitlines())
+    previous = heads.get(REF)
+    if not previous or heads.get("refs/heads/main") != source:
+        raise Blocked("missing registry or pinned main changed")
+    git("fetch", "--no-write-fetch-head", "--quiet", "--no-tags", remote, previous)
+    state = json.loads(git("show", previous + ":state.json"))
+    if not callable(verifier) or verifier(remote, operation, evidence) is not True:
+        raise Blocked("external outcome not authenticated")
+    result = reconcile_expired(state, owner=owner, source=source, operation=operation,
+                               evidence=evidence, verified=True, now=time.time(), ttl=ttl)
+    blob = git("hash-object", "-w", "--stdin", stdin=json.dumps(result, sort_keys=True) + "\n")
+    tree = git("mktree", stdin=f"100644 blob {blob}\tstate.json\n")
+    commit = git("commit-tree", tree, "-p", previous, "-m", f"{AGENT} reconcile {uuid.uuid4().hex}")
+    git("push", "--porcelain", f"--force-with-lease={REF}:{previous}", remote, commit + ":" + REF)
+    return result
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices="inspect acquire checkpoint reserve record release complete stop".split())
