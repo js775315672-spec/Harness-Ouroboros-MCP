@@ -1,0 +1,66 @@
+name: ORIL v3 public cycle
+on:
+  workflow_call:
+    inputs:
+      cycle:
+        type: number
+        required: true
+permissions:
+  contents: read
+  actions: read
+env:
+  CYCLE: ${{ inputs.cycle }}
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+  GH_TOKEN: ${{ github.token }}
+  PYTHONUTF8: 1
+jobs:
+  infer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Restore immutable predecessor
+        run: |
+          mkdir input
+          if [[ "$CYCLE" == 1 ]]; then
+            gh api repos/"$GITHUB_REPOSITORY"/actions/artifacts/14680858021/zip > "$RUNNER_TEMP/seed.zip"
+            unzip -p "$RUNNER_TEMP/seed.zip" public_30_pairs.json > input/public_30_pairs.json
+          else
+            gh run download "$GITHUB_RUN_ID" -n "review-$((CYCLE-1))" -D input
+          fi
+      - run: bash scripts/install_qwen_cpu_dependencies.sh
+      - run: python3 oril/orchestrator.py "$CYCLE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: raw-${{ inputs.cycle }}
+          path: |
+            candidate/
+            input/
+          if-no-files-found: error
+  public-audit:
+    needs: infer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: f32dd7cc8b6e71995ae2c182ad6cc25c22ca0bdb
+          path: grader
+          persist-credentials: false
+      - run: gh run download "$GITHUB_RUN_ID" -n "raw-$CYCLE"
+      - run: PYTHONPATH=grader/scripts python3 oril/public_handoff.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: review-${{ inputs.cycle }}
+          path: |
+            memory.json
+            audit.json
+          if-no-files-found: error

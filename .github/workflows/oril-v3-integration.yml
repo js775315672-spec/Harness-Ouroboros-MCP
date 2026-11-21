@@ -1,0 +1,27 @@
+name: ORIL v3 integration
+on:
+  pull_request:
+    branches: [main]
+    paths: ['oril/**', '.github/workflows/oril-v3-*.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: oril-public-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+jobs:
+  first:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/oril-v3-cycle.yml
+    with:
+      cycle: 1
+  second:
+    needs: first
+    uses: ./.github/workflows/oril-v3-cycle.yml
+    with:
+      cycle: 2
+  third:
+    needs: second
+    uses: ./.github/workflows/oril-v3-cycle.yml
+    with:
+      cycle: 3
