@@ -139,6 +139,65 @@ def recover_verified(remote, *, owner, source, operation, evidence, verifier, tt
     return result
 
 
+def verify_github_merge(remote, operation, evidence, *, api_fetch=None):
+    """Fail-closed verification of a pinned PR merge receipt against GitHub API.
+
+    operation/evidence are canonical JSON strings. This is a verifier primitive,
+    not an authorization to merge or mutate a live registry.
+    """
+    import re
+    from urllib.parse import quote
+    from urllib.request import Request, urlopen
+    if remote != REMOTE:
+        raise Blocked("repository remote mismatch")
+    try:
+        intent = json.loads(operation)
+        receipt = json.loads(evidence)
+    except (TypeError, ValueError) as exc:
+        raise Blocked("invalid merge intent or receipt JSON") from exc
+    if not isinstance(intent, dict) or not isinstance(receipt, dict):
+        raise Blocked("merge evidence must be objects")
+    repo = REMOTE.removeprefix("https://github.com/").removesuffix(".git")
+    sha = re.compile(r"^[0-9a-f]{40}$")
+    if (intent.get("repository") != repo or receipt.get("repository") != repo
+            or not isinstance(intent.get("pr"), int) or isinstance(intent.get("pr"), bool)
+            or intent["pr"] < 1 or receipt.get("pr") != intent["pr"]
+            or not isinstance(intent.get("operation_id"), str)
+            or not re.fullmatch(r"[A-Za-z0-9_.:-]{8,128}", intent["operation_id"])
+            or receipt.get("operation_id") != intent["operation_id"]):
+        raise Blocked("repository, PR or operation identity mismatch")
+    for field in ("head_sha", "base_sha"):
+        if (not isinstance(intent.get(field), str) or not sha.fullmatch(intent[field])
+                or receipt.get(field) != intent[field]):
+            raise Blocked("pinned head/base SHA mismatch")
+    merge_sha = receipt.get("merge_commit_sha")
+    if not isinstance(merge_sha, str) or not sha.fullmatch(merge_sha):
+        raise Blocked("invalid merge commit SHA")
+    url = f"https://api.github.com/repos/{repo}/pulls/{intent['pr']}"
+    if api_fetch is None:
+        def api_fetch(target):
+            request = Request(target, headers={"Accept": "application/vnd.github+json",
+                                               "User-Agent": "ofc-registry-verifier"})
+            with urlopen(request, timeout=10) as response:
+                return json.load(response)
+    try:
+        data = api_fetch(url)
+    except Exception as exc:
+        raise Blocked("GitHub merge status unavailable") from exc
+    if not isinstance(data, dict):
+        raise Blocked("invalid GitHub response")
+    if (data.get("merged") is not True or data.get("state") != "closed"
+            or data.get("merge_commit_sha") != merge_sha
+            or not isinstance(data.get("head"), dict)
+            or not isinstance(data.get("base"), dict)
+            or data["head"].get("sha") != intent["head_sha"]
+            or data["base"].get("sha") != intent["base_sha"]
+            or not isinstance(data.get("base", {}).get("repo"), dict)
+            or data["base"]["repo"].get("full_name") != repo):
+        raise Blocked("unconfirmed or changed GitHub merge")
+    return True
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices="inspect acquire checkpoint reserve record release complete stop".split())
