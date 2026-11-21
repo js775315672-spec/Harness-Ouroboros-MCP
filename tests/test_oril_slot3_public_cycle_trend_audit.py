@@ -38,6 +38,12 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(result["speed_trend"], "판단불가")
     def test_empty_rejected(self):
         with self.assertRaises(ValueError): audit([])
+    def test_nonfinite_duration_rejected(self):
+        for duration in (float("nan"), float("inf"), -float("inf")):
+            with self.subTest(duration=repr(duration)):
+                r = row(duration=duration)
+                with self.assertRaises(ValueError):
+                    audit([r])
     def test_no_negative_duration(self):
         r = row(); r["duration_s"] = -1
         with self.assertRaises(ValueError): audit([r])
