@@ -172,6 +172,16 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
                                verifier=lambda *_: True)
         self.assertEqual(self.tip(), before)
 
+    def test_legacy_string_reservation_cannot_bypass_r1_guard(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        self.tx("record", value=op + "=" + self.receipt(op))
+        before = self.tip()
+        with self.assertRaisesRegex(r.Blocked, "legacy external reservation forbidden"):
+            self.tx("reserve", value="legacy-qwen-public-trial")
+        self.assertEqual(self.tip(), before)
+        self.assertIsNone(self.tx("inspect")["pending"])
+
     def test_independent_repository_has_independent_global_keys(self):
         sibling = str(pathlib.Path(self.remote).parent / "sibling.git")
         r.git("init", "--quiet", "--bare", sibling)
