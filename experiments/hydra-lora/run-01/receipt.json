@@ -1,0 +1,61 @@
+{
+  "model": "google/bert_uncased_L-2_H-128_A-2",
+  "revision": "30b0a37ccaaa32f332884b96992754e246e48c5f",
+  "base_files": {
+    "config.json": "508e1f01aae55d73355cbdd82609be2f43ba5a0d3428837adbe56cf8391f8b39",
+    "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+    "model.safetensors": "7fb69ad9f6866d8983183c930e33828f326470bf6ad8bbb2ad4ed957a92e9414"
+  },
+  "adapter_sha256": "4d4e7d45a3d6e3d54aec0694ea0837a1c34568266b3cd3be3699d9acdef0bc72",
+  "device": "privateuseone:0",
+  "gpu": "AMD Radeon(TM) Graphics\u0000",
+  "torch_version": "2.4.1+cpu",
+  "optimizer": "SGD",
+  "lr": 0.04,
+  "seed": 317,
+  "rank": 2,
+  "optimizer_steps": 100,
+  "initial_loss": 0.7093501091003418,
+  "last_pre_step_loss": 0.5462279915809631,
+  "delta_norm": 0.11792363226413727,
+  "train_examples": 20,
+  "eval_examples": 12,
+  "split_sha256": {
+    "train.csv": "b9611e0c4b895fa24804862898822dc387407846f764325c0a6e0e3dcc26a7e7",
+    "eval.csv": "31db21c808ff6cf2f04b06346a794ac491e31ddc04962375a01f66ba76d212cf"
+  },
+  "baseline_correct": 6,
+  "candidate_correct": 8,
+  "recovered": 5,
+  "regressed": 3,
+  "baseline_predictions": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "candidate_predictions": [
+    1,
+    0,
+    1,
+    1,
+    0,
+    0,
+    1,
+    1,
+    0,
+    1,
+    1,
+    1
+  ],
+  "verdict": "public_fixture_gain",
+  "next_task": "independent_evaluation"
+}

@@ -1,0 +1,66 @@
+name: ORIL checkpoint contention and recovery
+on:
+  push:
+    branches: [integration/oril-v3-public-loop]
+    paths: ['.github/workflows/oril-checkpoint-recovery.yml']
+permissions:
+  actions: read
+  contents: read
+jobs:
+  workers:
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1, 2, 3, 4, 5]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - id: claim
+        env:
+          SLOT: ${{ matrix.slot }}
+        run: |
+          key=$(echo -n "qa-$GITHUB_RUN_ID" | sha256sum | cut -d' ' -f1)
+          owner=$(python3 oril/lease.py claim "$key" "$SLOT" "$GITHUB_SHA")
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "$SLOT" > owner
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.claim.outputs.owner == 'acquired'
+        with:
+          name: shared-checkpoint
+          path: owner
+          if-no-files-found: error
+      - name: Simulate an interrupted winning worker after checkpoint creation
+        if: steps.claim.outputs.owner == 'acquired'
+        id: interrupt
+        continue-on-error: true
+        run: exit 75
+      - run: echo "${{ steps.claim.outputs.owner }} ${{ steps.interrupt.outcome }}" > "slot-${{ matrix.slot }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: attempt-${{ matrix.slot }}
+          path: slot-${{ matrix.slot }}
+  recover:
+    needs: workers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - run: |
+          gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -D evidence
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("evidence")
+          winner = int((root/"shared-checkpoint/owner").read_text())
+          states = [(root/f"attempt-{i}/slot-{i}").read_text().strip() for i in range(1,6)]
+          assert 1 <= winner <= 5 and states[winner-1] == "acquired failure", states
+          assert states.count("busy skipped") == 4, states
+          print(f"Recovered winner {winner} from the original checkpoint; five attempts, one publication.")
+          PY

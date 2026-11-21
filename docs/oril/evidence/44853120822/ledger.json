@@ -1,0 +1,56 @@
+{
+  "run_id": 44853120822,
+  "head_sha": "e8fa72cc4caecaf5afab952af5d5214baa9c2614",
+  "base_sha": "8fbecb5e813b653213d6c8d95ce7151868779512",
+  "grader_sha": "f32dd7cc8b6e71995ae2c182ad6cc25c22ca0bdb",
+  "cycles": [
+    {
+      "raw": {
+        "artifact_id": 14685663455,
+        "sha256": "bb73360ee439dacafc568bb74ac16d06644846deb98e79c90368f1c60a51e805",
+        "job_id": 136688941357,
+        "started_at": "2026-11-21T01:57:15Z",
+        "completed_at": "2026-11-21T01:58:40Z"
+      },
+      "review": {
+        "artifact_id": 14686058584,
+        "sha256": "0c141de9d849fab65e6840ced65c023b88b72cf939574559c9b3521f7a18a702",
+        "job_id": 136689364694,
+        "started_at": "2026-11-21T01:58:43Z",
+        "completed_at": "2026-11-21T01:58:53Z"
+      }
+    },
+    {
+      "raw": {
+        "artifact_id": 14686442160,
+        "sha256": "8e002939e63ae00e84a40cae0e0cfa6c57ea736ebd4cd93710efe51da7e4535b",
+        "job_id": 136689423240,
+        "started_at": "2026-11-21T01:58:56Z",
+        "completed_at": "2026-11-21T02:00:20Z"
+      },
+      "review": {
+        "artifact_id": 14686371779,
+        "sha256": "5dca88e0b3a1494705c82eedb9ecdfa6995d141f7757ea16ddc8532d99ffe4e8",
+        "job_id": 136689853097,
+        "started_at": "2026-11-21T02:00:23Z",
+        "completed_at": "2026-11-21T02:00:38Z"
+      }
+    },
+    {
+      "raw": {
+        "artifact_id": 14685673974,
+        "sha256": "443241bfe50c968f4d43e6b7e82cc37c7cbca050359cfa9fc050fc86daaa29bc",
+        "job_id": 136689953604,
+        "started_at": "2026-11-21T02:00:41Z",
+        "completed_at": "2026-11-21T02:02:10Z"
+      },
+      "review": {
+        "artifact_id": 14685864667,
+        "sha256": "96963905ef83bf4c6b678d30736d10d268cd29d7456692018d12ae63f9e3a91d",
+        "job_id": 136690444754,
+        "started_at": "2026-11-21T02:02:13Z",
+        "completed_at": "2026-11-21T02:02:22Z"
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+name: ORIL v2 slot2 real pretrained Qwen paired prompt diagnostic (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/install_qwen_cpu_dependencies.sh'
+      - 'scripts/oril_v2_slot2_pretrained_paired_diagnostic.py'
+      - 'tests/test_oril_v2_slot2_pretrained_paired_diagnostic.py'
+      - 'docs/oril_v2_slot2_pretrained_paired_diagnostic.md'
+      - '.github/workflows/oril-v2-slot2-pretrained-paired.yml'
+permissions:
+  contents: read
+jobs:
+  real-pretrained-paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify exact SHA and offline contract
+        run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p 'test_oril_v2_pretrained_qwen_cpu_smoke.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_slot1_pretrained_attention_mask.py' -v
+          python3 -m unittest discover -s tests -p 'test_oril_v2_slot2_pretrained_paired_diagnostic.py' -v
+      - name: Install pinned Qwen CPU dependencies
+        run: bash scripts/install_qwen_cpu_dependencies.sh
+      - name: Run actual pretrained CPU prompt pairs
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_HUB_ETAG_TIMEOUT: '30'
+          OMP_NUM_THREADS: '2'
+        run: |
+          python3 scripts/oril_v2_slot2_pretrained_paired_diagnostic.py --output pretrained_paired_diagnostic.json
+      - name: Verify exact report without claiming speed or intelligence gain
+        run: |
+          python3 -c 'import json; from scripts.oril_v2_slot2_pretrained_paired_diagnostic import validate_report; r=json.load(open("pretrained_paired_diagnostic.json")); assert validate_report(r); print("Real pretrained paired diagnostic schema verified")'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pretrained-qwen-paired-public-diagnostic
+          path: pretrained_paired_diagnostic.json
+          retention-days: 7

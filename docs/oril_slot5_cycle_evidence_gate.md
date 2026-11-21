@@ -1,0 +1,6 @@
+# ORIL v2.0 slot 5: end-to-end evidence readiness (2026-11-21)
+Baseline main: `8fbecb5e813b653213d6c8d95ce7151868779512`.
+This read-only checker bridges Qwen inference, independent grade, held-out evaluation, feedback memory, and next-cycle handoff. It does **not** perform inference, verify remote artifact bytes, authenticate provenance, train weights, or approve promotion. `EVIDENCE_COMPLETE_NOT_APPROVED` is only a structural readiness state. A model claim requires independent GPU logs, optimizer steps, and adapter SHA; even those fields alone are not proof of authentic training.
+Run: `python -m unittest discover -s tests -p 'test_oril_slot5_cycle_evidence_gate.py'`.
+Hypothesis: incomplete or self-reported cycles will be rejected rather than counted as independently proven gains. Minimum falsification: valid synthetic record passes structural readiness, seven invalid classes fail closed; independent GitHub-hosted CI and real immutable artifact retrieval remain outstanding. Do not count synthetic fixtures as genuine model improvement.
+Handoff: obtain artifacts for PR #319/#321/#323 on pinned SHAs; verify real independent run logs and bytes outside this checker, compare 30 held-out groups, append feedback with source hashes, then rerun under independent grader. No merge or protected gate edits.

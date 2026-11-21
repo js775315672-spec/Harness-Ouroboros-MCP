@@ -1,0 +1,50 @@
+name: ORIL v2 slot3 real pretrained Qwen public30 A-A null control
+on:
+  pull_request:
+    paths:
+      - 'scripts/install_qwen_cpu_dependencies.sh'
+      - 'scripts/oril_v2_slot3_public30_pretrained_aa_null.py'
+      - 'tests/test_oril_v2_slot3_public30_pretrained_aa_null.py'
+      - 'docs/oril_v2_slot3_public30_pretrained_aa_null.md'
+      - '.github/workflows/oril-v2-slot3-public30-pretrained-aa.yml'
+permissions:
+  contents: read
+jobs:
+  real-pretrained-public-aa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Exact SHA and offline mutation tests
+        run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p test_oril_v2_slot3_public30_pretrained_aa_null.py -v
+      - name: Install pinned Qwen CPU dependencies
+        run: bash scripts/install_qwen_cpu_dependencies.sh
+      - name: Run 60 real pretrained Qwen public A-A CPU calls
+        run: python3 scripts/oril_v2_slot3_public30_pretrained_aa_null.py --output public30_pretrained_aa.json
+      - name: Independently recalculate raw A-A drift and prohibit false claims
+        run: |
+          python3 - <<'PY'
+          import json,sys
+          sys.path.insert(0, "scripts")
+          from oril_v2_slot3_public30_pretrained_aa_null import audit_null
+          with open("public30_pretrained_aa.json", encoding="utf-8") as f:
+              report=json.load(f)
+          assert audit_null(report["rows"]) == report["summary"]
+          assert report["weights_trained_this_run"] is False
+          assert report["gpu_lora_training_proven"] is False
+          assert report["independent_heldout_accuracy_proven"] is False
+          assert report["quality_gain"] is None and report["speed_gain"] is None
+          print(json.dumps(report["summary"], sort_keys=True))
+          PY
+      - name: Preserve raw PUBLIC evidence for audit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: slot3-pretrained-public30-aa-null
+          path: public30_pretrained_aa.json
+          if-no-files-found: warn
+          retention-days: 7
