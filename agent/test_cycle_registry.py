@@ -163,5 +163,49 @@ class GitHubMergeVerifierTest(unittest.TestCase):
                                 encode(receipt), api_fetch=lambda url: response)
 
 
+
+class MergeMainTransitionTest(RegistryTest):
+    def test_verified_merge_after_main_advance(self):
+        import json
+        from unittest.mock import patch
+        import cycle_registry as registry
+        from cycle_registry import git
+        with patch("cycle_registry.time.time", return_value=100):
+            self.call("acquire")
+            intent = {"repository": "test/repo", "pr": 1, "operation_id": "merge-test-1",
+                      "head_sha": "a"*40, "base_sha": self.source}
+            new_main = git("commit-tree", git("mktree", stdin=""), "-p", self.source, "-m", "merged")
+            receipt = dict(intent, merge_commit_sha=new_main)
+            op, proof = json.dumps(intent, sort_keys=True), json.dumps(receipt, sort_keys=True)
+            self.call("reserve", value=op)
+        git("push", self.remote, new_main + ":refs/heads/main")
+        with patch.object(registry, "REMOTE", self.remote), patch.object(registry, "verify_github_merge", return_value=True), patch("cycle_registry.time.time", return_value=800):
+            result = registry.recover_merged_pr(self.remote, owner="recovery", source=self.source,
+                                                operation=op, evidence=proof)
+        self.assertIsNone(result["pending"])
+        self.assertEqual(result["results"][op], proof)
+        self.assertEqual(result["generation"], 2)
+        with patch.object(registry, "REMOTE", self.remote), patch.object(registry, "verify_github_merge", return_value=True):
+            with self.assertRaises(Blocked):
+                registry.recover_merged_pr(self.remote, owner="retry", source=self.source,
+                                           operation=op, evidence=proof)
+
+    def test_unknown_or_unrelated_main_is_blocked(self):
+        import json
+        from unittest.mock import patch
+        import cycle_registry as registry
+        with patch("cycle_registry.time.time", return_value=100):
+            self.call("acquire")
+            intent = {"repository": "test/repo", "pr": 1, "operation_id": "merge-test-2",
+                      "head_sha": "a"*40, "base_sha": self.source}
+            op = json.dumps(intent, sort_keys=True)
+            self.call("reserve", value=op)
+        proof = json.dumps(dict(intent, merge_commit_sha="f"*40), sort_keys=True)
+        before = self.call("inspect")
+        with patch.object(registry, "REMOTE", self.remote), patch.object(registry, "verify_github_merge", return_value=True):
+            with self.assertRaises(Blocked):
+                registry.recover_merged_pr(self.remote, owner="recovery", source=self.source,
+                                           operation=op, evidence=proof)
+        self.assertEqual(self.call("inspect"), before)
 if __name__ == "__main__":
     unittest.main()
