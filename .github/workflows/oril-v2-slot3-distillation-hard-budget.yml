@@ -1,0 +1,20 @@
+name: ORIL slot3 distillation hard budget
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_teacher_distillation_pack.py'
+      - 'tests/test_oril_v2_slot3_hard_budget.py'
+      - '.github/workflows/oril-v2-slot3-distillation-hard-budget.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regression tests
+        run: |
+          python -m unittest discover -s tests -p 'test_oril_v2_teacher_distillation_pack.py' -v
+          python -m unittest discover -s tests -p 'test_oril_v2_slot3_hard_budget.py' -v

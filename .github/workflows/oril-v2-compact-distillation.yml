@@ -1,0 +1,24 @@
+name: ORIL v2 lightweight teacher distillation curation (experimental)
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_teacher_distillation_pack.py'
+      - 'tests/test_oril_v2_teacher_distillation_pack.py'
+      - 'docs/oril_v2_lightweight_knowledge_distillation.md'
+      - '.github/workflows/oril-v2-compact-distillation.yml'
+permissions:
+  contents: read
+jobs:
+  offline-distillation-guardrails:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Python version and exact SHA
+        run: |
+          python3 --version
+          git rev-parse HEAD
+      - name: Verify bounded curation, split leakage and no false model claims
+        run: python3 -m unittest discover -s tests -p test_oril_v2_teacher_distillation_pack.py -v
