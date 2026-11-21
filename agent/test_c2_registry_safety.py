@@ -159,6 +159,41 @@ class C2HistoricalAuditRules(unittest.TestCase):
                             {"qwen-public-trial": second_evidence})},
         ]
 
+    def test_readonly_pinned_git_fetch_preserves_legacy_cr_commit(self):
+        """History read must expose legacy CR, not silently repair or skip it."""
+        with tempfile.TemporaryDirectory(prefix="ofc-c2-fetch-") as tmp:
+            remote = str(pathlib.Path(tmp) / "origin.git")
+            r.git("init", "--quiet", "--bare", remote)
+            baseline = r.git("commit-tree", r.git("mktree", stdin=""),
+                             "-m", "C2 fetch baseline")
+            r.git("push", remote, baseline + ":refs/heads/main")
+            r.transact(remote, "acquire", "slot", 0, baseline)
+            first = r.git("ls-remote", remote, r.REF).split()[0]
+            state = r.transact(remote, "inspect")
+            blob = r.git("hash-object", "-w", "--stdin",
+                         stdin=json.dumps(state, sort_keys=True) + "\n")
+            corrupt_tree = r.git("mktree",
+                                 stdin="100644 blob " + blob +
+                                 "\tstate.json\r\n")
+            legacy = r.git("commit-tree", corrupt_tree, "-p", first,
+                           "-m", "C2 CR fixture")
+            r.git("push", remote, legacy + ":" + r.REF)
+            fixed_tree = r.git("mktree",
+                               stdin="100644 blob " + blob + "\tstate.json\n")
+            latest = r.git("commit-tree", fixed_tree, "-p", legacy,
+                           "-m", "C2 reviewed repair fixture")
+            r.git("push", remote, latest + ":" + r.REF)
+            observed, history = self.audit.traverse(
+                remote_url=remote, pinned_tip=latest)
+            self.assertEqual(observed, latest)
+            self.assertEqual(len(history), 3)
+            self.assertEqual([entry["path"] for entry in history],
+                             ["state.json", "state.json\r", "state.json"])
+            self.audit.check_active_registry_path(history)
+            self.assertEqual(self.audit.errors, [])
+            with self.assertRaisesRegex(RuntimeError, "drifted"):
+                self.audit.traverse(remote_url=remote, pinned_tip=first)
+
     def test_legacy_cr_in_history_is_allowed_but_current_tip_is_not(self):
         a = self.audit
         historical = self.synthetic_history("receipt-cycle-two")
