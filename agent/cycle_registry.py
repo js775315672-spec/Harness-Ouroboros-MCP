@@ -51,6 +51,8 @@ def transition(state, command, owner, generation, source, value, now, ttl):
     if command == "stop":
         state["phase"] = "blocked"
     elif command == "record":
+        if state["pending"] and state["pending"].lstrip().startswith("{"):
+            raise Blocked("merge operations require authenticated recovery, not generic record")
         if not state["pending"] or not value:
             raise Blocked("pending operation and evidence required")
         key, separator, evidence = value.partition("=")
@@ -119,24 +121,10 @@ def reconcile_expired(state, *, owner, source, operation, evidence, verified, no
     return recovered
 
 
-def recover_verified(remote, *, owner, source, operation, evidence, verifier, ttl=600):
-    """CAS recovery; trusted verifier must authenticate repo, PR, and merge evidence."""
-    refs = git("ls-remote", remote, REF, "refs/heads/main")
-    heads = dict(line.split()[::-1] for line in refs.splitlines())
-    previous = heads.get(REF)
-    if not previous or heads.get("refs/heads/main") != source:
-        raise Blocked("missing registry or pinned main changed")
-    git("fetch", "--no-write-fetch-head", "--quiet", "--no-tags", remote, previous)
-    state = json.loads(git("show", previous + ":state.json"))
-    if not callable(verifier) or verifier(remote, operation, evidence) is not True:
-        raise Blocked("external outcome not authenticated")
-    result = reconcile_expired(state, owner=owner, source=source, operation=operation,
-                               evidence=evidence, verified=True, now=time.time(), ttl=ttl)
-    blob = git("hash-object", "-w", "--stdin", stdin=json.dumps(result, sort_keys=True) + "\n")
-    tree = git("mktree", stdin=f"100644 blob {blob}\tstate.json\n")
-    commit = git("commit-tree", tree, "-p", previous, "-m", f"{AGENT} reconcile {uuid.uuid4().hex}")
-    git("push", "--porcelain", f"--force-with-lease={REF}:{previous}", remote, commit + ":" + REF)
-    return result
+def recover_verified(*args, **kwargs):
+    """Legacy verifier injection is unsafe and permanently disabled."""
+    raise Blocked("arbitrary verifier callback forbidden; use recover_merged_pr")
+
 
 
 def verify_github_merge(remote, operation, evidence, *, api_fetch=None):
@@ -186,6 +174,8 @@ def verify_github_merge(remote, operation, evidence, *, api_fetch=None):
         raise Blocked("GitHub merge status unavailable") from exc
     if not isinstance(data, dict):
         raise Blocked("invalid GitHub response")
+    if data.get("number") not in (None, intent["pr"]):
+        raise Blocked("GitHub PR number mismatch")
     if (data.get("merged") is not True or data.get("state") != "closed"
             or data.get("merge_commit_sha") != merge_sha
             or not isinstance(data.get("head"), dict)
@@ -224,6 +214,8 @@ def recover_merged_pr(remote, *, owner, source, operation, evidence, ttl=600, ap
     state = json.loads(git("show", previous + ":state.json"))
     if state.get("source") != source or state.get("pending") != operation:
         raise Blocked("pending operation or registry source mismatch")
+    if state.get("phase") != "open" or not isinstance(state.get("results"), dict):
+        raise Blocked("malformed registry state")
     if verify_github_merge(remote, operation, evidence, api_fetch=api_fetch) is not True:
         raise Blocked("merge receipt verification failed")
     result = reconcile_expired(state, owner=owner, source=source, operation=operation,
