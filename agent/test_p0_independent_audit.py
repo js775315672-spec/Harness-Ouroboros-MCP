@@ -92,8 +92,10 @@ class IndependentP0Audit(unittest.TestCase):
         merged = r.git("commit-tree", r.git("mktree", stdin=""),
                        "-p", self.source, "-m", "verified merge")
         r.git("push", self.remote, merged + ":refs/heads/main")
-        intent = {"base_sha": self.source, "operation_id": "audit-merge"}
-        receipt = {"merge_commit_sha": merged}
+        intent = {"repository": "isolated/r1-fixture", "pr": 77,
+                  "operation_id": "audit-merge-00077",
+                  "head_sha": "a" * 40, "base_sha": self.source}
+        receipt = dict(intent, merge_commit_sha=merged)
         # Replace the pending key with a canonical JSON intent in a fresh isolated registry.
         # A fresh remote is used to avoid mutating an existing pending operation.
         with tempfile.TemporaryDirectory(prefix="ofc-merge-audit-") as tmp:
