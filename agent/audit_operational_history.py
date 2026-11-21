@@ -148,6 +148,8 @@ def validate_history(records, main_sha):
     if repeated_values:
         fail("exact external evidence duplicated across distinct cycles: " +
              repr(repeated_values))
+    if repeated_keys:
+        warnings.append("operation names reused across distinct cycles; only cycle-qualified identity and independent receipts can authorize effects: " + repr(sorted(repeated_keys)))
     latest = records[-1]["state"]
     if latest.get("source") != main_sha:
         fail("operational ledger source does not match current main")
@@ -211,6 +213,8 @@ def main():
         report["legacy_cr_filename_commit_shas"] = legacy
         if legacy:
             warnings.append("historical CR-suffixed state.json filename in " + str(len(legacy)) + " commits; not silently normalized")
+        if records[-1]["path"] != "state.json":
+            fail("active registry tip has noncanonical path; manual repair required")
         report["registry_tip_sha"] = tip_sha
         report["main_sha"] = main_sha
         report["history"] = validate_history(records, main_sha)
