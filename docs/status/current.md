@@ -7,3 +7,8 @@
 | 운영 | 모델 지능 향상 미입증, 비교 가능한 개발 효율 미측정 | 보호된 평가와 별도 승인 |
 
 [원본 이력](../evolution/ledger.jsonl) · [기준선 계약](../evolution/README.md)
+
+<!-- oril-docs:generated -->
+최근 공개 검산 [44853120822-3](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44853120822) · 코드 `e8fa72cc4caecaf5afab952af5d5214baa9c2614` · 공개 오답 5/30 · 소요 101초. 비공개 개선 미입증. 동일 조건 2건, 소요 시간 변화 판단 불가.
+
+[비교 조건·측정값](../metrics/trends.json) · [근거별 교훈](../memory/lessons.jsonl)

@@ -1,0 +1,215 @@
+[
+  {
+    "conditions": {
+      "base_sha": "8fbecb5e813b653213d6c8d95ce7151868779512",
+      "environment": "ubuntu-24.04-hosted-cpu",
+      "grader_sha": "f32dd7cc8b6e71995ae2c182ad6cc25c22ca0bdb",
+      "hypothesis": "check_sum",
+      "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "workload_sha256": "da01e3d2e6d4d484f9dfa166e298e22d29979d5360bb93ce93510e8f18101cdd"
+    },
+    "cycles": [
+      "44852655575-3",
+      "44853120822-3"
+    ],
+    "metrics": {
+      "duration_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "heldout_score": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "inference_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "input_tokens": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "public_score": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "rediscovery_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "regression_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "review_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "rollback_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "success_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "throughput_per_hour": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      }
+    }
+  },
+  {
+    "conditions": {
+      "base_sha": "8fbecb5e813b653213d6c8d95ce7151868779512",
+      "environment": "ubuntu-24.04-hosted-cpu",
+      "grader_sha": "f32dd7cc8b6e71995ae2c182ad6cc25c22ca0bdb",
+      "hypothesis": "integer_format",
+      "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "workload_sha256": "da01e3d2e6d4d484f9dfa166e298e22d29979d5360bb93ce93510e8f18101cdd"
+    },
+    "cycles": [
+      "44852655575-2",
+      "44853120822-2"
+    ],
+    "metrics": {
+      "duration_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "heldout_score": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "inference_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "input_tokens": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "public_score": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "rediscovery_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "regression_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "review_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "rollback_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "success_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "throughput_per_hour": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      }
+    }
+  },
+  {
+    "conditions": {
+      "base_sha": "8fbecb5e813b653213d6c8d95ce7151868779512",
+      "environment": "ubuntu-24.04-hosted-cpu",
+      "grader_sha": "f32dd7cc8b6e71995ae2c182ad6cc25c22ca0bdb",
+      "hypothesis": "remove_redundancy",
+      "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "workload_sha256": "da01e3d2e6d4d484f9dfa166e298e22d29979d5360bb93ce93510e8f18101cdd"
+    },
+    "cycles": [
+      "44852655575-1",
+      "44853120822-1"
+    ],
+    "metrics": {
+      "duration_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "heldout_score": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "inference_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "input_tokens": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "public_score": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "rediscovery_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "regression_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "review_seconds": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "rollback_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "success_rate": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      },
+      "throughput_per_hour": {
+        "change_pct": null,
+        "median": null,
+        "observed_direction": "판단 불가"
+      }
+    }
+  }
+]

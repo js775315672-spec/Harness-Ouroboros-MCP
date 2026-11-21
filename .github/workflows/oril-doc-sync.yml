@@ -1,0 +1,78 @@
+name: ORIL documentation refresh
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '24 */6 * * *'
+  push:
+    branches: [main, review/oril-persistent-memory-v1]
+    paths: ['oril/**', 'hydra/**', 'scripts/**', 'docs/oril/evidence/**', docs/architecture.md, '.github/workflows/oril-v3*.yml', '.github/workflows/oril-doc-sync.yml']
+  pull_request_target:
+    types: [opened, closed]
+  workflow_run:
+    workflows: [ORIL v3 integration, ORIL P0 evidence review, ORIL private baseline check, Hydra standing approved tasks]
+    types: [completed]
+permissions: {}
+concurrency:
+  group: oril-documentation-writer-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  generate:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && (github.ref == 'refs/heads/main' || (github.event_name == 'push' && github.ref == 'refs/heads/review/oril-persistent-memory-v1')) && github.event.pull_request.head.ref != 'docs/oril-generated'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.base.outputs.sha }}
+      changed: ${{ steps.base.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.ref == 'refs/heads/main' && 'main' || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORIL_DISCOVER: '1'
+        run: |
+          git fetch --no-tags origin bfa89dcc28287986e36e5d4f33693e53a8394902
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          python3 -m pip install --quiet jsonschema==4.25.1
+          python3 -B scripts/oril_docs.py sync
+          git diff --check
+          git add -N docs/status/github.json
+          git diff --binary -- README.md docs/status/github.json docs/status/current.md docs/roadmap.md docs/evolution/ledger.jsonl docs/memory/lessons.jsonl docs/metrics/trends.json > "$RUNNER_TEMP/docs.patch"
+          if test -s "$RUNNER_TEMP/docs.patch"; then echo changed=true >> "$GITHUB_OUTPUT"; fi
+      - if: steps.base.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: docs-patch
+          path: ${{ runner.temp }}/docs.patch
+  propose:
+    needs: generate
+    if: needs.generate.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.generate.outputs.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: docs-patch
+          path: ${{ runner.temp }}/oril-generated
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/heads/review/oril-persistent-memory-v1 ]]; then
+            export ORIL_PREVIEW=1
+            bash scripts/propose_oril_docs.sh
+            git reset --hard "${{ needs.generate.outputs.sha }}"
+          fi
+          bash scripts/propose_oril_docs.sh

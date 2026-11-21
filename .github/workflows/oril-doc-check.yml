@@ -1,0 +1,33 @@
+name: ORIL documentation verification
+on:
+  push:
+    branches: [review/oril-persistent-memory-v1]
+  pull_request:
+    paths: [README.md, AGENTS.md, 'docs/**', scripts/oril_docs.py, scripts/propose_oril_docs.sh, tests/test_oril_docs.py, tests/oril_docs_publisher.sh, '.github/workflows/oril-doc*.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - run: |
+          git fetch --no-tags origin bfa89dcc28287986e36e5d4f33693e53a8394902
+          git worktree add --detach "$RUNNER_TEMP/oril-regression" bfa89dcc28287986e36e5d4f33693e53a8394902
+          (cd "$RUNNER_TEMP/oril-regression" && python3 -B -m unittest discover -s tests && python3 -B -m oril.checkpoint docs/oril/evidence/44853120822)
+          python3 -m pip install --quiet jsonschema==4.25.1
+          python3 -B -m unittest discover -s tests -v
+          python3 -B scripts/oril_docs.py sync
+          bash tests/oril_docs_publisher.sh
+          git diff --exit-code
+          ORIL_DISCOVER=1 python3 -B scripts/oril_docs.py sync
+          cp docs/status/current.md "$RUNNER_TEMP/first-status.md"
+          python3 -B scripts/oril_docs.py render
+          cmp "$RUNNER_TEMP/first-status.md" docs/status/current.md
+        env:
+          GH_TOKEN: ${{ github.token }}
