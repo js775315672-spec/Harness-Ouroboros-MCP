@@ -4,8 +4,8 @@ on:
   schedule:
     - cron: '24 */6 * * *'
   push:
-    branches: [main]
-    paths: ['oril/**', 'hydra/**', 'scripts/**', 'docs/oril/evidence/**', docs/architecture.md, '.github/workflows/oril-v3*.yml']
+    branches: [main, review/oril-persistent-memory-v1]
+    paths: ['oril/**', 'hydra/**', 'scripts/**', 'docs/oril/evidence/**', docs/architecture.md, '.github/workflows/oril-v3*.yml', '.github/workflows/oril-doc-sync.yml']
   pull_request_target:
     types: [opened, closed]
   workflow_run:
@@ -13,11 +13,11 @@ on:
     types: [completed]
 permissions: {}
 concurrency:
-  group: oril-documentation-writer
+  group: oril-documentation-writer-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   generate:
-    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.ref == 'refs/heads/main' && github.event.pull_request.head.ref != 'docs/oril-generated'
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && (github.ref == 'refs/heads/main' || (github.event_name == 'push' && github.ref == 'refs/heads/review/oril-persistent-memory-v1')) && github.event.pull_request.head.ref != 'docs/oril-generated'
     permissions:
       contents: read
       actions: read
@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: main
+          ref: ${{ github.ref == 'refs/heads/main' && 'main' || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - id: base
@@ -70,4 +70,9 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [[ "$GITHUB_REF" == refs/heads/review/oril-persistent-memory-v1 ]]; then
+            export ORIL_PREVIEW=1
+            bash scripts/propose_oril_docs.sh
+            git reset --hard "${{ needs.generate.outputs.sha }}"
+          fi
           bash scripts/propose_oril_docs.sh
