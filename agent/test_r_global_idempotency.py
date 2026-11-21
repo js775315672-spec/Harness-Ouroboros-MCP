@@ -5,7 +5,10 @@ No production registry, main branch, external execution or real merge is used.
 """
 import concurrent.futures
 import copy
+import hashlib
+import hmac
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -25,6 +28,13 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
                             "-m", "R1 isolated baseline")
         r.git("push", self.remote, self.source + ":refs/heads/main")
         self.first = r.transact(self.remote, "acquire", "worker", 0, self.source)
+        # Isolated verifier fixture. Never set a production attestation secret.
+        self.r2_fixture_key = ("R2-TEST-KEY-ONLY:" + r.AGENT + ":" + "z" * 40)
+        fixture = patch.dict(os.environ, {
+            "OFC_R2_VERIFIER_KEY": self.r2_fixture_key,
+            "OFC_R2_VERIFIER_KEY_ID": "isolated-test-verifier"})
+        fixture.start()
+        self.addCleanup(fixture.stop)
 
     def op(self, *, operation="operation-00001", effect="external-effect-00001",
            cycle=None, agent=None, source=None):
@@ -39,8 +49,17 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
         value = {k: intent[k] for k in
                  ("agent", "cycle_id", "operation_id", "effect_id", "source")}
         value.update({"protocol": r.R1_RECEIPT, "receipt_id": receipt,
-                      "proof": "FIXTURE ONLY: unsigned outcome"})
+                      "proof": "ISOLATED TEST FIXTURE: no external execution"})
         value.update(overrides)
+        message = (b"OFC-R2-RECEIPT-V1\\x00" +
+                   r.AGENT.encode("ascii") + b"\\x00" +
+                   json.dumps(value, sort_keys=True, ensure_ascii=False,
+                              separators=(",", ":")).encode("utf-8"))
+        sig = hmac.new(self.r2_fixture_key.encode("utf-8"), message,
+                       hashlib.sha256).hexdigest()
+        value["attestation"] = {"scheme": "hmac-sha256",
+                                "key_id": "isolated-test-verifier",
+                                "signature": sig}
         return json.dumps(value, sort_keys=True)
 
     def tx(self, cmd, *, owner="worker", generation=1, value=""):
@@ -158,6 +177,50 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
         self.assertEqual(state["r1_guard"]["receipts"],
                          {"external-receipt-00001": "operation-00001"})
         self.assertEqual(state["generation"], 1)
+
+
+    def test_unsigned_or_tampered_external_receipt_does_not_complete(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        good = json.loads(self.receipt(op))
+        mutations = [
+            {**good, "attestation": None},
+            {**good, "proof": "forged external evidence"},
+            {**good, "receipt_id": "forged-receipt-00002"},
+            {**good, "attestation": {**good["attestation"],
+                                    "signature": "f" * 64}},
+            {**good, "attestation": {**good["attestation"],
+                                    "key_id": "rogue-verifier"}},
+        ]
+        for bad in mutations:
+            before = self.tip()
+            with self.assertRaises(r.Blocked):
+                self.tx("record", value=op + "=" + json.dumps(bad, sort_keys=True))
+            self.assertEqual(self.tip(), before)
+            self.assertEqual(self.tx("inspect")["pending"], op)
+        self.tx("record", value=op + "=" + json.dumps(good, sort_keys=True))
+        self.assertIsNone(self.tx("inspect")["pending"])
+
+    def test_missing_trusted_verifier_key_blocks_even_well_formed_signature(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        signed = self.receipt(op)
+        before = self.tip()
+        with patch.dict(os.environ, {"OFC_R2_VERIFIER_KEY": ""}):
+            with self.assertRaisesRegex(r.Blocked, "trusted verifier key missing"):
+                self.tx("record", value=op + "=" + signed)
+        self.assertEqual(self.tip(), before)
+        self.assertEqual(self.tx("inspect")["pending"], op)
+
+    def test_independent_agent_domain_rejects_cross_agent_signature(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        good = json.loads(self.receipt(op))
+        before = self.tip()
+        with patch.object(r, "AGENT", "not-" + r.AGENT):
+            with self.assertRaises(r.Blocked):
+                self.tx("record", value=op + "=" + json.dumps(good, sort_keys=True))
+        self.assertEqual(self.tip(), before)
 
     def test_no_success_by_legacy_merge_record_or_callback_recovery(self):
         intent = json.dumps({"repository": "fixture/repo", "pr": 17})
