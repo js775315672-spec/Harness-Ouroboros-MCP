@@ -13,6 +13,8 @@ def row(cid, pred, src, cand):
 class ChainTests(unittest.TestCase):
     def setUp(self):
         self.rows = [row("one", None, S, T), row("two", "one", T, U)]
+        self.rows[1]["model_run_url"] = "https://github.com/a/b/actions/runs/125"
+        self.rows[1]["independent_run_url"] = "https://github.com/a/b/actions/runs/126"
     def test_valid(self):
         self.assertFalse(check(self.rows)["promotion_allowed"])
     def test_empty(self):
@@ -39,6 +41,7 @@ class ChainTests(unittest.TestCase):
         self.rows[0]["model_run_url"] = "https://example.com/run"
         with self.assertRaises(ValueError): check(self.rows)
     def test_replayed_model_run_in_next_cycle(self):
+        self.rows[1]["model_run_url"] = self.rows[0]["model_run_url"]
         with self.assertRaisesRegex(ValueError, "replayed run"):
             check(self.rows)
     def test_unique_runs_pass(self):
