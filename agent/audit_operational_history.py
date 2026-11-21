@@ -57,7 +57,7 @@ def traverse():
         # 2026-11-21 legacy Windows text-mode mktree wrote state.json + CR.
         # Preserve that immutable evidence; audit it without repairing history.
         if (len(entries) != 1 or entries[0].get("path") not in
-                ("state.json", "state.json\\r") or entries[0].get("type") != "blob"):
+                ("state.json", "state.json\r") or entries[0].get("type") != "blob"):
             fail("unexpected registry tree contents at " + sha +
                  ": " + repr([e.get("path") for e in entries]))
             break
@@ -187,7 +187,7 @@ def main():
         tip_sha, records = traverse()
         if not records:
             raise RuntimeError("empty operational registry history")
-        legacy = [item["sha"] for item in records if item["path"] == "state.json\\r"]
+        legacy = [item["sha"] for item in records if item["path"] == "state.json\r"]
         report["legacy_cr_filename_commit_shas"] = legacy
         if legacy:
             warnings.append("historical CR-suffixed state.json filename in " + str(len(legacy)) + " commits; not silently normalized")
