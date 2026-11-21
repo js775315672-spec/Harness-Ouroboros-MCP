@@ -42,5 +42,14 @@ class CampaignReplayTests(unittest.TestCase):
     def test_swapped_parent(self):
         self.mutate("raw","input/memory.json",lambda d: d.update(candidate_errors=0))
 
+    def test_rejects_self_consistent_prompt_substitution(self):
+        def forge(candidate):
+            candidate["prompt"] = "Return a different answer."
+            candidate["candidate_sha"] = sha(candidate["prompt"].encode())
+        self.mutate("raw", "candidate/candidate.json", forge)
+
+    def test_rejects_hypothesis_relabeling(self):
+        self.mutate("raw", "candidate/candidate.json", lambda c: c.update(hypothesis_id="unapproved_strategy"))
+
     def test_tampered_raw_output(self):
         self.mutate("raw","candidate/ab.json",lambda d: d["rows"][0]["observations"][0].update(output="wrong"))
