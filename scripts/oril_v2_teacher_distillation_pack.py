@@ -86,8 +86,8 @@ def compile_examples(items, *, max_cases=16, max_total_chars=6000,
     URLs/booleans are *assertions* from input and are not externally verified.
     """
     validate(items)
-    if (type(max_cases) is not int or not 1 <= max_cases <= 10000 or
-            type(max_total_chars) is not int or max_total_chars < 1 or
+    if (type(max_cases) is not int or not 1 <= max_cases <= 16 or
+            type(max_total_chars) is not int or not 1 <= max_total_chars <= 6000 or
             type(max_answer_chars) is not int or max_answer_chars < 1 or
             type(min_quality) not in (float, int) or
             not math.isfinite(min_quality) or not 0 <= min_quality <= 1):
