@@ -6,9 +6,11 @@ on:
       - 'agent/test_cycle_registry.py'
       - 'agent/test_a1_recovery_safety.py'
       - 'agent/test_p0_independent_audit.py'
+      - 'agent/audit_operational_history.py'
       - '.github/workflows/ofc-registry.yml'
 permissions:
   contents: read
+  pull-requests: read
 jobs:
   registry:
     strategy:
@@ -33,3 +35,15 @@ jobs:
           python agent/test_a1_recovery_safety.py -v
       - name: Run isolated P0 recovery audit
         run: python agent/test_p0_independent_audit.py -v
+      - name: Read-only audit of real operational registry history
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OFC_AGENT: ouroboros
+        run: python agent/audit_operational_history.py
+      - name: Upload operational Git history audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ofc-operational-ledger-${{ matrix.os }}
+          path: artifacts/ofc-operational-ledger-audit.json
+          if-no-files-found: warn
