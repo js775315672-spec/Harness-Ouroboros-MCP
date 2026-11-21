@@ -1,6 +1,7 @@
 """Repository-owned P0 cycle registry. Invoke from a GitHub Actions checkout."""
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -83,8 +84,16 @@ def transact(remote, command, owner="", generation=0, source="", value="", ttl=6
     previous = heads.get(REF)
     state = {}
     if previous:
-        git("fetch", "--quiet", "--no-tags", remote, REF)
-        state = json.loads(git("show", previous + ":state.json"))
+        if os.path.isdir(remote):
+            # Disposable bare Git fixtures must be read from their own object store.
+            # A shared checkout object store is not reliable on Windows runners.
+            raw_state = git("--git-dir=" + remote, "show", previous + ":state.json")
+        else:
+            git("fetch", "--quiet", "--no-tags", remote, REF)
+            if git("rev-parse", "FETCH_HEAD") != previous:
+                raise Blocked("registry ref changed while fetching")
+            raw_state = git("show", previous + ":state.json")
+        state = json.loads(raw_state)
     if command != "inspect" and heads.get("refs/heads/main") != source:
         raise Blocked("pinned main has changed")
     state, changed = transition(state, command, owner, generation, source, value, time.time(), ttl)
