@@ -27,6 +27,21 @@ def git(*args, stdin=None):
     return result.stdout.decode("utf-8").strip()
 
 
+
+def assert_canonical_registry_tree(remote, commit):
+    """Never interpret an anomalous live Git tree as a trusted registry state.
+
+    Historical state.json + CR remains observable by the read-only history
+    auditor, but cannot be the *active* registry ref used for a transition.
+    """
+    prefix = ["--git-dir=" + remote] if os.path.isdir(remote) else []
+    entries = git(*prefix, "ls-tree", "--name-only", commit).splitlines()
+    if entries != ["state.json"]:
+        raise Blocked("noncanonical active registry tree; manual review required: " +
+                      repr(entries))
+
+
+
 def transition(state, command, owner, generation, source, value, now, ttl):
     if state and (state["agent"] != AGENT or state["schema"] != 1):
         raise Blocked("unexpected registry identity or schema")
@@ -91,11 +106,13 @@ def transact(remote, command, owner="", generation=0, source="", value="", ttl=6
         if os.path.isdir(remote):
             # Disposable bare Git fixtures must be read from their own object store.
             # A shared checkout object store is not reliable on Windows runners.
+            assert_canonical_registry_tree(remote, previous)
             raw_state = git("--git-dir=" + remote, "show", previous + ":state.json")
         else:
             git("fetch", "--quiet", "--no-tags", remote, REF)
             if git("rev-parse", "FETCH_HEAD") != previous:
                 raise Blocked("registry ref changed while fetching")
+            assert_canonical_registry_tree(remote, previous)
             raw_state = git("show", previous + ":state.json")
         state = json.loads(raw_state)
     if command != "inspect" and heads.get("refs/heads/main") != source:
@@ -226,6 +243,7 @@ def recover_merged_pr(remote, *, owner, source, operation, evidence, ttl=600, ap
     if not previous or not current_main or current_main != receipt.get("merge_commit_sha"):
         raise Blocked("main is not the authenticated merge commit")
     git("fetch", "--no-write-fetch-head", "--quiet", "--no-tags", remote, previous)
+    assert_canonical_registry_tree(remote, previous)
     state = json.loads(git("show", previous + ":state.json"))
     if state.get("source") != source or state.get("pending") != operation:
         raise Blocked("pending operation or registry source mismatch")
