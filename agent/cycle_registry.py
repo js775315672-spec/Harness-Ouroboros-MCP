@@ -210,6 +210,8 @@ def recover_merged_pr(remote, *, owner, source, operation, evidence, ttl=600, ap
     """
     if remote != REMOTE:
         raise Blocked("recovery remote is not this agent's repository")
+    if api_fetch is not None and not os.path.isdir(remote):
+        raise Blocked("API response injection is forbidden for production recovery")
     try:
         intent, receipt = json.loads(operation), json.loads(evidence)
     except (TypeError, ValueError) as exc:
