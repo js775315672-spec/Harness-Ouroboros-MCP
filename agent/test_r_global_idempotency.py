@@ -51,8 +51,8 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
         value.update({"protocol": r.R1_RECEIPT, "receipt_id": receipt,
                       "proof": "ISOLATED TEST FIXTURE: no external execution"})
         value.update(overrides)
-        message = (b"OFC-R2-RECEIPT-V1\\x00" +
-                   r.AGENT.encode("ascii") + b"\\x00" +
+        message = (b"OFC-R2-RECEIPT-V1\x00" +
+                   r.AGENT.encode("ascii") + b"\x00" +
                    json.dumps(value, sort_keys=True, ensure_ascii=False,
                               separators=(",", ":")).encode("utf-8"))
         sig = hmac.new(self.r2_fixture_key.encode("utf-8"), message,
