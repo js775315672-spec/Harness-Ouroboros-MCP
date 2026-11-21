@@ -11,6 +11,7 @@ def check(cycles):
     if not isinstance(cycles, list) or not cycles:
         raise ValueError("nonempty cycle list required")
     seen = set()
+    seen_runs = set()
     previous = None
     for i, row in enumerate(cycles):
         if not isinstance(row, dict) or any(k not in row for k in REQUIRED):
@@ -31,6 +32,10 @@ def check(cycles):
                 raise ValueError(f"cycle {i}: invalid {field}")
         if row["model_run_url"] == row["independent_run_url"]:
             raise ValueError(f"cycle {i}: non-independent run reference")
+        runs = (row["model_run_url"], row["independent_run_url"])
+        if any(url in seen_runs for url in runs):
+            raise ValueError(f"cycle {i}: replayed run reference")
+        seen_runs.update(runs)
         if i and row["source_sha"] != cycles[i-1]["candidate_sha"]:
             raise ValueError(f"cycle {i}: candidate not carried forward")
         seen.add(cid)
