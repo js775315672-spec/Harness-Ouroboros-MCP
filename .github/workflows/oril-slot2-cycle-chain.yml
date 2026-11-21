@@ -1,0 +1,23 @@
+name: ORIL slot2 cycle-chain regression
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_slot2_cycle_chain_preflight.py'
+      - 'tests/test_oril_slot2_cycle_chain_preflight.py'
+      - '.github/workflows/oril-slot2-cycle-chain.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Structural chain regression tests
+        run: python -m unittest discover -s tests -p 'test_oril_slot2_cycle_chain_preflight.py' -v
+      - name: Syntax compilation
+        run: python -m py_compile scripts/oril_slot2_cycle_chain_preflight.py tests/test_oril_slot2_cycle_chain_preflight.py
