@@ -198,6 +198,42 @@ def verify_github_merge(remote, operation, evidence, *, api_fetch=None):
     return True
 
 
+
+def recover_merged_pr(remote, *, owner, source, operation, evidence, ttl=600, api_fetch=None):
+    """Recover only a confirmed merge whose commit is the current main tip.
+
+    No caller-supplied verification boolean is accepted. Registry CAS remains
+    mandatory; uncertainty and later main changes are deliberately blocked.
+    """
+    if remote != REMOTE:
+        raise Blocked("recovery remote is not this agent's repository")
+    try:
+        intent, receipt = json.loads(operation), json.loads(evidence)
+    except (TypeError, ValueError) as exc:
+        raise Blocked("invalid merge evidence") from exc
+    if not isinstance(intent, dict) or not isinstance(receipt, dict):
+        raise Blocked("invalid merge evidence objects")
+    if intent.get("base_sha") != source:
+        raise Blocked("merge intent does not match pinned source")
+    refs = git("ls-remote", remote, REF, "refs/heads/main")
+    heads = dict(line.split()[::-1] for line in refs.splitlines())
+    previous, current_main = heads.get(REF), heads.get("refs/heads/main")
+    if not previous or not current_main or current_main != receipt.get("merge_commit_sha"):
+        raise Blocked("main is not the authenticated merge commit")
+    git("fetch", "--no-write-fetch-head", "--quiet", "--no-tags", remote, previous)
+    state = json.loads(git("show", previous + ":state.json"))
+    if state.get("source") != source or state.get("pending") != operation:
+        raise Blocked("pending operation or registry source mismatch")
+    if verify_github_merge(remote, operation, evidence, api_fetch=api_fetch) is not True:
+        raise Blocked("merge receipt verification failed")
+    result = reconcile_expired(state, owner=owner, source=source, operation=operation,
+                               evidence=evidence, verified=True, now=time.time(), ttl=ttl)
+    blob = git("hash-object", "-w", "--stdin", stdin=json.dumps(result, sort_keys=True) + "\n")
+    tree = git("mktree", stdin=f"100644 blob {blob}\tstate.json\n")
+    commit = git("commit-tree", tree, "-p", previous, "-m", f"{AGENT} authenticated merge recovery {uuid.uuid4().hex}")
+    git("push", "--porcelain", f"--force-with-lease={REF}:{previous}", remote, commit + ":" + REF)
+    return result
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices="inspect acquire checkpoint reserve record release complete stop".split())
