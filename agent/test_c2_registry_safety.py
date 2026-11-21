@@ -194,6 +194,32 @@ class C2HistoricalAuditRules(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "drifted"):
                 self.audit.traverse(remote_url=remote, pinned_tip=first)
 
+    def test_api_budget_pin_uses_git_ref_without_rest(self):
+        a = self.audit
+        with tempfile.TemporaryDirectory(prefix="ofc-p0-pin-") as tmp:
+            remote = str(pathlib.Path(tmp) / "read-only.git")
+            r.git("init", "--quiet", "--bare", remote)
+            source = r.git("commit-tree", r.git("mktree", stdin=""),
+                           "-m", "P0 isolated main")
+            r.git("push", remote, source + ":refs/heads/main")
+            with patch.object(a, "urlopen", side_effect=AssertionError("REST not allowed")):
+                self.assertEqual(a.tip("main", remote_url=remote), source)
+                with self.assertRaises(RuntimeError):
+                    a.tip("unapproved", remote_url=remote)
+
+    def test_http_403_diagnostics_fail_closed(self):
+        import io
+        from urllib.error import HTTPError
+
+        a = self.audit
+        response = io.BytesIO(b'{"message":"API rate limit exceeded"}')
+        error = HTTPError(a.API + "pulls/7", 403, "Forbidden",
+                          {"X-RateLimit-Remaining": "0",
+                           "X-RateLimit-Reset": "1234567890"}, response)
+        with patch.object(a, "urlopen", side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403; rate_remaining=0"):
+                a.get("pulls/7")
+
     def test_legacy_cr_in_history_is_allowed_but_current_tip_is_not(self):
         a = self.audit
         historical = self.synthetic_history("receipt-cycle-two")
