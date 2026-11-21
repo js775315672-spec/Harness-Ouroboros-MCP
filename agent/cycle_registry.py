@@ -17,10 +17,14 @@ class Blocked(Exception):
 
 
 def git(*args, stdin=None):
-    return subprocess.run(
+    # Send raw UTF-8 bytes: text=True translates LF to CRLF on Windows,
+    # which can make mktree create a file named "state.json\\r".
+    data = stdin.encode("utf-8") if isinstance(stdin, str) else stdin
+    result = subprocess.run(
         ["git", "-c", "user.name=OFC registry", "-c", "user.email=ofc@users.noreply.github.com", *args],
-        input=stdin, text=True, capture_output=True, check=True,
-    ).stdout.strip()
+        input=data, capture_output=True, check=True,
+    )
+    return result.stdout.decode("utf-8").strip()
 
 
 def transition(state, command, owner, generation, source, value, now, ttl):
