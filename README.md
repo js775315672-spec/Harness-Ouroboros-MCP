@@ -2,6 +2,21 @@
 
 Hydra는 승인된 작업을 GitHub Actions에서 실행하고, ORIL은 후보 변경의 재현성·독립 검증·승인 이력을 추적한다. 현재 기준선은 [main 8fbecb5](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/tree/8fbecb5e813b653213d6c8d95ce7151868779512)이다.
 
+## 독립 개체 성장 연구 — Ouroboros
+
+Ouroboros는 Fenrir/Cerberus의 지휘 시스템이 아니라 자체 문제 발굴·코드 생성·최적화·검증을 소유하는 독립적인 탐색·개발형 개체다. 외부 협업은 선택적이며, 신규 개선 성공은 별도 비공개·반복 검증 없이는 주장하지 않는다.
+
+| 항목 | 현재 연구 기준 (2026-11-21) |
+| --- | --- |
+| 상태 | 연구 설계 작성 (Draft 브랜치, 운영 자율실행 아님) |
+| 고유 성장 목표 | 독립 문제 해결·개발 효율·일반화 성능 |
+| 성능 개선 | 미입증 (신규 독립 평가 필요) |
+| 다음 실험 | 기준선 고정 후 문서 컨텍스트 A/B/C 비교 |
+
+[독립 정체성](docs/evolution/identity.md) · [기계 판독 상태](docs/evolution/independent-state.json) · [README 기억 실험 설계](docs/evolution/readme-memory-study.md) · [독립 기억 점검 스크립트](scripts/evolution_context.py)
+
+기존 `python scripts/oril_docs.py context`는 계속 유효하다. 추가 연구용 읽기 전용 검사: `python scripts/evolution_context.py check` / `python scripts/evolution_context.py context`.
+
 ## 설치와 실행
 
 Git, Python 3 및 인증된 GitHub CLI(저장소 Actions 읽기 권한)를 준비한다. 저장소 루트에서 아래 명령은 최근 Hydra 실행을 조회하고 다음 검토 제안을 로컬 JSON으로 저장한다.
