@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cycle_registry import Blocked, git, transact
+from cycle_registry import Blocked, REPOSITORY, REF, git, transact
+import json
 
 
 class RegistryTest(unittest.TestCase):
@@ -36,6 +37,67 @@ class RegistryTest(unittest.TestCase):
         fixed_name = path_bytes(git("mktree", stdin=entry))
         print(f"legacy stdin={legacy.hex()} path={legacy_name.hex()} fixed path={fixed_name.hex()}")
         self.assertEqual(fixed_name, b"state.json\0")
+
+    def merge_fixture(self):
+        tree = git("mktree", stdin="")
+        head = git("commit-tree", tree, "-p", self.source, "-m", "candidate")
+        merged = git("commit-tree", tree, "-p", self.source, "-p", head, "-m", "merge")
+        pr = dict(number=42, base=dict(ref="main", repo=dict(full_name=REPOSITORY)),
+                  head=dict(sha=head), merged=False, state="open")
+        self.call("acquire")
+        with patch("cycle_registry.github_pr", return_value=pr):
+            self.call("merge_intent", value=json.dumps(dict(operation_key="merge-42",
+                      pr_number=42, expected_head_sha=head)))
+        git("push", self.remote, merged + ":refs/heads/main")
+        pr.update(merged=True, state="closed", merge_commit_sha=merged)
+        return pr
+
+    def test_merge_receipt_and_duplicate_recovery(self):
+        pr = self.merge_fixture()
+        with self.assertRaisesRegex(Blocked, "pinned main"):
+            self.call("record", value="merge-42=unverified")
+        with patch("cycle_registry.github_pr", return_value=pr):
+            state = self.call("merge_reconcile", value="merge-42")
+        self.assertEqual(state["phase"], "complete")
+        self.assertIsNone(state["pending"])
+        self.assertEqual(state["results"]["merge-42"]["main_after"], pr["merge_commit_sha"])
+        ref = git("ls-remote", self.remote, REF)
+        self.assertEqual(self.call("merge_reconcile", value="merge-42"), state)
+        self.assertEqual(git("ls-remote", self.remote, REF), ref)
+
+    def test_merge_recovery_after_lost_response_and_cas_failure(self):
+        pr = self.merge_fixture()
+        with patch("cycle_registry.github_pr", side_effect=Blocked("response lost")):
+            with self.assertRaises(Blocked):
+                self.call("merge_reconcile", value="merge-42")
+        def failed_push(*args, **kwargs):
+            if args[0] == "push":
+                raise subprocess.CalledProcessError(1, args)
+            return git(*args, **kwargs)
+        with patch("cycle_registry.github_pr", return_value=pr):
+            with patch("cycle_registry.git", side_effect=failed_push):
+                with self.assertRaisesRegex(Blocked, "CAS"):
+                    self.call("merge_reconcile", value="merge-42")
+            self.assertEqual(self.call("inspect")["pending"], "merge-42")
+            self.assertIsNone(self.call("merge_reconcile", value="merge-42")["pending"])
+
+    def test_reject_wrong_key_head_owner_expiry_and_external_main(self):
+        pr = self.merge_fixture()
+        for owner, key, evidence in [
+                ("slot", "other", pr), ("other", "merge-42", pr),
+                ("slot", "merge-42", dict(pr, head=dict(sha="1"*40)))]:
+            with patch("cycle_registry.github_pr", return_value=evidence):
+                with self.assertRaises(Blocked):
+                    self.call("merge_reconcile", owner, value=key)
+        with patch("cycle_registry.time.time", return_value=10**12):
+            with self.assertRaisesRegex(Blocked, "lease"):
+                self.call("merge_reconcile", value="merge-42")
+        next_main = git("commit-tree", git("mktree", stdin=""), "-p", pr["merge_commit_sha"], "-m", "external")
+        git("push", self.remote, next_main + ":refs/heads/main")
+        with patch("cycle_registry.github_pr", return_value=pr):
+            with self.assertRaisesRegex(Blocked, "current main"):
+                self.call("merge_reconcile", value="merge-42")
+        self.assertEqual(self.call("inspect")["pending"], "merge-42")
 
     def test_ten_contenders(self):
         def acquire(i):
