@@ -1,0 +1,19 @@
+name: ORIL slot4 public best-so-far advisory
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_slot4_best_so_far.py'
+      - 'tests/test_oril_slot4_best_so_far.py'
+      - '.github/workflows/oril-slot4-best-so-far.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Unit and regression tests
+        run: python -m unittest discover -s tests -p 'test_oril_slot4_best_so_far.py' -v
