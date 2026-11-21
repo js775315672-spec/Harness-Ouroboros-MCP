@@ -24,9 +24,8 @@ class C2GitSafety(unittest.TestCase):
         self.source = r.git("commit-tree", r.git("mktree", stdin=""),
                             "-m", "fixture main")
         r.git("push", self.remote, self.source + ":refs/heads/main")
-        with patch.object(r.time, "time", return_value=100):
-            self.first = r.transact(self.remote, "acquire", "initial", 0,
-                                    self.source)
+        self.first = r.transact(self.remote, "acquire", "initial", 0,
+                                self.source)
 
     def tip(self):
         return r.git("ls-remote", self.remote, r.REF).split()[0]
@@ -86,9 +85,8 @@ class C2GitSafety(unittest.TestCase):
         operation = json.dumps(
             {"base_sha": self.source, "operation_id": "c2-merge-001"},
             sort_keys=True)
-        with patch.object(r.time, "time", return_value=100):
-            r.transact(self.remote, "reserve", "initial", 1, self.source,
-                       operation)
+        r.transact(self.remote, "reserve", "initial", 1, self.source,
+                   operation)
         bad = self.append_tree(["state.json\r"])
         merged = r.git("commit-tree", r.git("mktree", stdin=""),
                        "-p", self.source, "-m", "C2 local synthetic merge")
