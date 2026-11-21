@@ -7,10 +7,12 @@ on:
       - 'agent/test_a1_recovery_safety.py'
       - 'agent/test_p0_independent_audit.py'
       - 'agent/audit_operational_history.py'
+      - 'agent/audit_github_source_permissions.py'
       - '.github/workflows/ofc-registry.yml'
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 jobs:
   registry:
     strategy:
@@ -40,10 +42,23 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           OFC_AGENT: ouroboros
         run: python agent/audit_operational_history.py
+      - name: B2 check real GitHub API and read-only authority
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OFC_AGENT: ouroboros
+          OFC_EXPECTED_PR: "356"
+        run: python agent/audit_github_source_permissions.py
       - name: Upload operational Git history audit evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ofc-operational-ledger-${{ matrix.os }}
           path: artifacts/ofc-operational-ledger-audit.json
+          if-no-files-found: warn
+      - name: Upload B2 authenticated-source audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ofc-b2-github-source-${{ matrix.os }}
+          path: artifacts/ofc-b2-github-source-read-only.json
           if-no-files-found: warn
