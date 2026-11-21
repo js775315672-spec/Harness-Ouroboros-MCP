@@ -70,27 +70,4 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          branch=docs/oril-generated
-          git fetch origin main
-          test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
-          prior=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
-          pr=$(gh pr list --base main --head "$branch" --json number,isDraft)
-          jq -e 'all(.[]; .isDraft == true)' <<< "$pr"
-          git apply --index "$RUNNER_TEMP/oril-generated/docs.patch"
-          changed=$(git diff --cached --name-only)
-          if grep -Ev '^(README\.md|docs/(status/current\.md|status/github\.json|roadmap\.md|evolution/ledger\.jsonl|memory/lessons\.jsonl|metrics/trends\.json))$' <<< "$changed"; then exit 1; fi
-          if test -n "$prior"; then
-            git fetch origin "$prior"
-            if git diff --cached --quiet "$prior"; then
-              if test "$(jq length <<< "$pr")" = 0; then gh pr create --draft --base main --head "$branch" --title "Sync ORIL evidence" --body "Review generated public evidence and measurements."; fi
-              exit 0
-            fi
-            # A rebuilt proposal must retain pending append-only records.
-            for path in docs/evolution/ledger.jsonl docs/memory/lessons.jsonl; do
-              git show "$prior:$path" | while IFS= read -r row; do grep -Fxq -- "$row" "$path" || exit 1; done
-            done
-          fi
-          git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com commit -m "Refresh ORIL public evidence"
-          git push --force-with-lease="refs/heads/$branch:$prior" origin "HEAD:refs/heads/$branch"
-          if test "$(jq length <<< "$pr")" = 0; then gh pr create --draft --base main --head "$branch" --title "Sync ORIL evidence" --body "Review generated public evidence and measurements."; fi
+          bash scripts/propose_oril_docs.sh

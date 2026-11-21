@@ -1,9 +1,6 @@
 import copy
-import hashlib
 import json
-import os
 from pathlib import Path
-import tempfile
 import time
 import unittest
 from unittest.mock import patch
@@ -26,6 +23,9 @@ class DocsTests(unittest.TestCase):
         with patch.object(d, "api", return_value={"head_sha": "0"*40, "jobs": [], "artifacts": []}):
             with self.assertRaisesRegex(ValueError, "unverified run"):
                 d.collect(d.ARCHIVE, 44853120822)
+        with self.assertRaisesRegex(ValueError, "artifact digest mismatch"):
+            d.check_digest(b"altered zip", self.rows[0]["receipts"]["raw"]["sha256"],
+                           "sha256:"+self.rows[0]["receipts"]["raw"]["sha256"])
         from zipfile import BadZipFile
         with self.assertRaises(BadZipFile):
             d.member(b"corrupt", "audit.json")

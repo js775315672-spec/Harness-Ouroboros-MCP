@@ -75,6 +75,12 @@ def elapsed(start, end):
     return value
 
 
+def check_digest(data, expected, github_digest):
+    actual = hashlib.sha256(data).hexdigest()
+    require(actual == expected and github_digest == "sha256:" + actual, "artifact digest mismatch")
+    return actual
+
+
 def member(blob, name):
     with zipfile.ZipFile(io.BytesIO(blob)) as archive:
         require(archive.namelist().count(name) == 1 and archive.getinfo(name).file_size < 2_000_000,
@@ -100,7 +106,7 @@ def collect(source, run_id, live=False):
         manifest = json.loads(git("show", f"{source}:{path}/ledger.json"))
     head = manifest["head_sha"]
     require(re.fullmatch("[0-9a-f]{40}", head) and manifest["run_id"] == run_id, "invalid run identity")
-    require(run["head_sha"] == head and run["head_repository"]["full_name"] == REPO
+    require(SEEDS.get(run_id, head) == head and run["head_sha"] == head and run["head_repository"]["full_name"] == REPO
             and run["path"] == ".github/workflows/oril-v3-integration.yml"
             and run["conclusion"] == "success" and run["run_attempt"] == 1, "unverified run")
     require(len(manifest["cycles"]) == 3, "incomplete campaign")
@@ -122,11 +128,10 @@ def collect(source, run_id, live=False):
                 job, = [j for j in jobs if j["id"] == ref["job_id"]]
                 artifact, = [a for a in artifacts if a["id"] == ref["artifact_id"]]
                 data = git("show", f"{source}:{path}/{name}.zip")
-            sha = hashlib.sha256(data).hexdigest()
+            sha = check_digest(data, ref["sha256"], artifact["digest"])
             require(job["name"] == ("first", "second", "third")[i-1] + " / " + stage
                     and "ubuntu-24.04" in job["labels"] and job["conclusion"] == "success" and job["head_sha"] == head
-                    and artifact["name"] == name and artifact["digest"] == "sha256:" + sha
-                    and sha == ref["sha256"], "unverified job or artifact")
+                    and artifact["name"] == name, "unverified job or artifact")
             receipts[kind] = dict(sha256=sha, artifact_id=artifact["id"], job_id=job["id"],
                                   start=job["started_at"], end=job["completed_at"])
             blobs[kind] = data
@@ -173,6 +178,7 @@ def collect(source, run_id, live=False):
 def validate(row):
     from jsonschema import Draft202012Validator
     Draft202012Validator(json.loads(Path("docs/memory/cycle.schema.json").read_bytes())).validate(row)
+    require(all(0 <= n < float("inf") for n in (row["duration_seconds"], row["review_seconds"], row["inference_seconds"])), "invalid measurement")
     require(row["cycle_id"].split("-")[0] == str(row["run_id"]), "run mismatch")
 
 
@@ -236,10 +242,15 @@ def generate(incoming):
     for condition in sorted({tuple(r[k] for k in CONDITION) for r in public}):
         evidence = [r for r in public if tuple(r[k] for k in CONDITION) == condition and r["public_errors"]]
         hypothesis = condition[-1]
-        if len({r["run_id"] for r in evidence}) >= 2:
-            ids = [r["cycle_id"] for r in evidence]
+        ids = []
+        runs = set()
+        for record in evidence:
+            ids.append(record["cycle_id"])
+            runs.add(record["run_id"])
+            if len(runs) < 2:
+                continue
             lesson = dict(hypothesis=hypothesis, observation="residual_public_errors",
-                          conditions={k:evidence[-1][k] for k in CONDITION}, cycles=ids,
+                          conditions=dict(zip(CONDITION, condition)), cycles=ids.copy(),
                           next_action="independent_heldout_review")
             if lesson not in lessons:
                 new_lessons.append(lesson)
@@ -275,9 +286,22 @@ def generate(incoming):
                 checks.append(dict(workflow=name, sha=run["head_sha"], run_id=run["id"], conclusion=run["conclusion"]))
         state = "merged" if pr["merged"] else ("draft" if pr["draft"] and pr["state"]=="open" else pr["state"])
         require(state in {"open","closed","draft","merged"}, "unknown PR state")
-        snapshot.write_bytes((dump(dict(pr330=state, sha=pr["head"]["sha"], checks=checks))+"\n").encode())
+        pulls = []
+        page = 1
+        while True:
+            batch = api(f"pulls?state=open&base=main&per_page=100&page={page}")
+            for item in batch:
+                if item["head"]["ref"] != "docs/oril-generated":
+                    require(type(item["number"]) is int and re.fullmatch("[0-9a-f]{40}", item["head"]["sha"]),
+                            "invalid PR identity")
+                    pulls.append(dict(number=item["number"], sha=item["head"]["sha"], draft=item["draft"]))
+            if len(batch) < 100:
+                break
+            page += 1
+        snapshot.write_bytes((dump(dict(pr330=state, sha=pr["head"]["sha"], checks=checks, pending=pulls))+"\n").encode())
     if snapshot.exists():
         snap = json.loads(snapshot.read_bytes())
+        status += f"\n\nmain 대상 검토 대기 {len(snap['pending'])}건. [PR별 SHA](github.json)"
         status += f"\n\n[#330]({ROOT}/pull/330) · {snap['pr330']} · `{snap['sha']}`"
         for check in snap["checks"]:
             status += f"\n\n[{check['workflow']}]({ROOT}/actions/runs/{check['run_id']}) · {check['conclusion']} · `{check['sha']}`"
@@ -288,11 +312,14 @@ def generate(incoming):
 
 def context():
     baseline = json.loads(Path("docs/evolution/cycle-01-dispatch-preflight.json").read_bytes())
+    cycles = [r for r in read_rows(LEDGER) if r["schema"] == SCHEMA]
+    for row in cycles:
+        validate(row)
     return {"sha": git("rev-parse", "HEAD").decode().strip(), "rules": Path("AGENTS.md").read_text(encoding="utf-8"),
             "architecture": Path("docs/architecture.md").read_text(encoding="utf-8"),
             "baseline": baseline["base_commit"], "gate": baseline["status"], "next_gate": baseline["required_next_evidence"],
             "lessons": read_rows(LESSONS)[-12:], "recent_cycles": sorted(
-                [r for r in read_rows(LEDGER) if r["schema"] == SCHEMA],
+                cycles,
                 key=lambda r: r["receipts"]["review"]["end"])[-5:]}
 
 

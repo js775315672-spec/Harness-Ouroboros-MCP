@@ -3,7 +3,7 @@ on:
   push:
     branches: [review/oril-persistent-memory-v1]
   pull_request:
-    paths: [README.md, AGENTS.md, 'docs/**', scripts/oril_docs.py, tests/test_oril_docs.py, '.github/workflows/oril-doc*.yml']
+    paths: [README.md, AGENTS.md, 'docs/**', scripts/oril_docs.py, scripts/propose_oril_docs.sh, tests/test_oril_docs.py, tests/oril_docs_publisher.sh, '.github/workflows/oril-doc*.yml']
 permissions:
   contents: read
   actions: read
@@ -23,6 +23,11 @@ jobs:
           python3 -m pip install --quiet jsonschema==4.25.1
           python3 -B -m unittest discover -s tests -v
           python3 -B scripts/oril_docs.py sync
+          bash tests/oril_docs_publisher.sh
           git diff --exit-code
+          ORIL_DISCOVER=1 python3 -B scripts/oril_docs.py sync
+          cp docs/status/current.md "$RUNNER_TEMP/first-status.md"
+          python3 -B scripts/oril_docs.py render
+          cmp "$RUNNER_TEMP/first-status.md" docs/status/current.md
         env:
           GH_TOKEN: ${{ github.token }}
