@@ -1,0 +1,39 @@
+{
+  "schema": "independent-agent-state-v1",
+  "agent_id": "ouroboros",
+  "observed_at": "2026-11-21",
+  "source_branch": "main",
+  "operation_mode": "research_draft_only",
+  "evolution_status": "NOT_STARTED",
+  "last_verified_independent_gain": null,
+  "last_verified_cycle": null,
+  "current_assessment": "기존 ORIL/Hydra 원장과 AGENTS.md, oril_docs.py가 존재한다. Hydra 과거 승인 기록 9건은 감사됐으나 신규 비공개 성능 및 속도 개선은 입증되지 않았다.",
+  "next_experiment": "독립 기준선과 숨겨진 평가기 고정, README 컨텍스트 A/B/C 실험 계획을 Draft PR에서 검토",
+  "metrics": {
+    "improvement_on_heldout": null,
+    "matched_end_to_end_seconds": null,
+    "regression_rate": null,
+    "resource_cost": null
+  },
+  "missing_measurements": [
+    "개체별 독립 실행 기준선",
+    "동일 조건 반복 측정",
+    "보호된 신규 평가",
+    "가설별 근거·아티팩트 해시"
+  ],
+  "evidence_urls": [
+    "https://github.com/js775315672-spec/Harness-Ouroboros-MCP/blob/main/docs/evolution/README.md",
+    "https://github.com/js775315672-spec/Harness-Ouroboros-MCP/blob/main/docs/status/current.md"
+  ],
+  "imported_external_claims": [],
+  "status_vocabulary": [
+    "NOT_STARTED",
+    "PROPOSED",
+    "RUNNING",
+    "BLOCKED",
+    "INCONCLUSIVE",
+    "FAILED",
+    "VERIFIED",
+    "REJECTED"
+  ]
+}
