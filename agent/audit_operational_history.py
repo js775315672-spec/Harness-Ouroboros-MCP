@@ -39,41 +39,72 @@ def tip(name):
     return get("git/ref/heads/" + name)["object"]["sha"]
 
 
-def traverse():
-    sha = tip("ofc-cycle-registry-v1")
-    latest = sha
-    records = []
-    seen = set()
-    for _ in range(256):
-        if sha in seen or not SHA.fullmatch(sha):
-            raise RuntimeError("invalid or cyclic registry commit ancestry")
-        seen.add(sha)
-        commit = get("git/commits/" + sha)
-        parents = [p["sha"] for p in commit.get("parents", [])]
-        if len(parents) > 1:
-            fail("registry contains a merge commit at " + sha)
-        tree = get("git/trees/" + commit["tree"]["sha"])
-        entries = tree.get("tree", [])
-        # 2026-11-21 legacy Windows text-mode mktree wrote state.json + CR.
-        # Preserve that immutable evidence; audit it without repairing history.
-        if (len(entries) != 1 or entries[0].get("path") not in
-                ("state.json", "state.json\r") or entries[0].get("type") != "blob"):
-            fail("unexpected registry tree contents at " + sha +
-                 ": " + repr([e.get("path") for e in entries]))
-            break
-        path = entries[0]["path"]
-        blob = get("git/blobs/" + entries[0]["sha"])
-        if blob.get("encoding") != "base64":
-            raise RuntimeError("unsupported Git blob encoding")
-        state = json.loads(base64.b64decode(blob["content"]).decode("utf-8"))
-        records.append({"sha": sha, "state": state, "path": path})
-        if not parents:
-            break
-        sha = parents[0]
-    else:
-        fail("registry ancestry exceeded 256 commits")
-    records.reverse()
-    return latest, records
+def traverse(remote_url=None, pinned_tip=None):
+    """Read real immutable Git objects with one read-only fetch, not 300 API GETs.
+
+    A live branch tip is pinned through the GitHub REST API. An isolated, bare
+    temporary repo fetches the corresponding branch; any tip change blocks.
+    Legacy CR names are parsed as binary Git tree entries, never normalized.
+    """
+    import subprocess
+    import tempfile
+
+    expected = pinned_tip or tip("ofc-cycle-registry-v1")
+    if not SHA.fullmatch(expected):
+        raise RuntimeError("invalid pinned registry tip SHA")
+    source = remote_url or ("https://github.com/" + REPO + ".git")
+    with tempfile.TemporaryDirectory(prefix="ofc-c2-readonly-ledger-") as tmp:
+        repo_dir = str(Path(tmp) / "ledger.git")
+        def g(*args):
+            return subprocess.check_output(["git", "--git-dir=" + repo_dir, *args],
+                                           stderr=subprocess.PIPE)
+        subprocess.run(["git", "init", "--quiet", "--bare", repo_dir],
+                       check=True, capture_output=True)
+        # No branch update on GitHub. The local fetch exists only in this
+        # temporary bare repository, and is pinned to the API-observed SHA.
+        g("fetch", "--quiet", "--no-tags", "--depth=256", source,
+          "refs/heads/ofc-cycle-registry-v1")
+        actual = g("rev-parse", "FETCH_HEAD").decode("ascii").strip()
+        if actual != expected:
+            raise RuntimeError("registry ref drifted during read-only Git fetch")
+        commits = [line.strip() for line in
+                   g("rev-list", "--first-parent", "FETCH_HEAD").decode("ascii").splitlines()
+                   if line.strip()]
+        if len(commits) > 256:
+            raise RuntimeError("registry ancestry exceeded 256 commits")
+        records = []
+        seen = set()
+        for sha in commits:
+            if sha in seen or not SHA.fullmatch(sha):
+                raise RuntimeError("invalid or cyclic registry commit ancestry")
+            seen.add(sha)
+            header = g("cat-file", "-p", sha).split(b"\n\n", 1)[0]
+            parents = [line.split(b" ", 1)[1].decode("ascii")
+                       for line in header.split(b"\n") if line.startswith(b"parent ")]
+            if len(parents) > 1:
+                fail("registry contains a merge commit at " + sha)
+            raw_entries = [item for item in g("ls-tree", "-z", sha).split(b"\0") if item]
+            if len(raw_entries) != 1 or b"\t" not in raw_entries[0]:
+                fail("unexpected registry tree entry count at " + sha)
+                break
+            meta, name = raw_entries[0].split(b"\t", 1)
+            fields = meta.split()
+            if (len(fields) != 3 or fields[0] != b"100644" or
+                    fields[1] != b"blob" or name not in (b"state.json", b"state.json\r")):
+                fail("unexpected registry tree contents at " + sha +
+                     ": " + repr(name))
+                break
+            blob_sha = fields[2].decode("ascii")
+            state = json.loads(g("cat-file", "blob", blob_sha).decode("utf-8"))
+            records.append({"sha": sha, "state": state,
+                            "path": name.decode("utf-8")})
+        # A shallow boundary must not silently look like the history root.
+        if records and len(records) == len(commits) and len(commits) >= 256:
+            oldest = commits[-1]
+            if g("rev-parse", "--is-shallow-repository").strip() == b"true":
+                fail("registry ancestry reached shallow audit boundary: " + oldest)
+        records.reverse()
+    return expected, records
 
 
 def validate_history(records, main_sha):
