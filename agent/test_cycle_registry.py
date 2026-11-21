@@ -133,5 +133,35 @@ class ExpiredLeaseRecoveryTest(RegistryTest):
                     evidence="proof", verifier=lambda *args: True)
 
 
+class GitHubMergeVerifierTest(unittest.TestCase):
+    def test_confirmed_merge_and_tampering(self):
+        import json
+        from cycle_registry import REMOTE, Blocked, verify_github_merge
+        repo = REMOTE.removeprefix("https://github.com/").removesuffix(".git")
+        head, base, merge = "a"*40, "b"*40, "c"*40
+        intent = {"repository": repo, "pr": 123, "operation_id": "merge-123",
+                  "head_sha": head, "base_sha": base}
+        receipt = dict(intent, merge_commit_sha=merge)
+        response = {"merged": True, "state": "closed", "merge_commit_sha": merge,
+                    "head": {"sha": head}, "base": {"sha": base, "repo": {"full_name": repo}}}
+        encode = lambda obj: json.dumps(obj, sort_keys=True)
+        self.assertTrue(verify_github_merge(REMOTE, encode(intent), encode(receipt),
+                        api_fetch=lambda url: response))
+        for bad in [
+            dict(response, merged=False), dict(response, merge_commit_sha="d"*40),
+            dict(response, head={"sha": "d"*40}),
+            dict(response, base={"sha": base, "repo": {"full_name": "other/repo"}})
+        ]:
+            with self.assertRaises(Blocked):
+                verify_github_merge(REMOTE, encode(intent), encode(receipt),
+                                    api_fetch=lambda url, bad=bad: bad)
+        with self.assertRaises(Blocked):
+            verify_github_merge(REMOTE, encode(intent), encode(receipt),
+                                api_fetch=lambda url: (_ for _ in ()).throw(TimeoutError()))
+        with self.assertRaises(Blocked):
+            verify_github_merge("https://github.com/other/repo.git", encode(intent),
+                                encode(receipt), api_fetch=lambda url: response)
+
+
 if __name__ == "__main__":
     unittest.main()
