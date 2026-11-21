@@ -29,6 +29,12 @@ class IndependentP0Audit(unittest.TestCase):
             r.transact(self.remote, "acquire", "first", 0, self.source)
             r.transact(self.remote, "reserve", "first", 1, self.source, operation)
 
+    def recover(self, operation="merge-1", evidence="proof", verifier=None):
+        """Exercise the intentionally disabled legacy callback entrypoint."""
+        return r.recover_verified(self.remote, owner="auditor", source=self.source,
+                                  operation=operation, evidence=evidence,
+                                  verifier=verifier or (lambda *args: True))
+
     def test_legacy_callback_is_rejected_and_pending_preserved(self):
         self.reserve_expired()
         with patch.object(r.time, "time", return_value=800):
