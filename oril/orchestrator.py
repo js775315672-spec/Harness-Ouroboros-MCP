@@ -25,10 +25,24 @@ SEED = "99376656a4c4a7df737d54d9da36f9743b4ede02bc73d54461c379db69860a09"
 
 
 def plan(memory):
+    """Select an untried public prompt; reject corrupt or exhausted feedback."""
+    if not isinstance(memory, dict):
+        raise ValueError("feedback memory must be an object")
+    tried = memory.get("tried")
+    errors = memory.get("candidate_errors")
+    if (not isinstance(tried, list)
+            or any(not isinstance(item, str) or item not in PROMPTS for item in tried)
+            or len(set(tried)) != len(tried)):
+        raise ValueError("invalid or repeated prompt history")
+    if type(errors) is not int or errors < 0 or errors > 30:
+        raise ValueError("invalid public error count")
     order = list(PROMPTS)
-    if memory["candidate_errors"] > 0:
+    if errors > 0:
         order = ["integer_format", "check_sum", "remove_redundancy"]
-    return next(name for name in order if name not in memory["tried"])
+    remaining = [name for name in order if name not in tried]
+    if not remaining:
+        raise ValueError("prompt candidate budget exhausted")
+    return remaining[0]
 
 
 def write(path, data):
