@@ -39,3 +39,12 @@ main의 P0 검산은 과거 Hydra 승인 9건과 공개 워크로드 해시 3건
 최근 공개 검산 [44853120822-3](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44853120822) · 코드 `e8fa72cc4caecaf5afab952af5d5214baa9c2614` · 공개 오답 5/30 · 소요 101초. 비공개 개선 미입증. 동일 조건 2건, 소요 시간 변화 판단 불가.
 
 [자동 집계](docs/metrics/trends.json) · [로드맵](docs/roadmap.md)
+
+### 독립 자율진화 상세 개발 명세
+
+- [독립 자율개선 루프 상세 계약 v2.0](docs/evolution/standalone-autonomy-spec-v2.md) — 내부 12개 모듈, 상태 기계, 증거 계약, 구현 단계
+- [ouroboros 전용 구현 계약](docs/evolution/ouroboros-implementation-spec-v1.md) — 독자 목표, 평가 및 자체 개선 방법
+- [23개 수락 테스트 계획](docs/evolution/acceptance-test-plan-v1.md) — 완료/차단 판정 조건
+- [예약 자동개발 지속 프롬프트](docs/evolution/AUTOMATION_CONTINUITY_PROMPT.md) — 매 회차 이전 checkpoint 복구·중복 방지·한 가지 실제 개선
+
+**현재 단계:** 개발 상세 설계 및 읽기 전용 검사 CI. 실제 무인 자기개선 루프와 숨겨진 평가 성과는 미검증이다.
