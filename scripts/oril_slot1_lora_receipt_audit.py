@@ -31,6 +31,26 @@ def audit(root):
         a, b = header["A"]["shape"], header["B"]["shape"]
         if len(a) != 2 or len(b) != 2 or a[0] != b[1] or a[0] != report["rank"]:
             raise ValueError("invalid LoRA rank/shape")
+        # The header alone is not proof that the declared tensor bytes exist.
+        # Fail closed on out-of-range, overlapping, or inconsistent tensor spans.
+        payload_size = adapter.stat().st_size - 8 - header_length
+        spans = []
+        for tensor_name in ("A", "B"):
+            tensor = header[tensor_name]
+            shape, offsets, dtype = tensor["shape"], tensor["data_offsets"], tensor["dtype"]
+            item_size = {"F32": 4, "F16": 2, "BF16": 2}.get(dtype)
+            if (item_size is None or len(offsets) != 2 or
+                    any(type(x) is not int for x in offsets) or
+                    any(type(x) is not int or x <= 0 for x in shape)):
+                raise ValueError("invalid safetensors tensor metadata")
+            start, end = offsets
+            if not (0 <= start < end <= payload_size):
+                raise ValueError("safetensors tensor offset outside payload")
+            if end - start != math.prod(shape) * item_size:
+                raise ValueError("safetensors tensor byte count mismatch")
+            spans.append((start, end))
+        if max(spans[0][0], spans[1][0]) < min(spans[0][1], spans[1][1]):
+            raise ValueError("overlapping safetensors tensor offsets")
     for name in ("train.csv", "eval.csv"):
         if sha(root / name) != report["split_sha256"][name]:
             raise ValueError("split digest mismatch: " + name)

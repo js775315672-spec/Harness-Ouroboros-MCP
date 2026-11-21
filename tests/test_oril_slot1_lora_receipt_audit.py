@@ -39,6 +39,39 @@ class AuditTest(unittest.TestCase):
         self.assertFalse(result["promotion_allowed"])
         self.assertFalse(result["gpu_execution_independently_attested"])
 
+
+    def test_reject_truncated_adapter_even_with_updated_digest(self):
+        adapter = self.root / "run-01" / "adapter.safetensors"
+        adapter.write_bytes(adapter.read_bytes()[:-1])
+        import hashlib
+        self.mutate("adapter_sha256", hashlib.sha256(adapter.read_bytes()).hexdigest())
+        with self.assertRaisesRegex(ValueError, "offset outside payload"):
+            audit(self.root)
+
+    def test_reject_overlapping_tensor_spans_even_with_updated_digest(self):
+        import hashlib
+        import struct
+        adapter = self.root / "run-01" / "adapter.safetensors"
+        raw = adapter.read_bytes()
+        length = struct.unpack("<Q", raw[:8])[0]
+        header = json.loads(raw[8:8 + length])
+        # Preserve B's declared byte length while shifting it into A's span.
+        # Copying A's offsets would also change B's length and test the wrong gate.
+        a_start, a_end = header["A"]["data_offsets"]
+        b_start, b_end = header["B"]["data_offsets"]
+        b_size = b_end - b_start
+        overlap = min(4, a_end - a_start, b_size)
+        self.assertGreater(overlap, 0)
+        shifted_start = a_end - overlap
+        shifted_end = shifted_start + b_size
+        self.assertLessEqual(shifted_end, len(raw) - 8 - length)
+        header["B"]["data_offsets"] = [shifted_start, shifted_end]
+        new_header = json.dumps(header, separators=(",", ":")).encode()
+        adapter.write_bytes(struct.pack("<Q", len(new_header)) + new_header + raw[8 + length:])
+        self.mutate("adapter_sha256", hashlib.sha256(adapter.read_bytes()).hexdigest())
+        with self.assertRaisesRegex(ValueError, "overlapping safetensors"):
+            audit(self.root)
+
     def test_reject_tampered_adapter(self):
         with (self.root / "run-01" / "adapter.safetensors").open("ab") as f:
             f.write(b"x")
