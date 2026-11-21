@@ -1,0 +1,28 @@
+name: OFC P0 evidence contract and safety gate
+on:
+  pull_request:
+    paths:
+      - 'src/evolution_core/**'
+      - 'tests/test_ofc_core.py'
+      - 'scripts/build_dashboard.py'
+      - '.github/workflows/ofc-core.yml'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Core tests
+        run: python3 -m unittest discover -s tests -p 'test_ofc_core.py' -v
+      - name: Existing atomic registry tests
+        run: python3 agent/test_cycle_registry.py -v
+      - name: Dashboard consistency
+        run: python3 scripts/build_dashboard.py --check

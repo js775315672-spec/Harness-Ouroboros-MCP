@@ -24,3 +24,18 @@ main의 P0 검산은 과거 Hydra 승인 9건과 공개 워크로드 해시 3건
 최근 공개 검산 [44853120822-3](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44853120822) · 코드 `e8fa72cc4caecaf5afab952af5d5214baa9c2614` · 공개 오답 5/30 · 소요 101초. 비공개 개선 미입증. 동일 조건 2건, 소요 시간 변화 판단 불가.
 
 [자동 집계](docs/metrics/trends.json) · [로드맵](docs/roadmap.md)
+
+<!-- OFC-DASHBOARD-BEGIN -->
+## OFC independent agent dashboard (P0)
+
+| Metric | Evidence-based status |
+| --- | --- |
+| Real model execution | UNKNOWN |
+| Independent improvement | UNKNOWN |
+| Improvement throughput | NOT_MEASURED |
+| Comparable speed trend | NOT_MEASURED |
+| Generalization | NOT_VERIFIED |
+| Most recent blocker | P1 real model run + protected independent evaluation not yet connected |
+
+Registry and contract unit tests are **not** model improvements.
+<!-- OFC-DASHBOARD-END -->
