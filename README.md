@@ -1,5 +1,20 @@
 # Harness-Ouroboros-MCP
 
+<!-- OFC-DASHBOARD-BEGIN -->
+## OFC independent agent dashboard (P0)
+
+| Metric | Evidence-based status |
+| --- | --- |
+| Real model execution | UNKNOWN |
+| Independent improvement | UNKNOWN |
+| Improvement throughput | NOT_MEASURED |
+| Comparable speed trend | NOT_MEASURED |
+| Generalization | NOT_VERIFIED |
+| Most recent blocker | P1 real model run + protected independent evaluation not yet connected |
+
+Registry and contract unit tests are **not** model improvements.
+<!-- OFC-DASHBOARD-END -->
+
 Hydra는 승인된 작업을 GitHub Actions에서 실행하고, ORIL은 후보 변경의 재현성·독립 검증·승인 이력을 추적한다. 현재 기준선은 [main 8fbecb5](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/tree/8fbecb5e813b653213d6c8d95ce7151868779512)이다.
 
 ## 설치와 실행
@@ -24,18 +39,3 @@ main의 P0 검산은 과거 Hydra 승인 9건과 공개 워크로드 해시 3건
 최근 공개 검산 [44853120822-3](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44853120822) · 코드 `e8fa72cc4caecaf5afab952af5d5214baa9c2614` · 공개 오답 5/30 · 소요 101초. 비공개 개선 미입증. 동일 조건 2건, 소요 시간 변화 판단 불가.
 
 [자동 집계](docs/metrics/trends.json) · [로드맵](docs/roadmap.md)
-
-<!-- OFC-DASHBOARD-BEGIN -->
-## OFC independent agent dashboard (P0)
-
-| Metric | Evidence-based status |
-| --- | --- |
-| Real model execution | UNKNOWN |
-| Independent improvement | UNKNOWN |
-| Improvement throughput | NOT_MEASURED |
-| Comparable speed trend | NOT_MEASURED |
-| Generalization | NOT_VERIFIED |
-| Most recent blocker | P1 real model run + protected independent evaluation not yet connected |
-
-Registry and contract unit tests are **not** model improvements.
-<!-- OFC-DASHBOARD-END -->
