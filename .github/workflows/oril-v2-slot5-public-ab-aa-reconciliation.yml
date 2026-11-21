@@ -1,0 +1,26 @@
+name: ORIL slot5 cross-run public A-B A-A reconciliation
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_slot5_public_ab_aa_reconciliation.py'
+      - 'tests/test_oril_v2_slot5_public_ab_aa_reconciliation.py'
+      - '.github/workflows/oril-v2-slot5-public-ab-aa-reconciliation.yml'
+      - 'docs/oril_v2_slot5_public_ab_aa_reconciliation.md'
+permissions:
+  contents: read
+jobs:
+  crossrun-offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Show exact SHA
+        run: git rev-parse HEAD
+      - name: Cross-run rejection tests
+        run: python3 -m unittest discover -s tests -p test_oril_v2_slot5_public_ab_aa_reconciliation.py -v
+      - name: Independent upstream audit regressions
+        run: |
+          python3 -m unittest discover -s tests -p test_oril_v2_slot2_public30_independent_audit.py -v
+          python3 -m unittest discover -s tests -p test_oril_v2_slot4_public30_aa_independent_audit.py -v
