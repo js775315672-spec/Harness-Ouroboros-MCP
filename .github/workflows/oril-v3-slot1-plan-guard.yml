@@ -1,0 +1,20 @@
+name: ORIL v3 slot1 feedback planner guard
+on:
+  pull_request:
+    paths:
+      - 'oril/orchestrator.py'
+      - 'tests/test_oril_v3_slot1_plan_guard.py'
+      - 'docs/oril_v3_slot1_feedback_plan_guard.md'
+      - '.github/workflows/oril-v3-slot1-plan-guard.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: git rev-parse HEAD
+      - run: python3 -m unittest discover -s tests -p 'test_oril_v3_slot1_plan_guard.py' -v
