@@ -1,0 +1,33 @@
+name: OFC v3.1 documentation and P0 compatibility
+on:
+  pull_request:
+    paths: ['README.md', 'docs/ofc-v3.1.md', '.github/workflows/ofc-v31-docs.yml']
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 06b879b91199cfc000e1063cd230414da4724836
+          path: core-fixture
+          persist-credentials: false
+      - run: |
+          python agent/test_cycle_registry.py -v
+          (cd core-fixture && python -m unittest discover -s tests -p test_ofc_core.py -v)
+          python core-fixture/scripts/build_dashboard.py --readme README.md --check
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          for file in map(Path, ['README.md', 'docs/ofc-v3.1.md']):
+              md = file.read_text()
+              assert md.count(chr(96)*3) % 2 == 0
+              for href in re.findall(r'\]\(([^) ]+)\)', md):
+                  if '://' not in href and not href.startswith('#'):
+                      assert (file.parent / href.split('#')[0]).exists(), href
+          PY
+
