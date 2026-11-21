@@ -45,14 +45,14 @@ main의 P0 검산은 과거 Hydra 승인 9건과 공개 워크로드 해시 3건
 
 **현재 단계:** 개발 상세 설계 및 읽기 전용 검사 CI. 실제 무인 자기개선 루프와 숨겨진 평가 성과는 미검증이다.
 
-<!-- oril-docs:generated -->
-최근 공개 검산 [44853120822-3](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44853120822) · 코드 `e8fa72cc4caecaf5afab952af5d5214baa9c2614` · 공개 오답 5/30 · 소요 101초. 비공개 개선 미입증. 동일 조건 2건, 소요 시간 변화 판단 불가.
-
-[자동 집계](docs/metrics/trends.json) · [로드맵](docs/roadmap.md)
-
 ### 3개체 통합 개발 예약 설계 (12분, GitHub Actions Draft)
 
 - [통합 12분 실행 준비 워크플로](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/blob/research/independent-evolution-readme-v1/.github/workflows/sael-three-agent-12min.yml): 매시 05·17·29·41·53분(UTC/KST 분 동일) 각 저장소를 **동시에 별도 읽기 전용 job으로 점검**하도록 제안함.
 - **현재는 Draft PR에만 존재하여 12분 예약이 활성화되지 않음.** GitHub Actions `schedule`은 기본 브랜치에 포함된 후에만 작동하며 지연될 수 있음.
 - 실제 자율 코드 개발은 각 저장소의 `evolution_runner.py`, 승인된 예산/리스/격리/독립 평가가 마련될 때까지 `NOT_IMPLEMENTED / NOT_RUN`이다.
 - ChatGPT의 통합 개발 예약은 별도로 매시간 한 번 진행하며, 세 개체를 하나의 프롬프트 역할극으로 합쳐 독립 검증에 성공했다고 주장해서는 안 됨.
+
+<!-- oril-docs:generated -->
+최근 공개 검산 [44853120822-3](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44853120822) · 코드 `e8fa72cc4caecaf5afab952af5d5214baa9c2614` · 공개 오답 5/30 · 소요 101초. 비공개 개선 미입증. 동일 조건 2건, 소요 시간 변화 판단 불가.
+
+[자동 집계](docs/metrics/trends.json) · [로드맵](docs/roadmap.md)
