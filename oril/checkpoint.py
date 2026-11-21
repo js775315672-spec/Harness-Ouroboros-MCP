@@ -49,6 +49,10 @@ def replay(folder):
                 previous_digest = sha(parent)
             check(candidate["parent_evidence_sha256"], previous_digest, "predecessor digest")
             check(candidate["tried"], memory["tried"] + [plan(memory)], "memory-directed candidate")
+            selected = plan(memory)
+            check(candidate["hypothesis_id"], selected, "hypothesis identity")
+            from oril.orchestrator import PROMPTS
+            check(candidate["prompt"], PROMPTS[selected], "planned prompt binding")
             audits = json.loads(review.read("audit.json"))
             for kind, audit in [("ab", audit_ab), ("aa", audit_aa)]:
                 data = raw.read(f"candidate/{kind}.json")
