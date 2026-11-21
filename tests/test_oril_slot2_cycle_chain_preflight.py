@@ -38,6 +38,13 @@ class ChainTests(unittest.TestCase):
     def test_non_github(self):
         self.rows[0]["model_run_url"] = "https://example.com/run"
         with self.assertRaises(ValueError): check(self.rows)
+    def test_replayed_model_run_in_next_cycle(self):
+        with self.assertRaisesRegex(ValueError, "replayed run"):
+            check(self.rows)
+    def test_unique_runs_pass(self):
+        self.rows[1]["model_run_url"] = "https://github.com/a/b/actions/runs/125"
+        self.rows[1]["independent_run_url"] = "https://github.com/a/b/actions/runs/126"
+        self.assertEqual(check(self.rows)["structural_chain"], "PASS")
     def test_duplicate_ids_across_three(self):
         self.rows.append(row("one", "two", U, S))
         with self.assertRaises(ValueError): check(self.rows)
