@@ -1,0 +1,20 @@
+name: ORIL v2 slot1 public evidence bundle unit checks
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_slot1_public_evidence_bundle.py'
+      - 'tests/test_oril_v2_slot1_public_evidence_bundle.py'
+      - '.github/workflows/oril-v2-slot1-public-evidence-bundle.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 -m unittest discover -s tests -p test_oril_v2_slot1_public_evidence_bundle.py -v
