@@ -81,6 +81,10 @@ def validate_history(records, main_sha):
     generation_increments = 0
     completed_cycles = 0
     result_additions = 0
+    receipt_values_seen = {}
+    operation_keys_seen = {}
+    repeated_values = []
+    repeated_keys = set()
     prior = None
     for item in records:
         s = item["state"]
@@ -128,8 +132,22 @@ def validate_history(records, main_sha):
             fail("pending operation already appears in results: " + short)
         if len(set(s["results"].values())) != len(s["results"]):
             fail("duplicate receipt values at " + short)
+        added = (set(s["results"]) if prior is None or
+                 s["cycle"] != prior["cycle"]
+                 else set(s["results"]) - set(prior["results"]))
+        for key in added:
+            value = s["results"][key]
+            if value in receipt_values_seen and receipt_values_seen[value] != s["cycle"]:
+                repeated_values.append({"key": key, "commit": item["sha"]})
+            if key in operation_keys_seen and operation_keys_seen[key] != s["cycle"]:
+                repeated_keys.add(key)
+            receipt_values_seen.setdefault(value, s["cycle"])
+            operation_keys_seen.setdefault(key, s["cycle"])
         prior = s
 
+    if repeated_values:
+        fail("exact external evidence duplicated across distinct cycles: " +
+             repr(repeated_values))
     latest = records[-1]["state"]
     if latest.get("source") != main_sha:
         fail("operational ledger source does not match current main")
@@ -143,6 +161,8 @@ def validate_history(records, main_sha):
             "distinct_cycle_ids": len(cycle_ids),
             "completed_cycle_transitions": completed_cycles,
             "result_additions_within_cycles": result_additions,
+            "cross_cycle_duplicate_receipt_values": len(repeated_values),
+            "reused_operation_names_across_cycles": sorted(repeated_keys),
             "current_phase": latest.get("phase"),
             "current_pending": latest.get("pending"),
             "current_result_count": len(latest.get("results", {})),
@@ -195,6 +215,8 @@ def main():
         report["main_sha"] = main_sha
         report["history"] = validate_history(records, main_sha)
         report["receipts"] = audit_receipts(records[-1]["state"].get("results", {}))
+        if tip("ofc-cycle-registry-v1") != tip_sha or tip("main") != main_sha:
+            fail("registry or main ref moved during the read-only audit")
         report["chain_shas_oldest_first"] = [item["sha"] for item in records]
         report["claim"] = ("Generation is a lease fencing counter; "
                            "AI self-improvement completion count cannot be inferred from it.")
