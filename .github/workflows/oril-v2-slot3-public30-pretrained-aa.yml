@@ -2,6 +2,7 @@ name: ORIL v2 slot3 real pretrained Qwen public30 A-A null control
 on:
   pull_request:
     paths:
+      - 'scripts/install_qwen_cpu_dependencies.sh'
       - 'scripts/oril_v2_slot3_public30_pretrained_aa_null.py'
       - 'tests/test_oril_v2_slot3_public30_pretrained_aa_null.py'
       - 'docs/oril_v2_slot3_public30_pretrained_aa_null.md'
@@ -20,8 +21,8 @@ jobs:
         run: |
           git rev-parse HEAD
           python3 -m unittest discover -s tests -p test_oril_v2_slot3_public30_pretrained_aa_null.py -v
-      - name: Install pinned pretrained CPU dependencies
-        run: python3 -m pip install --disable-pip-version-check 'torch==2.5.1' 'transformers==4.46.3' 'huggingface_hub==0.26.5' 'safetensors==0.4.5'
+      - name: Install pinned Qwen CPU dependencies
+        run: bash scripts/install_qwen_cpu_dependencies.sh
       - name: Run 60 real pretrained Qwen public A-A CPU calls
         run: python3 scripts/oril_v2_slot3_public30_pretrained_aa_null.py --output public30_pretrained_aa.json
       - name: Independently recalculate raw A-A drift and prohibit false claims
