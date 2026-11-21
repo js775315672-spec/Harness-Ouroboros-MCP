@@ -1,0 +1,22 @@
+name: ORIL slot1 offline LoRA receipt consistency
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_slot1_lora_receipt_audit.py'
+      - 'tests/test_oril_slot1_lora_receipt_audit.py'
+      - 'docs/oril_slot1_lora_receipt_audit.md'
+      - '.github/workflows/oril-slot1-lora-receipt.yml'
+      - 'experiments/hydra-lora/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests -p test_oril_slot1_lora_receipt_audit.py -v
+      - run: python3 scripts/oril_slot1_lora_receipt_audit.py experiments/hydra-lora
