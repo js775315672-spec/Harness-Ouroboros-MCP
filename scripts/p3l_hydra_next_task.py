@@ -17,12 +17,16 @@ TASKS = {
 
 
 def select(runs, jobs_by_run):
+    return select_from(runs, jobs_by_run.__getitem__)
+
+
+def select_from(runs, get_jobs):
     latest = {}
     for run in sorted(runs, key=lambda item: item["id"], reverse=True):
         if (run["event"] not in EVENTS or run["head_branch"] != "main"
                 or run["status"] != "completed" or run["run_attempt"] != 1):
             continue
-        for job in jobs_by_run[run["id"]]:
+        for job in get_jobs(run["id"]):
             name, conclusion = job["name"], job["conclusion"]
             match = WORKER.fullmatch(name)
             if name != "admit" and match is None:
@@ -31,6 +35,9 @@ def select(runs, jobs_by_run):
                 continue
             if name not in latest:
                 latest[name] = run, job, ("admit" if match is None else "worker")
+        # Admission takes priority, and older runs cannot supersede this result.
+        if "admit" in latest and latest["admit"][1]["conclusion"] != "success":
+            break
     failures = [entry for entry in latest.values() if entry[1]["conclusion"] != "success"]
     if not failures:
         return {"decision": "no_unresolved_failure", "proposal": None}
@@ -50,18 +57,33 @@ def fetch(path):
     return json.loads(subprocess.check_output(["gh", "api", path], timeout=15))
 
 
+def run_jobs(run_id):
+    endpoint = f"repos/{REPO}/actions/runs/{run_id}/attempts/1/jobs?per_page=100"
+    page = fetch(endpoint)
+    jobs = list(page["jobs"])
+    total = page["total_count"]
+    for number in range(2, (total + 99) // 100 + 1):
+        page = fetch(f"{endpoint}&page={number}")
+        if page["total_count"] != total:
+            raise ValueError("inconsistent Hydra production job evidence")
+        jobs.extend(page["jobs"])
+    if len(jobs) != total or len({job["id"] for job in jobs}) != total:
+        raise ValueError("incomplete Hydra production job evidence")
+    return jobs
+
+
 def main(output):
     path = f"repos/{REPO}/actions"
     runs = fetch(f"{path}/workflows/{WORKFLOW}/runs?branch=main&status=completed&per_page=12")["workflow_runs"]
-    runs = [run for run in runs if run["event"] in EVENTS and run["head_branch"] == "main"
-            and run["status"] == "completed" and run["run_attempt"] == 1]
-    jobs = {}
-    for run in runs:
-        page = fetch(f"{path}/runs/{run['id']}/attempts/1/jobs?per_page=100")
-        if page["total_count"] != len(page["jobs"]):
-            raise ValueError("incomplete Hydra production job evidence")
-        jobs[run["id"]] = page["jobs"]
-    result = select(runs, jobs)
+    result = select_from(runs, run_jobs)
+    if result["decision"] == "no_unresolved_failure":
+        source = "docs/evolution/cycle-01-dispatch-preflight.json"
+        preflight = json.loads((Path(__file__).resolve().parents[1] / source).read_text(encoding="utf-8"))
+        if preflight["status"].startswith("blocked_") and preflight["dispatch_count"] == 0:
+            result["next_review"] = {
+                "cycle": preflight["cycle"], "status": preflight["status"],
+                "task": preflight["required_next_evidence"], "source": source,
+            }
     Path(output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
 
