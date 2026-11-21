@@ -1,0 +1,229 @@
+{
+  "type": "object",
+  "required": [
+    "base_sha",
+    "candidate_sha",
+    "cycle_id",
+    "duration_seconds",
+    "environment",
+    "grader_sha",
+    "heldout_score",
+    "hypothesis",
+    "improvement_verified",
+    "independent_review",
+    "inference_seconds",
+    "input_tokens",
+    "model",
+    "model_revision",
+    "next_action",
+    "prior_correct",
+    "prompt_sha256",
+    "public_errors",
+    "public_score",
+    "receipts",
+    "rediscovery_seconds",
+    "regression_rate",
+    "review_seconds",
+    "rollback_rate",
+    "run_id",
+    "schema",
+    "success_rate",
+    "throughput_per_hour",
+    "workload_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "oril-doc-cycle-v1"
+    },
+    "cycle_id": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*-[123]$"
+    },
+    "run_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "candidate_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "base_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "grader_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "prompt_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "receipts": {
+      "type": "object",
+      "required": [
+        "raw",
+        "review"
+      ],
+      "properties": {
+        "raw": {
+          "type": "object",
+          "required": [
+            "artifact_id",
+            "end",
+            "job_id",
+            "sha256",
+            "start"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "artifact_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "job_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "start": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "review": {
+          "type": "object",
+          "required": [
+            "artifact_id",
+            "end",
+            "job_id",
+            "sha256",
+            "start"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "artifact_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "job_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "start": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "hypothesis": {
+      "enum": [
+        "remove_redundancy",
+        "integer_format",
+        "check_sum"
+      ]
+    },
+    "model": {
+      "const": "Qwen/Qwen2.5-0.5B-Instruct"
+    },
+    "model_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "workload_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "environment": {
+      "const": "ubuntu-24.04-hosted-cpu"
+    },
+    "independent_review": {
+      "const": "public_replay"
+    },
+    "improvement_verified": {
+      "const": false
+    },
+    "public_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "prior_correct": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 30
+    },
+    "regression_rate": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "public_errors": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 30
+    },
+    "duration_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "inference_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "review_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "input_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "next_action": {
+      "const": "independent_heldout_review"
+    },
+    "heldout_score": {
+      "type": "null"
+    },
+    "success_rate": {
+      "type": "null"
+    },
+    "rollback_rate": {
+      "type": "null"
+    },
+    "rediscovery_seconds": {
+      "type": "null"
+    },
+    "throughput_per_hour": {
+      "type": "null"
+    }
+  },
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

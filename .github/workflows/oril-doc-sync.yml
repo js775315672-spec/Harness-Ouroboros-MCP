@@ -1,0 +1,96 @@
+name: ORIL documentation refresh
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '24 */6 * * *'
+  push:
+    branches: [main]
+    paths: ['oril/**', 'hydra/**', 'scripts/**', 'docs/oril/evidence/**', docs/architecture.md, '.github/workflows/oril-v3*.yml']
+  pull_request_target:
+    types: [opened, closed]
+  workflow_run:
+    workflows: [ORIL v3 integration, ORIL P0 evidence review, ORIL private baseline check, Hydra standing approved tasks]
+    types: [completed]
+permissions: {}
+concurrency:
+  group: oril-documentation-writer
+  cancel-in-progress: false
+jobs:
+  generate:
+    if: github.repository == 'js775315672-spec/Harness-Ouroboros-MCP' && github.ref == 'refs/heads/main' && github.event.pull_request.head.ref != 'docs/oril-generated'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.base.outputs.sha }}
+      changed: ${{ steps.base.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORIL_DISCOVER: '1'
+        run: |
+          git fetch --no-tags origin bfa89dcc28287986e36e5d4f33693e53a8394902
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          python3 -m pip install --quiet jsonschema==4.25.1
+          python3 -B scripts/oril_docs.py sync
+          git diff --check
+          git add -N docs/status/github.json
+          git diff --binary -- README.md docs/status/github.json docs/status/current.md docs/roadmap.md docs/evolution/ledger.jsonl docs/memory/lessons.jsonl docs/metrics/trends.json > "$RUNNER_TEMP/docs.patch"
+          if test -s "$RUNNER_TEMP/docs.patch"; then echo changed=true >> "$GITHUB_OUTPUT"; fi
+      - if: steps.base.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: docs-patch
+          path: ${{ runner.temp }}/docs.patch
+  propose:
+    needs: generate
+    if: needs.generate.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.generate.outputs.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: docs-patch
+          path: ${{ runner.temp }}/oril-generated
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch=docs/oril-generated
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
+          prior=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          pr=$(gh pr list --base main --head "$branch" --json number,isDraft)
+          jq -e 'all(.[]; .isDraft == true)' <<< "$pr"
+          git apply --index "$RUNNER_TEMP/oril-generated/docs.patch"
+          changed=$(git diff --cached --name-only)
+          if grep -Ev '^(README\.md|docs/(status/current\.md|status/github\.json|roadmap\.md|evolution/ledger\.jsonl|memory/lessons\.jsonl|metrics/trends\.json))$' <<< "$changed"; then exit 1; fi
+          if test -n "$prior"; then
+            git fetch origin "$prior"
+            if git diff --cached --quiet "$prior"; then
+              if test "$(jq length <<< "$pr")" = 0; then gh pr create --draft --base main --head "$branch" --title "Sync ORIL evidence" --body "Review generated public evidence and measurements."; fi
+              exit 0
+            fi
+            # A rebuilt proposal must retain pending append-only records.
+            for path in docs/evolution/ledger.jsonl docs/memory/lessons.jsonl; do
+              git show "$prior:$path" | while IFS= read -r row; do grep -Fxq -- "$row" "$path" || exit 1; done
+            done
+          fi
+          git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com commit -m "Refresh ORIL public evidence"
+          git push --force-with-lease="refs/heads/$branch:$prior" origin "HEAD:refs/heads/$branch"
+          if test "$(jq length <<< "$pr")" = 0; then gh pr create --draft --base main --head "$branch" --title "Sync ORIL evidence" --body "Review generated public evidence and measurements."; fi
