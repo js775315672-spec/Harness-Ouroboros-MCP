@@ -1,6 +1,7 @@
 import concurrent.futures
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,7 +15,7 @@ class RegistryTest(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.remote = str(pathlib.Path(temp.name) / "origin.git")
         git("init", "--quiet", "--bare", self.remote)
-        self.source = git("rev-parse", "HEAD")
+        self.source = git("commit-tree", git("mktree", stdin=""), "-m", "fixture baseline")
         git("push", self.remote, self.source + ":refs/heads/main")
 
     def call(self, command, owner="slot", gen=1, value=""):
@@ -42,12 +43,34 @@ class RegistryTest(unittest.TestCase):
         self.call("complete", "next", 2)
 
     def test_crash_after_external_effect(self):
-        with patch("cycle_registry.time.time", return_value=100):
-            self.call("acquire")
-            self.call("reserve", value="model-1")
+        effect = pathlib.Path(self.remote).parent / "receipt"
+        worker = """
+import os, pathlib, sys
+from unittest.mock import patch
+from cycle_registry import transact
+remote, source, effect = sys.argv[1:]
+with patch('cycle_registry.time.time', return_value=100):
+    transact(remote, 'acquire', 'slot', 0, source)
+    transact(remote, 'reserve', 'slot', 1, source, 'model-1')
+    pathlib.Path(effect).write_text('executed')
+    os._exit(23)
+"""
+        child = subprocess.run([sys.executable, "-c", worker, self.remote, self.source, str(effect)],
+                               cwd=pathlib.Path(__file__).resolve().parent)
+        self.assertEqual(child.returncode, 23)
+        self.assertEqual(effect.read_text(), "executed")
         with self.assertRaisesRegex(Blocked, "unresolved"):
             self.call("acquire", "next")
         self.assertEqual(self.call("inspect")["pending"], "model-1")
+
+    def test_repository_isolation(self):
+        sibling = str(pathlib.Path(self.remote).parent / "sibling.git")
+        git("clone", "--bare", self.remote, sibling)
+        self.call("acquire")
+        self.call("stop")
+        transact(sibling, "acquire", "slot", 0, self.source)
+        self.assertEqual(transact(sibling, "complete", "slot", 1, self.source)["phase"], "complete")
+        self.assertEqual(self.call("inspect")["phase"], "blocked")
 
     def test_recorded_effect_and_source_conflict(self):
         self.call("acquire")
