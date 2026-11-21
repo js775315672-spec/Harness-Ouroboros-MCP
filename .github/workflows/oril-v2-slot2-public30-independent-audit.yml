@@ -1,0 +1,22 @@
+name: ORIL v2 slot2 independent public30 raw audit
+on:
+  pull_request:
+    paths:
+      - 'scripts/oril_v2_slot2_public30_independent_audit.py'
+      - 'tests/test_oril_v2_slot2_public30_independent_audit.py'
+      - 'docs/oril_v2_slot2_public30_independent_audit.md'
+      - '.github/workflows/oril-v2-slot2-public30-independent-audit.yml'
+permissions:
+  contents: read
+jobs:
+  offline-independent-public30-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Record source SHA and execute mutation tests
+        run: |
+          git rev-parse HEAD
+          python3 -m unittest discover -s tests -p test_oril_v2_slot2_public30_independent_audit.py -v
