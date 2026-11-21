@@ -1,0 +1,9 @@
+# P0 cycle registry
+
+Each scheduled client calls `python agent/cycle_registry.py inspect` in the agent's own checkout. Capture the current main commit and call `acquire --source SHA --owner RUN_ID` before doing work. Use a unique invocation ID, such as the workflow run ID plus its attempt. Use the returned generation, owner and source for each subsequent command. The client needs repository contents write access. The production registry lives on the dedicated `ofc-cycle-registry-v1` branch. Each state transition is a Git compare-and-swap. The first acquire atomically creates the cycle and lease.
+
+Before each external operation, call `reserve --value KEY` with a stable key scoped to the cycle. Only a successful reservation authorizes one invocation. Save the provider receipt with `record --value KEY=RECEIPT`. Store only public identifiers or digests. Check the results map on restart. If a request times out or its receipt is missing, stop and reconcile against the provider. An expired pending reservation requires operator reconciliation against the exact registry head. Never clear it based only on elapsed time.
+
+Use `checkpoint --value CHECKPOINT` at each verified stage, `release` for a planned handoff and `complete` after the final record. On budget exhaustion or failure use `stop` while the lease is valid. After expiry a new owner can acquire the existing cycle. Stale owners cannot advance the registry. Every blocked write requires rereading state. An external service that can mutate independently of Git must enforce its own source preconditions and idempotency keys. A successful Git reservation cannot revoke an already issued provider request.
+
+CI runs the registry against temporary bare Git repositories on GitHub-hosted runners. These checks do not call a model, publish a PR as an experiment, or enable the five production schedules.
