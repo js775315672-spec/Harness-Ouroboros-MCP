@@ -88,5 +88,50 @@ with patch('cycle_registry.time.time', return_value=100):
             self.call("acquire", "next")
 
 
+class ExpiredLeaseRecoveryTest(RegistryTest):
+    def test_authenticated_recovery_and_fencing(self):
+        from cycle_registry import recover_verified
+        with patch("cycle_registry.time.time", return_value=100):
+            self.call("acquire")
+            self.call("reserve", value="merge-pr-1")
+        with patch("cycle_registry.time.time", return_value=800):
+            result = recover_verified(self.remote, owner="recovery", source=self.source,
+                operation="merge-pr-1", evidence="authenticated-merge-sha",
+                verifier=lambda remote, op, ev: remote == self.remote and op == "merge-pr-1" and ev == "authenticated-merge-sha")
+        self.assertEqual(result["generation"], 2)
+        self.assertIsNone(result["pending"])
+        self.assertEqual(result["results"]["merge-pr-1"], "authenticated-merge-sha")
+        with self.assertRaises(Blocked):
+            self.call("complete", "slot", 1)
+        with self.assertRaises(Blocked):
+            recover_verified(self.remote, owner="other", source=self.source, operation="merge-pr-1",
+                evidence="authenticated-merge-sha", verifier=lambda *args: True)
+
+    def test_unknown_outcome_is_blocked_and_preserved(self):
+        from cycle_registry import recover_verified
+        with patch("cycle_registry.time.time", return_value=100):
+            self.call("acquire")
+            self.call("reserve", value="merge-pr-1")
+        before = self.call("inspect")
+        with patch("cycle_registry.time.time", return_value=800):
+            with self.assertRaises(Blocked):
+                recover_verified(self.remote, owner="recovery", source=self.source, operation="merge-pr-1",
+                    evidence="unknown", verifier=lambda *args: False)
+        self.assertEqual(before, self.call("inspect"))
+
+    def test_active_lease_and_wrong_operation_blocked(self):
+        from cycle_registry import recover_verified
+        with patch("cycle_registry.time.time", return_value=100):
+            self.call("acquire")
+            self.call("reserve", value="merge-pr-1")
+            with self.assertRaises(Blocked):
+                recover_verified(self.remote, owner="recovery", source=self.source, operation="merge-pr-1",
+                    evidence="proof", verifier=lambda *args: True)
+        with patch("cycle_registry.time.time", return_value=800):
+            with self.assertRaises(Blocked):
+                recover_verified(self.remote, owner="recovery", source=self.source, operation="wrong",
+                    evidence="proof", verifier=lambda *args: True)
+
+
 if __name__ == "__main__":
     unittest.main()
