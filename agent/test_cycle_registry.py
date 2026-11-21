@@ -38,7 +38,7 @@ class RegistryTest(unittest.TestCase):
         print(f"legacy stdin={legacy.hex()} path={legacy_name.hex()} fixed path={fixed_name.hex()}")
         self.assertEqual(fixed_name, b"state.json\0")
 
-    def merge_fixture(self):
+    def merge_fixture(self, crash=False):
         tree = git("mktree", stdin="")
         head = git("commit-tree", tree, "-p", self.source, "-m", "candidate")
         merged = git("commit-tree", tree, "-p", self.source, "-p", head, "-m", "merge")
@@ -48,7 +48,17 @@ class RegistryTest(unittest.TestCase):
         with patch("cycle_registry.github_pr", return_value=pr):
             self.call("merge_intent", value=json.dumps(dict(operation_key="merge-42",
                       pr_number=42, expected_head_sha=head)))
-        git("push", self.remote, merged + ":refs/heads/main")
+        if crash:
+            worker = """
+import os, subprocess, sys
+remote, merged = sys.argv[1:]
+subprocess.run(["git", "push", remote, merged + ":refs/heads/main"], check=True)
+os._exit(23)
+"""
+            child = subprocess.run([sys.executable, "-c", worker, self.remote, merged])
+            self.assertEqual(child.returncode, 23)
+        else:
+            git("push", self.remote, merged + ":refs/heads/main")
         pr.update(merged=True, state="closed", merge_commit_sha=merged)
         return pr
 
@@ -66,13 +76,16 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(git("ls-remote", self.remote, REF), ref)
 
     def test_merge_recovery_after_lost_response_and_cas_failure(self):
-        pr = self.merge_fixture()
+        pr = self.merge_fixture(crash=True)
         with patch("cycle_registry.github_pr", side_effect=Blocked("response lost")):
             with self.assertRaises(Blocked):
                 self.call("merge_reconcile", value="merge-42")
         def failed_push(*args, **kwargs):
             if args[0] == "push":
-                raise subprocess.CalledProcessError(1, args)
+                old = git("ls-remote", self.remote, REF).split()[0]
+                tree = git("show", "-s", "--format=%T", old)
+                contender = git("commit-tree", tree, "-p", old, "-m", "concurrent CAS")
+                git("push", f"--force-with-lease={REF}:{old}", self.remote, contender + ":" + REF)
             return git(*args, **kwargs)
         with patch("cycle_registry.github_pr", return_value=pr):
             with patch("cycle_registry.git", side_effect=failed_push):
