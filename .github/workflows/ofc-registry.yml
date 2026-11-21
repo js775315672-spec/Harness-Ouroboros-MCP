@@ -4,6 +4,7 @@ on:
     paths:
       - 'agent/cycle_registry.py'
       - 'agent/test_cycle_registry.py'
+      - 'agent/test_a1_recovery_safety.py'
       - '.github/workflows/ofc-registry.yml'
 permissions:
   contents: read
@@ -25,4 +26,6 @@ jobs:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Run P0 registry regression tests
-        run: python agent/test_cycle_registry.py -v
+        run: |
+          python agent/test_cycle_registry.py -v
+          python agent/test_a1_recovery_safety.py -v
