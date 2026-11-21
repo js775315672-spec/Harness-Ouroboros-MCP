@@ -22,3 +22,7 @@ python scripts/hydra_gpu_lora.py --model MODEL --out my-lora-run --predict "The 
 Training requires a hardware GPU. Prediction and verification use the saved adapter on CPU. Keep independent production evaluation separate from these public development examples. The standing worker continues to use its existing approval and independent grading path.
 
 The recorded Radeon run completed 100 SGD updates. On 12 public evaluation examples the baseline got 6 correct and the restored adapter got 8 correct. Five answers improved and three regressed. The next-task artifact exposes this candidate for independent evaluation when the production failure queue is clear. See the [run receipt](experiments/hydra-lora/run-01/receipt.json).
+
+## ORIL v3 공개 자기개선 실험
+
+통합 브랜치에서는 GitHub Actions가 Qwen 추론, 공개 검산, 가설 선택과 후속 실행을 세 번 연결한다. [한국어 개발 보고서](docs/oril/report.ko.md)에서 측정값과 [독립 평가용 후보](docs/oril/candidate-for-independent-evaluation.json)를 확인할 수 있다.

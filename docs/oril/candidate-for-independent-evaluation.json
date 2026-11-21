@@ -1,0 +1,19 @@
+{
+  "cycle_id": "44853120822-2",
+  "source_sha": "e8fa72cc4caecaf5afab952af5d5214baa9c2614",
+  "base_sha": "8fbecb5e813b653213d6c8d95ce7151868779512",
+  "change_kind": "system_prompt",
+  "prompt": "Return the final integer only.",
+  "prompt_sha256": "915e7d283bccd2505ad234004e38d3df2247c035080201a4d838c6c654b74167",
+  "raw_ab_sha256": "c89dc9ba2dbe4fb9476dc3cc1e68772b114826b9f182f2e987db4703da0318c3",
+  "candidate_manifest_sha256": "1cc152820ff183fdb30926d1a3cb3921a0fe30a0cda3d5d129e3cdeb91de8bc8",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "verification_status": "awaiting_protected_candidate_evaluator",
+  "promotion_allowed": false,
+  "requested_checks": [
+    "independent heldout paired accuracy with predeclared noninferiority margin",
+    "zero new critical regressions",
+    "token and runtime budget",
+    "security review"
+  ]
+}
