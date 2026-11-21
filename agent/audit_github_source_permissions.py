@@ -33,26 +33,68 @@ def require(condition, description):
 
 
 def get(path, *, optional=False):
-    request = Request(
-        (API_ROOT + path if path else API_ROOT.rstrip("/")), method="GET",
-        headers={"Accept": "application/vnd.github+json",
-                 "X-GitHub-Api-Version": "2022-11-28",
-                 "User-Agent": "OFC-b2-source-permissions-audit",
-                 "Authorization": "Bearer " + TOKEN})
+    """Verify live GitHub metadata, fail closed on denial or exhausted sources."""
+    headers = {"Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28",
+               "User-Agent": "OFC-b2-source-permissions-audit",
+               "Authorization": "Bearer " + TOKEN}
+    url = API_ROOT + path if path else API_ROOT.rstrip("/")
+    request = Request(url, method="GET", headers=headers)
     try:
         with urlopen(request, timeout=25) as response:
             code = response.status
             data = json.load(response)
             require(code == 200, "unexpected HTTP status for " + path)
-            api_calls.append({"path": path, "status": code})
+            api_calls.append({"path": path, "status": code,
+                              "source": "authenticated_GitHub_API"})
             return data
     except HTTPError as exc:
-        api_calls.append({"path": path, "status": exc.code})
+        remaining = exc.headers.get("X-RateLimit-Remaining", "unknown")
+        resource = exc.headers.get("X-RateLimit-Resource", "unknown")
+        try:
+            message = str(json.loads(exc.read().decode("utf-8")).get("message", ""))[:160]
+        except (ValueError, UnicodeError):
+            message = "unavailable"
+        api_calls.append({"path": path, "status": exc.code,
+                          "source": "authenticated_GitHub_API",
+                          "rate_remaining": remaining, "rate_resource": resource})
+        core_exhausted = (exc.code == 403 and remaining == "0"
+                          and resource == "core"
+                          and "rate limit exceeded" in message.lower())
         if optional and exc.code in (403, 404):
-            warnings.append("API permission visibility unavailable for " +
-                            path + ": HTTP " + str(exc.code))
+            kind = ("GitHub App core quota exhausted" if core_exhausted
+                    else "policy visibility unavailable")
+            warnings.append(kind + " for " + path + ": HTTP " + str(exc.code))
             return None
-        raise
+        if core_exhausted and (path == "" or path.startswith((
+                "pulls/", "git/ref/heads/", "actions/runs/",
+                "contents/state.json?ref="))):
+            anonymous = dict(headers)
+            anonymous.pop("Authorization", None)
+            try:
+                with urlopen(Request(url, method="GET", headers=anonymous),
+                             timeout=25) as response:
+                    code = response.status
+                    if code != 200:
+                        raise RuntimeError("public GitHub response status is not 200")
+                    data = json.load(response)
+            except HTTPError as public_error:
+                raise RuntimeError(
+                    "live GitHub source unavailable: authenticated core quota "
+                    f"exhausted, public HTTPS API HTTP {public_error.code} "
+                    "also failed") from public_error
+            if not isinstance(data, dict):
+                raise RuntimeError("untrusted non-object from GitHub public HTTPS API")
+            warnings.append("authenticated installation core quota exhausted for "
+                            + (path or "repository metadata") +
+                            "; corroborated by live public GitHub TLS API")
+            api_calls.append({"path": path, "status": 200,
+                              "source": "public_GitHub_TLS_after_core_quota"})
+            return data
+        raise RuntimeError(
+            f"GitHub REST {path or 'repository'}: HTTP {exc.code}; "
+            f"rate_remaining={remaining}; resource={resource}; "
+            f"message={message}") from exc
 
 
 def workflow_permissions():
