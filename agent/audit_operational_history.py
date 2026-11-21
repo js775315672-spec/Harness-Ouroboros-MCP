@@ -26,17 +26,54 @@ def fail(msg):
 
 
 def get(path):
+    """Authenticated GitHub PR metadata only; reject rate/permission failures."""
+    from urllib.error import HTTPError
+
     headers = {"Accept": "application/vnd.github+json",
                "User-Agent": "OFC-operational-ledger-audit"}
     if TOKEN:
         headers["Authorization"] = "Bearer " + TOKEN
-    request = Request(API + path, headers=headers)
-    with urlopen(request, timeout=25) as response:
-        return json.load(response)
+    request = Request(API + path, headers=headers, method="GET")
+    try:
+        with urlopen(request, timeout=25) as response:
+            return json.load(response)
+    except HTTPError as exc:
+        remaining = exc.headers.get("X-RateLimit-Remaining", "unknown")
+        reset = exc.headers.get("X-RateLimit-Reset", "unknown")
+        retry = exc.headers.get("Retry-After", "unknown")
+        resource = exc.headers.get("X-RateLimit-Resource", "unknown")
+        try:
+            message = str(json.loads(exc.read().decode("utf-8")).get("message", ""))[:160]
+        except (ValueError, UnicodeError):
+            message = "unavailable"
+        raise RuntimeError(
+            f"GitHub REST {path}: HTTP {exc.code}; rate_remaining={remaining}; "
+            f"rate_reset={reset}; retry_after={retry}; resource={resource}; "
+            f"message={message}") from exc
 
 
-def tip(name):
-    return get("git/ref/heads/" + name)["object"]["sha"]
+def tip(name, remote_url=None):
+    """Pin an immutable Git ref with a read-only Git protocol query.
+
+    This avoids consuming REST API quota for main/registry tip checks,
+    while keeping live PR receipt verification authenticated through REST.
+    """
+    import subprocess
+
+    if name not in ("main", "ofc-cycle-registry-v1"):
+        raise RuntimeError("unapproved operational ref")
+    remote = remote_url or ("https://github.com/" + REPO + ".git")
+    ref = "refs/heads/" + name
+    data = subprocess.check_output(
+        ["git", "ls-remote", "--exit-code", remote, ref],
+        stderr=subprocess.PIPE, timeout=30).decode("ascii")
+    entries = [line.split() for line in data.splitlines() if line.strip()]
+    if len(entries) != 1 or len(entries[0]) != 2:
+        raise RuntimeError("missing or ambiguous operational Git ref: " + name)
+    sha, actual_ref = entries[0]
+    if actual_ref != ref or not SHA.fullmatch(sha):
+        raise RuntimeError("mismatched operational Git ref: " + name)
+    return sha
 
 
 def traverse(remote_url=None, pinned_tip=None):
