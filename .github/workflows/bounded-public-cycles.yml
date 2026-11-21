@@ -1,0 +1,107 @@
+name: Bounded public cycle batches
+on:
+  push:
+    branches: [research/bounded-cycle-batches]
+    paths: ['.github/workflows/bounded-public-cycles.yml']
+permissions:
+  contents: write
+jobs:
+  batch_1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          ref: '88afa3316dde85c5830387f82b24a94bd49a2ae5'
+          path: target
+          persist-credentials: false
+      - name: Start local CPU inference
+        run: |
+          set -eu
+          docker run -d --name ofc-model -p 127.0.0.1:11434:11434 ollama/ollama:0.13.5
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:11434/api/tags; then break; fi
+            sleep 2
+          done
+          docker exec ofc-model ollama pull qwen2.5:0.5b
+      - name: Measure and commit each public cycle separately
+        env:
+          COUNT: '1'
+          SOURCE: '6b44c67a4f69cdc7cbbd983356e5795a551b48fc'
+        run: python agent/bounded_public_cycles.py
+  batch_3:
+    needs: batch_1
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          ref: '88afa3316dde85c5830387f82b24a94bd49a2ae5'
+          path: target
+          persist-credentials: false
+      - name: Start local CPU inference
+        run: |
+          set -eu
+          docker run -d --name ofc-model -p 127.0.0.1:11434:11434 ollama/ollama:0.13.5
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:11434/api/tags; then break; fi
+            sleep 2
+          done
+          docker exec ofc-model ollama pull qwen2.5:0.5b
+      - name: Measure and commit each public cycle separately
+        env:
+          COUNT: '3'
+          SOURCE: '6b44c67a4f69cdc7cbbd983356e5795a551b48fc'
+        run: python agent/bounded_public_cycles.py
+  batch_6:
+    needs: batch_3
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          ref: '88afa3316dde85c5830387f82b24a94bd49a2ae5'
+          path: target
+          persist-credentials: false
+      - name: Start local CPU inference
+        run: |
+          set -eu
+          docker run -d --name ofc-model -p 127.0.0.1:11434:11434 ollama/ollama:0.13.5
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:11434/api/tags; then break; fi
+            sleep 2
+          done
+          docker exec ofc-model ollama pull qwen2.5:0.5b
+      - name: Measure and commit each public cycle separately
+        env:
+          COUNT: '6'
+          SOURCE: '6b44c67a4f69cdc7cbbd983356e5795a551b48fc'
+        run: python agent/bounded_public_cycles.py
+  batch_9:
+    needs: batch_6
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          ref: '88afa3316dde85c5830387f82b24a94bd49a2ae5'
+          path: target
+          persist-credentials: false
+      - name: Start local CPU inference
+        run: |
+          set -eu
+          docker run -d --name ofc-model -p 127.0.0.1:11434:11434 ollama/ollama:0.13.5
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:11434/api/tags; then break; fi
+            sleep 2
+          done
+          docker exec ofc-model ollama pull qwen2.5:0.5b
+      - name: Measure and commit each public cycle separately
+        env:
+          COUNT: '9'
+          SOURCE: '6b44c67a4f69cdc7cbbd983356e5795a551b48fc'
+        run: python agent/bounded_public_cycles.py
