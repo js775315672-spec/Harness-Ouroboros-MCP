@@ -220,6 +220,45 @@ class C2HistoricalAuditRules(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "HTTP 403; rate_remaining=0"):
                 a.get("pulls/7")
 
+    def test_rate_exhaustion_uses_only_real_public_https_get_for_pr(self):
+        import io
+        from urllib.error import HTTPError
+
+        a = self.audit
+        first = HTTPError(
+            a.API + "pulls/7", 403, "Forbidden",
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Resource": "core"},
+            io.BytesIO(b'{"message":"API rate limit exceeded for installation"}'))
+        observed = []
+        def source(request, timeout=25):
+            observed.append((request.full_url, request.get_header("Authorization")))
+            if len(observed) == 1:
+                raise first
+            return io.BytesIO(b'{"number":7,"merged":false}')
+        with patch.object(a, "urlopen", side_effect=source):
+            self.assertEqual(a.get("pulls/7")["number"], 7)
+        self.assertEqual(len(observed), 2)
+        self.assertEqual(observed[0][0], observed[1][0])
+        self.assertEqual(observed[1][1], None)
+        self.assertEqual(a.api_modes["pulls/7"],
+                         "public_tls_after_installation_core_limit")
+        self.assertTrue(any("core quota exhausted" in w for w in a.warnings))
+
+    def test_permission_denial_does_not_trigger_public_fallback(self):
+        import io
+        from urllib.error import HTTPError
+
+        a = self.audit
+        denied = HTTPError(a.API + "pulls/7", 403, "Forbidden",
+                           {"X-RateLimit-Remaining": "15",
+                            "X-RateLimit-Resource": "core"},
+                           io.BytesIO(b'{"message":"Resource not accessible by integration"}'))
+        with patch.object(a, "urlopen", side_effect=denied) as mocked:
+            with self.assertRaisesRegex(RuntimeError, "rate_remaining=15"):
+                a.get("pulls/7")
+        self.assertEqual(mocked.call_count, 1)
+        self.assertNotIn("pulls/7", a.api_modes)
+
     def test_legacy_cr_in_history_is_allowed_but_current_tip_is_not(self):
         a = self.audit
         historical = self.synthetic_history("receipt-cycle-two")
