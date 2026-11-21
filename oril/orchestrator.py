@@ -25,7 +25,7 @@ SEED = "99376656a4c4a7df737d54d9da36f9743b4ede02bc73d54461c379db69860a09"
 
 
 def plan(memory):
-    order = list(PROMPTS)
+    order = ["remove_redundancy", "check_sum", "integer_format"]
     if memory["candidate_errors"] > 0:
         order = ["integer_format", "check_sum", "remove_redundancy"]
     return next(name for name in order if name not in memory["tried"])
@@ -41,6 +41,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("number", type=int, choices=(1, 2, 3))
     args = parser.parse_args()
+    import resource
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
     from huggingface_hub import snapshot_download
@@ -102,6 +103,7 @@ def main():
           hypothesis_id=strategy, failure_category="PROMPT", observed_problem=observed,
           expected_effect="Reduce input tokens by at least 20 percent", guardrail="zero new public regressions",
           falsification="less than 20 percent saving or any new regression", elapsed_seconds=time.monotonic()-start,
+          peak_process_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
           raw_sha256={name:sha256_file(folder/name) for name in ("ab.json","aa.json")}))
 
 
