@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only public cycle trend audit. No promotion or model-quality claims."""
 import json
+import math
 import statistics
 import sys
 
@@ -26,7 +27,7 @@ def audit(rows):
             value = r[field]
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not  isinstance(value, int if field != "duration_s" else (int, float)) or value < 0:
                 raise ValueError("invalid numeric field: " + field)
-        if r["duration_s"] <= 0 or r["n_groups"] <= 0 or r["input_tokens_base"] <= 0:
+        if not math.isfinite(r["duration_s"]) or r["duration_s"] <= 0 or r["n_groups"] <= 0 or r["input_tokens_base"] <= 0:
             raise ValueError("invalid denominator")
         if max(r["baseline_correct"], r["candidate_correct"]) > r["n_groups"]:
             raise ValueError("accuracy exceeds groups")
