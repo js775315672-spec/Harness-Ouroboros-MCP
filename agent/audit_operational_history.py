@@ -200,6 +200,13 @@ def audit_receipts(results):
     return checked
 
 
+def check_active_registry_path(records):
+    """Legacy CR paths are historical evidence, never valid active refs."""
+    if not records or records[-1]["path"] != "state.json":
+        fail("active registry tip has noncanonical path; manual repair required")
+
+
+
 def main():
     report = {"repository": REPO, "agent": AGENT,
               "scope": "READ_ONLY_REAL_GIT_HISTORY_AND_PR_RECEIPTS",
@@ -213,8 +220,7 @@ def main():
         report["legacy_cr_filename_commit_shas"] = legacy
         if legacy:
             warnings.append("historical CR-suffixed state.json filename in " + str(len(legacy)) + " commits; not silently normalized")
-        if records[-1]["path"] != "state.json":
-            fail("active registry tip has noncanonical path; manual repair required")
+        check_active_registry_path(records)
         report["registry_tip_sha"] = tip_sha
         report["main_sha"] = main_sha
         report["history"] = validate_history(records, main_sha)
