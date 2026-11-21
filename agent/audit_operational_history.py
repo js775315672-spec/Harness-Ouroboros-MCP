@@ -19,6 +19,7 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 RECEIPT = re.compile(r"^https://github\.com/([^/]+/[^/]+)/pull/([1-9]\d*)@([0-9a-f]{40})$")
 errors = []
 warnings = []
+api_modes = {}
 
 
 def fail(msg):
@@ -36,6 +37,7 @@ def get(path):
     request = Request(API + path, headers=headers, method="GET")
     try:
         with urlopen(request, timeout=25) as response:
+            api_modes[path] = "authenticated"
             return json.load(response)
     except HTTPError as exc:
         remaining = exc.headers.get("X-RateLimit-Remaining", "unknown")
@@ -46,6 +48,29 @@ def get(path):
             message = str(json.loads(exc.read().decode("utf-8")).get("message", ""))[:160]
         except (ValueError, UnicodeError):
             message = "unavailable"
+        # Public GitHub metadata is a second *actual* TLS-protected
+        # verification source. Never accept a receipt from cached/mock data.
+        # Only use it for confirmed installation core-rate exhaustion.
+        if (exc.code == 403 and remaining == "0" and resource == "core"
+                and "rate limit exceeded" in message.lower()
+                and path.startswith("pulls/")):
+            anonymous = dict(headers)
+            anonymous.pop("Authorization", None)
+            public_request = Request(API + path, headers=anonymous, method="GET")
+            try:
+                with urlopen(public_request, timeout=25) as public_response:
+                    candidate = json.load(public_response)
+            except HTTPError as public_error:
+                raise RuntimeError(
+                    f"GitHub REST {path}: HTTP {public_error.code}; "
+                    f"rate_remaining={public_error.headers.get('X-RateLimit-Remaining', 'unknown')}; "
+                    "both authenticated and public verification unavailable") from public_error
+            if not isinstance(candidate, dict):
+                raise RuntimeError("public GitHub metadata is not an object")
+            api_modes[path] = "public_tls_after_installation_core_limit"
+            warnings.append("authenticated core quota exhausted for " + path +
+                            "; independently verified against public GitHub TLS API")
+            return candidate
         raise RuntimeError(
             f"GitHub REST {path}: HTTP {exc.code}; rate_remaining={remaining}; "
             f"rate_reset={reset}; retry_after={retry}; resource={resource}; "
@@ -278,7 +303,8 @@ def check_active_registry_path(records):
 def main():
     report = {"repository": REPO, "agent": AGENT,
               "scope": "READ_ONLY_REAL_GIT_HISTORY_AND_PR_RECEIPTS",
-              "errors": errors, "warnings": warnings}
+              "errors": errors, "warnings": warnings,
+              "receipt_api_modes": api_modes}
     try:
         main_sha = tip("main")
         tip_sha, records = traverse()
