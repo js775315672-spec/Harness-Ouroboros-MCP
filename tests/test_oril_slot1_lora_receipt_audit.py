@@ -55,7 +55,17 @@ class AuditTest(unittest.TestCase):
         raw = adapter.read_bytes()
         length = struct.unpack("<Q", raw[:8])[0]
         header = json.loads(raw[8:8 + length])
-        header["B"]["data_offsets"] = list(header["A"]["data_offsets"])
+        # Preserve B's declared byte length while shifting it into A's span.
+        # Copying A's offsets would also change B's length and test the wrong gate.
+        a_start, a_end = header["A"]["data_offsets"]
+        b_start, b_end = header["B"]["data_offsets"]
+        b_size = b_end - b_start
+        overlap = min(4, a_end - a_start, b_size)
+        self.assertGreater(overlap, 0)
+        shifted_start = a_end - overlap
+        shifted_end = shifted_start + b_size
+        self.assertLessEqual(shifted_end, len(raw) - 8 - length)
+        header["B"]["data_offsets"] = [shifted_start, shifted_end]
         new_header = json.dumps(header, separators=(",", ":")).encode()
         adapter.write_bytes(struct.pack("<Q", len(new_header)) + new_header + raw[8 + length:])
         self.mutate("adapter_sha256", hashlib.sha256(adapter.read_bytes()).hexdigest())
