@@ -86,6 +86,11 @@ def r1_intent(raw, state):
 def r1_reserve(state, operation):
     intent = r1_intent(operation, state)
     if intent is None:
+        # Once any guarded operation has been registered, permitting a plain
+        # legacy operation would bypass durable cross-cycle deduplication.
+        # Structured merge intents remain gated by authenticated recovery.
+        if r1_ledger(state)["operations"] and not operation.lstrip().startswith("{"):
+            raise Blocked("legacy external reservation forbidden after R1 enrollment")
         return
     ledger = r1_ledger(state)
     operation_id, effect_id = intent["operation_id"], intent["effect_id"]
