@@ -54,6 +54,7 @@ class PlannerTests(unittest.TestCase):
                 planner.main(output)
             result = json.loads(output.read_text())
             self.assertIsNone(result["proposal"])
+            self.assertIn(result["model_review"]["task"], {"independent_evaluation", "review_training_errors"})
             source = "docs/evolution/cycle-01-dispatch-preflight.json"
             record = json.loads((Path(__file__).resolve().parents[1] / source).read_text())
             if record["status"].startswith("blocked_") and record["dispatch_count"] == 0:

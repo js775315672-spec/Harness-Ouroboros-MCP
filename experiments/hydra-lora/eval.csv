@@ -1,0 +1,13 @@
+label,text
+success,The build finished successfully with every required receipt.
+failure,The build failed while checking the final receipt.
+success,The independent reviewer approved the submitted evidence.
+failure,The independent reviewer rejected the submitted evidence.
+failure,The evaluation crashed halfway through the benchmark.
+success,The evaluation completed the benchmark without errors.
+success,All expected files were present in the uploaded bundle.
+failure,A required file was absent from the uploaded bundle.
+failure,The execution exceeded its deadline and was terminated.
+success,The execution finished within its deadline.
+failure,The measured digest differs from the approved digest.
+success,The measured digest agrees with the approved digest.

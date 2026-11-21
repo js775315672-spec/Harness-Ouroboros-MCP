@@ -2,10 +2,10 @@ name: Hydra next task proposal
 on:
   pull_request:
     branches: [main]
-    paths: [.github/workflows/hydra-next-task.yml, scripts/p3l_hydra_next_task.py, tests/test_hydra_next_task.py, docs/evolution/cycle-01-dispatch-preflight.json]
+    paths: [.github/workflows/hydra-next-task.yml, scripts/p3l_hydra_next_task.py, tests/test_hydra_next_task.py, docs/evolution/cycle-01-dispatch-preflight.json, 'experiments/hydra-lora/run-01/**']
   push:
     branches: [main]
-    paths: [.github/workflows/hydra-next-task.yml, scripts/p3l_hydra_next_task.py, tests/test_hydra_next_task.py, docs/evolution/cycle-01-dispatch-preflight.json]
+    paths: [.github/workflows/hydra-next-task.yml, scripts/p3l_hydra_next_task.py, tests/test_hydra_next_task.py, docs/evolution/cycle-01-dispatch-preflight.json, 'experiments/hydra-lora/run-01/**']
   workflow_run:
     workflows: [Hydra standing approved tasks]
     branches: [main]

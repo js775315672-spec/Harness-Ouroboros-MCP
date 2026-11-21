@@ -84,6 +84,16 @@ def main(output):
                 "cycle": preflight["cycle"], "status": preflight["status"],
                 "task": preflight["required_next_evidence"], "source": source,
             }
+        experiment = "experiments/hydra-lora/run-01"
+        folder = Path(__file__).resolve().parents[1] / experiment
+        receipt = json.loads((folder / "receipt.json").read_text(encoding="utf-8"))
+        adapter_sha = hashlib.sha256((folder / "adapter.safetensors").read_bytes()).hexdigest()
+        if adapter_sha != receipt["adapter_sha256"]:
+            raise ValueError("LoRA receipt does not match the saved adapter")
+        result["model_review"] = {
+            "source": f"{experiment}/receipt.json", "adapter_sha256": adapter_sha,
+            "task": receipt["next_task"], "verdict": receipt["verdict"],
+        }
     Path(output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
 
