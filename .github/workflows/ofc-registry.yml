@@ -5,6 +5,7 @@ on:
       - 'agent/cycle_registry.py'
       - 'agent/test_cycle_registry.py'
       - 'agent/test_a1_recovery_safety.py'
+      - 'agent/test_p0_independent_audit.py'
       - '.github/workflows/ofc-registry.yml'
 permissions:
   contents: read
@@ -30,3 +31,5 @@ jobs:
         run: |
           python agent/test_cycle_registry.py -v
           python agent/test_a1_recovery_safety.py -v
+      - name: Run isolated P0 recovery audit
+        run: python agent/test_p0_independent_audit.py -v
