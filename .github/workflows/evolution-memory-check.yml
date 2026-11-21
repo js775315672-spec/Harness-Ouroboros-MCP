@@ -1,0 +1,25 @@
+name: Independent evolution memory check
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "AGENTS.md"
+      - "docs/evolution/**"
+      - "scripts/evolution_context.py"
+      - "tests/test_evolution_context.py"
+      - ".github/workflows/evolution-memory-check.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-memory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate own state and evidence references
+        run: python scripts/evolution_context.py check
+      - name: Run isolated invariants
+        run: python -m unittest discover -s tests -p "test_evolution_context.py" -v
