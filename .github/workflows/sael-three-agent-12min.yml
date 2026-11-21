@@ -1,0 +1,69 @@
+name: SAEL three-agent 12-minute readiness
+# Research-only orchestration: never run models, update repositories, or claim autonomous improvement.
+# Active only after this workflow is merged into the default branch.
+on:
+  schedule:
+    - cron: '5,17,29,41,53 * * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/sael-three-agent-12min.yml"
+      - "docs/evolution/**"
+permissions:
+  contents: read
+concurrency:
+  group: sael-three-agent-schedule
+  cancel-in-progress: false
+
+jobs:
+  independent-agent-readiness:
+    name: "${{ matrix.agent_id }} standalone readiness"
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - agent_id: ouroboros
+            repository: js775315672-spec/Harness-Ouroboros-MCP
+          - agent_id: cerberus
+            repository: js775315672-spec/Cerberus
+          - agent_id: fenrir
+            repository: js775315672-spec/Fenrir-Agent
+    steps:
+      - name: Checkout independent agent repository (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          ref: main
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify own identity, state and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "## ${{ matrix.agent_id }} (independent track)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source: ${{ matrix.repository }} @ $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          if [ ! -f scripts/evolution_context.py ]; then
+            echo "::notice title=Research-only::Agent readiness tool is not merged on main; no evolution run was attempted."
+            echo "State: BLOCKED — independent memory checker absent from main; development NOT_RUN." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python scripts/evolution_context.py check
+          if [ -f tests/test_evolution_context.py ]; then
+            python -m unittest discover -s tests -p 'test_evolution_context.py' -v
+          fi
+          echo "State: memory readiness check completed. This does NOT establish self-improvement." >> "$GITHUB_STEP_SUMMARY"
+      - name: Report runner integration status (no execution)
+        shell: bash
+        if: always()
+        run: |
+          if [ -f scripts/evolution_runner.py ]; then
+            echo "Independent runner exists; auto-execution is still disabled pending safety/approval gate." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Autonomous development runner: NOT_IMPLEMENTED / NOT_RUN." >> "$GITHUB_STEP_SUMMARY"
+          fi
