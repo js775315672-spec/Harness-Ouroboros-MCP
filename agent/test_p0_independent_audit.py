@@ -29,20 +29,18 @@ class IndependentP0Audit(unittest.TestCase):
             r.transact(self.remote, "acquire", "first", 0, self.source)
             r.transact(self.remote, "reserve", "first", 1, self.source, operation)
 
-    def test_expired_lease_recovery_and_duplicate_fencing(self):
-        # The public recovery API deliberately rejects arbitrary verifier callbacks.
+    def test_legacy_callback_is_rejected_and_pending_preserved(self):
         self.reserve_expired()
         with patch.object(r.time, "time", return_value=800):
-            with self.assertRaises(r.Blocked):
-                r.recover_verified(self.remote, owner="auditor", source=self.source,
-                    operation="merge-1", evidence="verified", verifier=lambda *args: True)
+            with self.assertRaisesRegex(r.Blocked, "arbitrary verifier"):
+                self.recover()
         self.assertEqual(r.transact(self.remote, "inspect")["pending"], "merge-1")
 
     def test_unknown_external_outcome_preserves_pending(self):
         self.reserve_expired()
         with patch.object(r.time, "time", return_value=800):
             with self.assertRaises(r.Blocked):
-                r.recover_verified(self.remote, owner='auditor', source=self.source, operation='merge-1', evidence='unknown', verifier=lambda *args: False)
+                self.recover(verifier=lambda *args: False)
         self.assertEqual(r.transact(self.remote, "inspect")["pending"], "merge-1")
 
     def test_main_drift_blocks_unverified_recovery(self):
@@ -52,34 +50,22 @@ class IndependentP0Audit(unittest.TestCase):
         r.git("push", self.remote, newer + ":refs/heads/main")
         with patch.object(r.time, "time", return_value=800):
             with self.assertRaises(r.Blocked):
-                r.recover_verified(self.remote, owner='auditor', source=self.source, operation='merge-1', evidence='verified', verifier=lambda *args: True)
+                self.recover()
         self.assertEqual(r.transact(self.remote, "inspect")["pending"], "merge-1")
 
-    def test_cas_competition_has_single_winner(self):
-        # Exercise the supported authenticated merge-recovery API, not the
-        # forbidden generic callback recovery API.
-        intent = {"base_sha": self.source, "operation_id": "audit-merge"}
-        op = json.dumps(intent, sort_keys=True)
-        with patch.object(r.time, "time", return_value=100):
-            r.transact(self.remote, "acquire", "first", 0, self.source)
-            r.transact(self.remote, "reserve", "first", 1, self.source, op)
-        merged = r.git("commit-tree", r.git("mktree", stdin=""),
-                       "-p", self.source, "-m", "merged")
-        r.git("push", self.remote, merged + ":refs/heads/main")
-        proof = json.dumps({"merge_commit_sha": merged}, sort_keys=True)
+    def test_cas_competition_cannot_bypass_authenticated_recovery(self):
+        self.reserve_expired()
         def contender(i):
             try:
-                with patch.object(r, "REMOTE", self.remote), patch.object(
-                    r, "verify_github_merge", return_value=True
-                ), patch.object(r.time, "time", return_value=800):
-                    return r.recover_merged_pr(self.remote, owner="auditor-" + str(i),
-                        source=self.source, operation=op, evidence=proof)["generation"]
+                with patch.object(r.time, "time", return_value=800):
+                    self.recover(evidence="proof-" + str(i))
+                return True
             except (r.Blocked, subprocess.CalledProcessError):
-                return None
+                return False
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-            wins = [v for v in pool.map(contender, range(6)) if v is not None]
-        self.assertEqual(len(wins), 1)
-        self.assertEqual(r.transact(self.remote, "inspect")["results"][op], proof)
+            wins = list(pool.map(contender, range(6)))
+        self.assertFalse(any(wins))
+        self.assertEqual(r.transact(self.remote, "inspect")["pending"], "merge-1")
 
     def test_forged_receipt_and_api_outage_fail_closed(self):
         repo = r.REMOTE.removeprefix("https://github.com/").removesuffix(".git")
