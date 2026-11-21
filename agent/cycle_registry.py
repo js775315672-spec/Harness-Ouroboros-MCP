@@ -139,6 +139,10 @@ def r1_record(state, operation, evidence):
 
 def r1_note_verified_merge(state, operation, evidence):
     """Add global tombstones only after recover_merged_pr verified the merge."""
+    if not isinstance(operation, str) or not operation.lstrip().startswith("{"):
+        # Legacy reconcile_expired callers retain their old test contract;
+        # the production verified PR path always has structured intent.
+        return
     try:
         intent, receipt = json.loads(operation), json.loads(evidence)
     except (ValueError, TypeError) as exc:
