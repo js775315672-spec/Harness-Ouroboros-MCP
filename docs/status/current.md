@@ -11,4 +11,10 @@
 <!-- oril-docs:generated -->
 최근 공개 검산 [44853120822-3](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44853120822) · 코드 `e8fa72cc4caecaf5afab952af5d5214baa9c2614` · 공개 오답 5/30 · 소요 101초. 비공개 개선 미입증. 동일 조건 2건, 소요 시간 변화 판단 불가.
 
+main 대상 검토 대기 45건. [PR별 SHA](github.json)
+
+[#330](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/pull/330) · draft · `bfa89dcc28287986e36e5d4f33693e53a8394902`
+
+[hydra-standing.yml](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44867221223) · success · `8fbecb5e813b653213d6c8d95ce7151868779512`
+
 [비교 조건·측정값](../metrics/trends.json) · [근거별 교훈](../memory/lessons.jsonl)
