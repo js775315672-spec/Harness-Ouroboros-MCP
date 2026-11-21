@@ -1,0 +1,22 @@
+name: ORIL slot3 public cycle trend audit
+on:
+  push:
+    branches:
+      - 'oril/slot3-public-cycle-trend-audit-20261121'
+  pull_request:
+    paths:
+      - 'scripts/oril_slot3_public_cycle_trend_audit.py'
+      - 'tests/test_oril_slot3_public_cycle_trend_audit.py'
+      - '.github/workflows/oril-slot3-public-cycle-trend.yml'
+permissions:
+  contents: read
+jobs:
+  offline-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run isolated adversarial suite
+        run: python3 -m unittest discover -s tests -p 'test_oril_slot3_public_cycle_trend_audit.py' -v
