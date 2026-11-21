@@ -2,6 +2,7 @@ name: ORIL v2 slot5 independent public Qwen answer audit (experimental)
 on:
   pull_request:
     paths:
+      - 'scripts/install_qwen_cpu_dependencies.sh'
       - 'scripts/oril_v2_slot5_public_answer_independent_audit.py'
       - 'tests/test_oril_v2_slot5_public_answer_independent_audit.py'
       - 'docs/oril_v2_slot5_public_answer_independent_audit.md'
@@ -18,9 +19,8 @@ jobs:
           persist-credentials: false
       - name: Independent offline recomputation tests
         run: python3 -m unittest discover -s tests -p test_oril_v2_slot5_public_answer_independent_audit.py -v
-      - name: Install pinned pretrained Qwen CPU dependencies
-        run: |
-          python3 -m pip install --disable-pip-version-check 'torch==2.5.1' 'transformers==4.46.3' 'huggingface_hub==0.26.5' 'safetensors==0.4.5'
+      - name: Install pinned Qwen CPU dependencies
+        run: bash scripts/install_qwen_cpu_dependencies.sh
       - name: Real public Qwen paired diagnostic (not LoRA or heldout)
         run: python3 scripts/oril_v2_slot2_pretrained_paired_diagnostic.py --output pretrained_pairs.json
       - name: Independently recompute public exact answers from raw model text

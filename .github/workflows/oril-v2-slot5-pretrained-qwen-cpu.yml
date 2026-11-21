@@ -2,6 +2,7 @@ name: ORIL v2 slot5 actual pretrained Qwen CPU inference (experimental)
 on:
   pull_request:
     paths:
+      - 'scripts/install_qwen_cpu_dependencies.sh'
       - 'scripts/oril_v2_pretrained_qwen_cpu_smoke.py'
       - 'tests/test_oril_v2_pretrained_qwen_cpu_smoke.py'
       - 'docs/oril_v2_slot5_pretrained_qwen_cpu_smoke.md'
@@ -18,10 +19,8 @@ jobs:
           persist-credentials: false
       - name: Run independent offline contract tests
         run: python3 -m unittest discover -s tests -p 'test_oril_v2_pretrained_qwen_cpu_smoke.py' -v
-      - name: Install pinned CPU-only dependencies
-        run: |
-          python3 -m pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-          python3 -m pip install --no-cache-dir transformers==4.46.3 huggingface_hub==0.26.5 safetensors==0.4.5
+      - name: Install pinned Qwen CPU dependencies
+        run: bash scripts/install_qwen_cpu_dependencies.sh
       - name: Execute real pretrained Qwen CPU inference and record weights hash
         env:
           HF_HUB_DISABLE_TELEMETRY: '1'

@@ -2,6 +2,7 @@ name: ORIL v2 slot2 real pretrained Qwen paired prompt diagnostic (experimental)
 on:
   pull_request:
     paths:
+      - 'scripts/install_qwen_cpu_dependencies.sh'
       - 'scripts/oril_v2_slot2_pretrained_paired_diagnostic.py'
       - 'tests/test_oril_v2_slot2_pretrained_paired_diagnostic.py'
       - 'docs/oril_v2_slot2_pretrained_paired_diagnostic.md'
@@ -22,10 +23,8 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_oril_v2_pretrained_qwen_cpu_smoke.py' -v
           python3 -m unittest discover -s tests -p 'test_oril_v2_slot1_pretrained_attention_mask.py' -v
           python3 -m unittest discover -s tests -p 'test_oril_v2_slot2_pretrained_paired_diagnostic.py' -v
-      - name: Install pinned CPU-only dependencies
-        run: |
-          python3 -m pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-          python3 -m pip install --no-cache-dir transformers==4.46.3 huggingface_hub==0.26.5 safetensors==0.4.5
+      - name: Install pinned Qwen CPU dependencies
+        run: bash scripts/install_qwen_cpu_dependencies.sh
       - name: Run actual pretrained CPU prompt pairs
         env:
           HF_HUB_DISABLE_TELEMETRY: '1'

@@ -2,6 +2,7 @@ name: ORIL v2 slot1 pretrained Qwen 30 public pairs (experimental)
 on:
   pull_request:
     paths:
+      - 'scripts/install_qwen_cpu_dependencies.sh'
       - 'scripts/oril_v2_slot1_30_public_qwen_pairs.py'
       - 'tests/test_oril_v2_slot1_30_public_qwen_pairs.py'
       - 'docs/oril_v2_slot1_30_public_qwen_pairs.md'
@@ -20,8 +21,8 @@ jobs:
         run: |
           git rev-parse HEAD
           python3 -m unittest discover -s tests -p test_oril_v2_slot1_30_public_qwen_pairs.py -v
-      - name: Install pinned pretrained CPU dependencies
-        run: python3 -m pip install --disable-pip-version-check 'torch==2.5.1' 'transformers==4.46.3' 'huggingface_hub==0.26.5' 'safetensors==0.4.5'
+      - name: Install pinned Qwen CPU dependencies
+        run: bash scripts/install_qwen_cpu_dependencies.sh
       - name: Execute 60 actual pretrained Qwen CPU calls (public questions only)
         run: python3 scripts/oril_v2_slot1_30_public_qwen_pairs.py --output public_30_pairs.json
       - name: Recompute public answers and totals without trusting summary
