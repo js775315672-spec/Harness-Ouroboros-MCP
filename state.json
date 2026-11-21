@@ -1,1 +1,1 @@
-{"agent": "ouroboros", "checkpoint": null, "cycle": "498b1a7e674a4ef7a5221eff332636f3", "expires": 1795263372.0796337, "generation": 13, "owner": "44901833908/1/9", "pending": null, "phase": "open", "results": {}, "schema": 1, "source": "6b44c67a4f69cdc7cbbd983356e5795a551b48fc"}
+{"agent": "ouroboros", "checkpoint": null, "cycle": "498b1a7e674a4ef7a5221eff332636f3", "expires": 1795263372.0796337, "generation": 13, "owner": "44901833908/1/9", "pending": "qwen-public-trial", "phase": "open", "results": {}, "schema": 1, "source": "6b44c67a4f69cdc7cbbd983356e5795a551b48fc"}
