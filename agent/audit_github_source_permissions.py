@@ -34,7 +34,7 @@ def require(condition, description):
 
 def get(path, *, optional=False):
     request = Request(
-        API_ROOT + path, method="GET",
+        (API_ROOT + path if path else API_ROOT.rstrip("/")), method="GET",
         headers={"Accept": "application/vnd.github+json",
                  "X-GitHub-Api-Version": "2022-11-28",
                  "User-Agent": "OFC-b2-source-permissions-audit",
