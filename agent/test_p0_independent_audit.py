@@ -29,26 +29,20 @@ class IndependentP0Audit(unittest.TestCase):
             r.transact(self.remote, "acquire", "first", 0, self.source)
             r.transact(self.remote, "reserve", "first", 1, self.source, operation)
 
-    def recover(self, operation="merge-1", evidence="verified", verifier=None):
-        return r.recover_verified(self.remote, owner="auditor", source=self.source,
-            operation=operation, evidence=evidence,
-            verifier=verifier or (lambda *args: True))
-
     def test_expired_lease_recovery_and_duplicate_fencing(self):
+        # The public recovery API deliberately rejects arbitrary verifier callbacks.
         self.reserve_expired()
         with patch.object(r.time, "time", return_value=800):
-            result = self.recover()
-            self.assertIsNone(result["pending"])
-            self.assertEqual(result["results"]["merge-1"], "verified")
             with self.assertRaises(r.Blocked):
-                self.recover()
-        self.assertEqual(r.transact(self.remote, "inspect")["results"]["merge-1"], "verified")
+                r.recover_verified(self.remote, owner="auditor", source=self.source,
+                    operation="merge-1", evidence="verified", verifier=lambda *args: True)
+        self.assertEqual(r.transact(self.remote, "inspect")["pending"], "merge-1")
 
     def test_unknown_external_outcome_preserves_pending(self):
         self.reserve_expired()
         with patch.object(r.time, "time", return_value=800):
             with self.assertRaises(r.Blocked):
-                self.recover(verifier=lambda *args: False)
+                r.recover_verified(self.remote, owner='auditor', source=self.source, operation='merge-1', evidence='unknown', verifier=lambda *args: False)
         self.assertEqual(r.transact(self.remote, "inspect")["pending"], "merge-1")
 
     def test_main_drift_blocks_unverified_recovery(self):
@@ -58,22 +52,34 @@ class IndependentP0Audit(unittest.TestCase):
         r.git("push", self.remote, newer + ":refs/heads/main")
         with patch.object(r.time, "time", return_value=800):
             with self.assertRaises(r.Blocked):
-                self.recover()
+                r.recover_verified(self.remote, owner='auditor', source=self.source, operation='merge-1', evidence='verified', verifier=lambda *args: True)
         self.assertEqual(r.transact(self.remote, "inspect")["pending"], "merge-1")
 
     def test_cas_competition_has_single_winner(self):
-        self.reserve_expired()
+        # Exercise the supported authenticated merge-recovery API, not the
+        # forbidden generic callback recovery API.
+        intent = {"base_sha": self.source, "operation_id": "audit-merge"}
+        op = json.dumps(intent, sort_keys=True)
+        with patch.object(r.time, "time", return_value=100):
+            r.transact(self.remote, "acquire", "first", 0, self.source)
+            r.transact(self.remote, "reserve", "first", 1, self.source, op)
+        merged = r.git("commit-tree", r.git("mktree", stdin=""),
+                       "-p", self.source, "-m", "merged")
+        r.git("push", self.remote, merged + ":refs/heads/main")
+        proof = json.dumps({"merge_commit_sha": merged}, sort_keys=True)
         def contender(i):
             try:
-                with patch.object(r.time, "time", return_value=800):
-                    return self.recover(evidence="proof-" + str(i))["results"]["merge-1"]
+                with patch.object(r, "REMOTE", self.remote), patch.object(
+                    r, "verify_github_merge", return_value=True
+                ), patch.object(r.time, "time", return_value=800):
+                    return r.recover_merged_pr(self.remote, owner="auditor-" + str(i),
+                        source=self.source, operation=op, evidence=proof)["generation"]
             except (r.Blocked, subprocess.CalledProcessError):
                 return None
-        # All contenders race the same pending operation; CAS must accept exactly one.
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
             wins = [v for v in pool.map(contender, range(6)) if v is not None]
         self.assertEqual(len(wins), 1)
-        self.assertEqual(r.transact(self.remote, "inspect")["results"]["merge-1"], wins[0])
+        self.assertEqual(r.transact(self.remote, "inspect")["results"][op], proof)
 
     def test_forged_receipt_and_api_outage_fail_closed(self):
         repo = r.REMOTE.removeprefix("https://github.com/").removesuffix(".git")
