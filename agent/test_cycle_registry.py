@@ -192,6 +192,19 @@ with patch('cycle_registry.time.time', return_value=100):
         self.assertEqual(after["generation"], before["generation"])
 
 
+    def test_dev_expired_owner_cannot_record_without_reacquire(self):
+        with patch("cycle_registry.time.time", return_value=100):
+            self.call("acquire")
+            self.call("reserve", value="candidate-2")
+        before = self.call("inspect")
+        with patch("cycle_registry.time.time", return_value=10**12):
+            with self.assertRaisesRegex(Blocked, "inactive lease"):
+                self.call("record", value="candidate-2=forged")
+        after = self.call("inspect")
+        self.assertEqual(after["pending"], before["pending"])
+        self.assertEqual(after["results"], before["results"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
