@@ -24,3 +24,14 @@ main의 P0 검산은 과거 Hydra 승인 9건과 공개 워크로드 해시 3건
 최근 공개 검산 [44853120822-3](https://github.com/js775315672-spec/Harness-Ouroboros-MCP/actions/runs/44853120822) · 코드 `e8fa72cc4caecaf5afab952af5d5214baa9c2614` · 공개 오답 5/30 · 소요 101초. 비공개 개선 미입증. 동일 조건 2건, 소요 시간 변화 판단 불가.
 
 [자동 집계](docs/metrics/trends.json) · [로드맵](docs/roadmap.md)
+
+
+## OFC DEV 12-cycle expansion (unverified)
+
+- Scope: isolated DEV branch only; no OPS registry, main merge, holdout or protected edits.
+- Runner: `agent/dev_cycle_12.py` (maximum 12 sequential candidate/verifier command pairs, wall-clock budget, atomic local checkpoint, stable operation keys).
+- Safety: ambiguous pending blocks replay; failure stops the track; independent command exit 0 is **not** evidence of model intelligence improvement.
+- Tests: `tests/test_dev_cycle_12.py`; Windows/Linux workflow `.github/workflows/ofc-dev-12-cycle.yml`.
+- Evidence: this Draft PR and its head SHA / Actions checks. Current CI outcome: UNKNOWN until completed. Real Qwen runs: NOT_RUN. Protected independent evaluation: NOT_RUN. OPS cycle IDs: UNKNOWN.
+- Limitations: no actual Qwen orchestration or artifact-backed independent evaluation; monetary cost cannot be enforced by this runner, so use only approved zero-cost commands. The runner must not be used for external side effects until operation reconciliation and source provenance gates are verified.
+- Next single action: validate Windows/Linux regression and independently audit pending/restart behavior before enabling any real candidate commands.
