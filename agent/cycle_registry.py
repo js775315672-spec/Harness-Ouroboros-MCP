@@ -105,36 +105,67 @@ def r1_reserve(state, operation):
 
 
 
-def r2_verify_signed_receipt(receipt):
-    """Verify an R2 HMAC attestation before any R1 receipt can be committed.
+def r3_verify_signed_receipt(receipt):
+    """Verify Ed25519 evidence against independently configured PUBLIC keys.
 
-    The secret must be provisioned separately by a trusted external verifier.
-    No secret/unknown key ID => fail closed. This does not itself attest the
-    real-world external effect unless the keyholder independently checked it.
+    No private key is loaded here. Untrusted key IDs, revoked keys, missing
+    trust roots, legacy HMAC signatures and altered payloads fail closed.
+    A signature proves verifier-key possession, not external outcome by itself.
     """
-    import hmac
+    import base64
+    import binascii
+
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    except ImportError as exc:
+        raise Blocked("R3 Ed25519 verifier dependency unavailable") from exc
+
     attestation = receipt.get("attestation")
     if (not isinstance(attestation, dict) or set(attestation) !=
             {"scheme", "key_id", "signature"} or
-            attestation.get("scheme") != "hmac-sha256" or
+            attestation.get("scheme") != "ed25519" or
             not isinstance(attestation.get("key_id"), str) or
-            not isinstance(attestation.get("signature"), str) or
-            not re.fullmatch(r"[0-9a-f]{64}", attestation["signature"])):
-        raise Blocked("R2 signed external attestation required")
-    key_id = os.environ.get("OFC_R2_VERIFIER_KEY_ID", "")
-    key = os.environ.get("OFC_R2_VERIFIER_KEY", "").encode("utf-8")
-    if (not key_id or not hmac.compare_digest(key_id, attestation["key_id"])
-            or len(key) < 32):
-        raise Blocked("R2 trusted verifier key missing or does not match")
+            not re.fullmatch(r"[a-zA-Z0-9_.:-]{8,128}", attestation["key_id"]) or
+            not isinstance(attestation.get("signature"), str)):
+        raise Blocked("R3 Ed25519 attestation required; no algorithm downgrade")
+    raw_trust = os.environ.get("OFC_R3_TRUSTED_KEYS_JSON", "")
+    if not raw_trust:
+        raise Blocked("R3 trusted public key configuration missing")
+    try:
+        trust = json.loads(raw_trust)
+    except (TypeError, ValueError) as exc:
+        raise Blocked("R3 invalid trusted public key configuration") from exc
+    if (not isinstance(trust, dict) or set(trust) !=
+            {"agent", "keys", "revoked"} or trust.get("agent") != AGENT or
+            not isinstance(trust.get("keys"), dict) or
+            not isinstance(trust.get("revoked"), list) or
+            any(not isinstance(x, str) for x in trust["revoked"]) or
+            len(set(trust["revoked"])) != len(trust["revoked"])):
+        raise Blocked("R3 trust root is malformed or not agent-bound")
+    key_id = attestation["key_id"]
+    if key_id in trust["revoked"]:
+        raise Blocked("R3 signing key revoked")
+    encoded_key = trust["keys"].get(key_id)
+    if not isinstance(encoded_key, str):
+        raise Blocked("R3 unknown trusted signing key")
+    try:
+        public_key_bytes = base64.b64decode(encoded_key, validate=True)
+        signature_bytes = base64.b64decode(attestation["signature"], validate=True)
+        if len(public_key_bytes) != 32 or len(signature_bytes) != 64:
+            raise ValueError("unexpected Ed25519 public key/signature length")
+        pubkey = Ed25519PublicKey.from_public_bytes(public_key_bytes)
+    except (ValueError, binascii.Error) as exc:
+        raise Blocked("R3 malformed trusted public key or signature") from exc
     payload = dict(receipt)
     del payload["attestation"]
-    message = (b"OFC-R2-RECEIPT-V1\x00" +
-               AGENT.encode("ascii") + b"\x00" +
+    message = (b"OFC-R3-RECEIPT-V1\x00" + AGENT.encode("ascii") + b"\x00" +
                json.dumps(payload, sort_keys=True, ensure_ascii=False,
                           separators=(",", ":")).encode("utf-8"))
-    expected = hmac.new(key, message, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, attestation["signature"]):
-        raise Blocked("R2 external receipt signature invalid")
+    try:
+        pubkey.verify(signature_bytes, message)
+    except InvalidSignature as exc:
+        raise Blocked("R3 Ed25519 receipt signature invalid") from exc
     return True
 
 
@@ -156,7 +187,7 @@ def r1_record(state, operation, evidence):
             not R1_ID.fullmatch(receipt["receipt_id"]) or
             not isinstance(receipt["proof"], str) or not receipt["proof"].strip()):
         raise Blocked("R1 receipt is not bound to reserved cycle/operation/effect")
-    r2_verify_signed_receipt(receipt)
+    r3_verify_signed_receipt(receipt)
     ledger = r1_ledger(state)
     id_ = intent["operation_id"]
     reserved = ledger["operations"].get(id_)
