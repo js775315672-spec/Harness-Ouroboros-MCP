@@ -1,0 +1,35 @@
+name: OFC R3 independent signature safety
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+jobs:
+  r3:
+    if: ${{ github.event.pull_request.head.ref == 'ofc/p0-expired-lease-recovery-spec-20261122' && github.event.pull_request.head.repo.full_name == github.repository }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact Draft head SHA
+        shell: bash
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - name: Install pinned Ed25519 verifier dependency
+        run: python -m pip install --disable-pip-version-check --only-binary=:all: cryptography==46.0.5
+      - name: Run R3 signed receipt, rotation and global replay attack tests
+        run: python agent/test_r_global_idempotency.py -v
+      - name: Run P0 and C2 isolation regression tests
+        run: |
+          python agent/test_cycle_registry.py -v
+          python agent/test_a1_recovery_safety.py -v
+          python agent/test_p0_independent_audit.py -v
+          python agent/test_c2_registry_safety.py -v
