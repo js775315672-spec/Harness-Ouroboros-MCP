@@ -4,6 +4,7 @@ on:
     paths:
       - 'agent/cycle_registry.py'
       - 'tests/test_ofc_v31_p0_regression.py'
+      - 'tests/test_ofc_v31_isolated_remote.py'
       - '.github/workflows/ofc-v31-dev-p0.yml'
   workflow_dispatch:
 permissions:
@@ -24,4 +25,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Run isolated P0 regression without external effects
-        run: python -m unittest discover -s tests -p test_ofc_v31_p0_regression.py -v
+        run: python -m unittest discover -s tests -p 'test_ofc_v31_*.py' -v
