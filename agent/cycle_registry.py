@@ -100,7 +100,7 @@ def transact(remote, command, owner="", generation=0, source="", value="", ttl=6
     state = {}
     if previous:
         git("fetch", "--quiet", "--no-tags", remote, f"+{REF}:refs/remotes/ofc-registry-cache")
-        state = json.loads(git("show", previous + ":state.json"))
+        state = json.loads(git("show", "refs/remotes/ofc-registry-cache:state.json"))
     if command != "inspect" and heads.get("refs/heads/main") != source:
         raise Blocked("pinned main has changed")
     state, changed = transition(state, command, owner, generation, source, value, time.time(), ttl)
