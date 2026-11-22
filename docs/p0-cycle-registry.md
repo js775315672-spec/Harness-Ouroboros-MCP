@@ -7,3 +7,9 @@ Before each external operation, call `reserve --value KEY` with a stable key sco
 Use `checkpoint --value CHECKPOINT` at each verified stage, `release` for a planned handoff and `complete` after the final record. On budget exhaustion or failure use `stop` while the lease is valid. After expiry a new owner can acquire the existing cycle. Stale owners cannot advance the registry. Every blocked write requires rereading state. An external service that can mutate independently of Git must enforce its own source preconditions and idempotency keys. A successful Git reservation cannot revoke an already issued provider request.
 
 CI runs the registry against temporary bare Git repositories on GitHub-hosted runners. These checks do not call a model, publish a PR as an experiment, or enable the five production schedules.
+
+## GitHub merge receipts v1
+
+Acquire against the current main and call merge_intent with the lease flags and a JSON value containing operation_key, pr_number and expected_head_sha. Set GH_TOKEN or GITHUB_TOKEN for authenticated PR evidence. Use a GitHub merge commit with the expected head SHA precondition. After submitting, call merge_reconcile with the original lease flags and the operation key as its value. After a lost response, reconcile the existing intent before considering any retry of the merge itself.
+
+Reconciliation requires the API's merged commit to be the current main tip with exactly the pinned base and head as its parents. A successful reconciliation atomically records the receipt, saves a checkpoint and closes the old cycle. Acquire a new cycle against the new main. An expired lease, unexpected main or ambiguous result requires operator review. Ordinary record still requires the original main and cannot clear a merge intent.
