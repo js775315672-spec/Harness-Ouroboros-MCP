@@ -5,6 +5,8 @@ on:
       - 'agent/cycle_registry.py'
       - 'agent/pending_reconcile.py'
       - 'agent/actions_evidence.py'
+      - 'agent/artifact_integrity.py'
+      - 'tests/test_ofc_v31_artifact_integrity.py'
       - 'tests/test_ofc_v31_actions_evidence.py'
       - 'tests/test_ofc_v31_pending_reconcile.py'
       - 'tests/test_ofc_v31_p0_regression.py'
