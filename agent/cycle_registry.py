@@ -29,6 +29,24 @@ def transition(state, command, owner, generation, source, value, now, ttl):
         return state, False
     if not owner or not source:
         raise Blocked("owner and pinned source required")
+    if command == "recover":
+        # A recovery is not an acquire: the caller must prove the observed generation.
+        # Never silently resolve a pending external side effect.
+        if not state or state["phase"] != "open":
+            raise Blocked("no recoverable open cycle")
+        if generation != state["generation"]:
+            raise Blocked("stale recovery generation")
+        if source != state["source"]:
+            raise Blocked("source drift during recovery")
+        if state["expires"] > now:
+            raise Blocked("lease has not expired")
+        if state["pending"]:
+            raise Blocked("unresolved external operation: " + state["pending"])
+        if ttl < 1 or ttl > 3600:
+            raise Blocked("lease duration outside 1..3600 seconds")
+        state.update(owner=owner, expires=now + ttl,
+                     generation=state["generation"] + 1)
+        return state, True
     if command == "acquire":
         if ttl < 1 or ttl > 3600:
             raise Blocked("lease duration outside 1..3600 seconds")
@@ -97,7 +115,7 @@ def transact(remote, command, owner="", generation=0, source="", value="", ttl=6
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices="inspect acquire checkpoint reserve record release complete stop".split())
+    parser.add_argument("command", choices="inspect acquire recover checkpoint reserve record release complete stop".split())
     parser.add_argument("--owner", default="")
     parser.add_argument("--generation", type=int, default=0)
     parser.add_argument("--source", default="")
