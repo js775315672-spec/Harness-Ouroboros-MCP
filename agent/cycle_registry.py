@@ -50,6 +50,16 @@ R1_RECEIPT = "OFC-R1-RECEIPT"
 R1_ID = re.compile(r"^[A-Za-z0-9_.:/-]{8,160}$")
 
 
+def r3_reject_duplicate_json_fields(pairs):
+    """Reject ambiguous signed receipts and externally supplied trust roots."""
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise Blocked("duplicate JSON field in signed receipt or trust root")
+        obj[key] = value
+    return obj
+
+
 def r1_ledger(state):
     """Only forward-written R1 tombstones are authoritative; legacy history is not."""
     guard = state.get("r1_guard")
@@ -133,7 +143,7 @@ def r3_verify_signed_receipt(receipt):
     if not raw_trust:
         raise Blocked("R3 trusted public key configuration missing")
     try:
-        trust = json.loads(raw_trust)
+        trust = json.loads(raw_trust, object_pairs_hook=r3_reject_duplicate_json_fields)
     except (TypeError, ValueError) as exc:
         raise Blocked("R3 invalid trusted public key configuration") from exc
     if (not isinstance(trust, dict) or set(trust) !=
@@ -174,7 +184,7 @@ def r1_record(state, operation, evidence):
     if intent is None:
         raise Blocked("merge operations require authenticated recovery, not generic record")
     try:
-        receipt = json.loads(evidence)
+        receipt = json.loads(evidence, object_pairs_hook=r3_reject_duplicate_json_fields)
     except (TypeError, ValueError) as exc:
         raise Blocked("invalid R1 receipt JSON") from exc
     required = {"protocol", "agent", "cycle_id", "operation_id",
