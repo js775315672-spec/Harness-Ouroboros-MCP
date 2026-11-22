@@ -8,6 +8,7 @@ import hmac
 import io
 import re
 import urllib.request
+import urllib.parse
 import zipfile
 from agent import cycle_registry as registry
 
@@ -20,8 +21,17 @@ def download_zip(url: str, token: str = "") -> bytes:
     request = urllib.request.Request(url, method="GET",
         headers={"Accept": "application/vnd.github+json",
                  **({"Authorization": "Bearer " + token} if token else {})})
+    class SafeRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+            if redirected and urllib.parse.urlsplit(newurl).hostname != urllib.parse.urlsplit(req.full_url).hostname:
+                redirected.remove_header('Authorization')
+                redirected.remove_unredirected_header('Authorization')
+            return redirected
+
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        opener = urllib.request.build_opener(SafeRedirect())
+        with opener.open(request, timeout=20) as response:
             data = response.read(MAX_BYTES + 1)
     except (OSError, ValueError) as exc:
         raise registry.Blocked("artifact download failed") from exc
