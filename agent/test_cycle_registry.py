@@ -178,6 +178,20 @@ with patch('cycle_registry.time.time', return_value=100):
         with self.assertRaises(Blocked):
             self.call("acquire", "next")
 
+    def test_dev_expired_pending_never_reexecutes(self):
+        with patch("cycle_registry.time.time", return_value=100):
+            self.call("acquire")
+            self.call("reserve", value="candidate-unique")
+        before = self.call("inspect")
+        with patch("cycle_registry.time.time", return_value=10**12):
+            with self.assertRaises(Blocked):
+                self.call("acquire", owner="new-run")
+        after = self.call("inspect")
+        self.assertEqual(after["pending"], "candidate-unique")
+        self.assertEqual(after["results"], before["results"])
+        self.assertEqual(after["generation"], before["generation"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
