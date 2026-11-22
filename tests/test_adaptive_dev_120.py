@@ -53,5 +53,28 @@ class Adaptive120Tests(unittest.TestCase):
             record_batch(s, {"batch": 1})
         self.assertIsNotNone(s["pending"])
 
+
+    def test_external_execution_requires_verified_provenance_and_budget(self):
+        from agent.adaptive_dev_120 import authorize_external_execution
+        s = new_campaign("Cerberus", "preflight", 10, 0)
+        with self.assertRaisesRegex(RuntimeError, "unverified"):
+            authorize_external_execution(s, predicted_wall_seconds=1, predicted_cost_usd=0)
+        with self.assertRaisesRegex(RuntimeError, "time budget"):
+            authorize_external_execution(s, verified_free_provider=True,
+                evaluator_attested=True, exclusive_lease=True,
+                predicted_wall_seconds=11, predicted_cost_usd=0)
+        with self.assertRaisesRegex(RuntimeError, "cost budget"):
+            authorize_external_execution(s, verified_free_provider=True,
+                evaluator_attested=True, exclusive_lease=True,
+                predicted_wall_seconds=1, predicted_cost_usd=0.01)
+        self.assertTrue(authorize_external_execution(s, verified_free_provider=True,
+            evaluator_attested=True, exclusive_lease=True,
+            predicted_wall_seconds=1, predicted_cost_usd=0))
+        reserve_batch(s, 1, "a"*40)
+        with self.assertRaisesRegex(RuntimeError, "pending"):
+            authorize_external_execution(s, verified_free_provider=True,
+                evaluator_attested=True, exclusive_lease=True,
+                predicted_wall_seconds=1, predicted_cost_usd=0)
+
 if __name__ == "__main__":
     unittest.main()
