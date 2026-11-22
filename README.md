@@ -35,3 +35,12 @@ main의 P0 검산은 과거 Hydra 승인 9건과 공개 워크로드 해시 3건
 - Evidence: this Draft PR and its head SHA / Actions checks. Current CI outcome: UNKNOWN until completed. Real Qwen runs: NOT_RUN. Protected independent evaluation: NOT_RUN. OPS cycle IDs: UNKNOWN.
 - Limitations: no actual Qwen orchestration or artifact-backed independent evaluation; monetary cost cannot be enforced by this runner, so use only approved zero-cost commands. The runner must not be used for external side effects until operation reconciliation and source provenance gates are verified.
 - Next single action: validate Windows/Linux regression and independently audit pending/restart behavior before enabling any real candidate commands.
+
+
+## OFC D-plan: adaptive 120-cycle DEV planner (verification pending)
+
+- A gate: 12-cycle Linux/Windows safety CI passed on the pre-expansion PR head. This is **not** proof of independent model improvement.
+- B DEV files: `agent/adaptive_dev_120.py`, `tests/test_adaptive_dev_120.py`, `.github/workflows/ofc-dev-120-cycle.yml`. Maximum 10 batches × 12 cycles, stable keys, fail-closed pending, bounded budget counters, and independent-evaluation receipt fields.
+- Status: planner committed to this independent Draft PR; new 120-cycle Windows/Linux CI must pass before promotion. The code is a **planner/receipt ledger**, not an external model executor or trusted evaluator. It does not automatically enforce third-party spending or cryptographically authenticate evaluator evidence.
+- C gate: real approved free Qwen calls NOT_RUN; model hash, candidate SHA, evaluator SHA, actual run ID, artifact digest and independent holdout evaluation remain UNKNOWN/NOT_RUN. No OPS lease acquired; no main/protected/registry writes.
+- Next single action: verify 120-cycle CI and harden evidence authentication and real-cost metering before any Qwen execution.
