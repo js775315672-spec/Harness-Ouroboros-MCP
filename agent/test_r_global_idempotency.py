@@ -338,6 +338,22 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
                 self.assertEqual(self.tip(), original_tip)
         self.assertEqual(self.tx("inspect")["pending"], op)
 
+    def test_duplicate_receipt_or_trust_json_keys_fail_closed(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        signed = self.receipt(op)
+        initial_tip = self.tip()
+        forged = signed.replace('"receipt_id":', '"proof": "forged", "receipt_id":', 1)
+        with self.assertRaisesRegex(r.Blocked, "duplicate JSON field"):
+            self.tx("record", value=op + "=" + forged)
+        root = json.dumps(self.r3_trust)
+        repeated_agent = root.replace('"revoked":', '"agent": "forged-agent", "revoked":', 1)
+        with patch.dict(os.environ, {"OFC_R3_TRUSTED_KEYS_JSON": repeated_agent}):
+            with self.assertRaisesRegex(r.Blocked, "duplicate JSON field"):
+                self.tx("record", value=op + "=" + signed)
+        self.assertEqual(self.tip(), initial_tip)
+        self.assertEqual(self.tx("inspect")["pending"], op)
+
     def test_no_success_by_legacy_merge_record_or_callback_recovery(self):
         intent = json.dumps({"repository": "fixture/repo", "pr": 17})
         with self.assertRaises(r.Blocked):
