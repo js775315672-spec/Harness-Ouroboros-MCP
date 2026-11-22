@@ -76,5 +76,24 @@ class Adaptive120Tests(unittest.TestCase):
                 evaluator_attested=True, exclusive_lease=True,
                 predicted_wall_seconds=1, predicted_cost_usd=0)
 
+
+    def test_attested_receipt_rejects_forgery(self):
+        from agent.adaptive_dev_120 import verify_attested_receipt
+        s = new_campaign("Fenrir", "attack", 100)
+        pending = reserve_batch(s, 1, "a"*40)
+        receipt = self.receipt(pending)
+        receipt["run_id"] = 42
+        kw = dict(trusted_evaluator_sha="e"*40,
+                  trusted_evidence_sha256="f"*64, trusted_run_id=42)
+        self.assertTrue(verify_attested_receipt(pending, receipt, **kw))
+        for field, value in (("run_id", 43), ("evidence_sha256", "0"*64),
+                             ("evaluator_sha", "0"*40), ("operation_key", "fake")):
+            forged = dict(receipt)
+            forged[field] = value
+            with self.assertRaises(RuntimeError):
+                verify_attested_receipt(pending, forged, **kw)
+        with self.assertRaises(RuntimeError):
+            verify_attested_receipt(pending, receipt, **dict(kw, trusted_run_id=0))
+
 if __name__ == "__main__":
     unittest.main()
