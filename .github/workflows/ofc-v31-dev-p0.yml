@@ -58,4 +58,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PINNED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: python scripts/verify_live_actions_artifacts.py
+        run: python -m scripts.verify_live_actions_artifacts
