@@ -4,6 +4,8 @@ on:
     paths:
       - 'agent/cycle_registry.py'
       - 'agent/test_c2_registry_safety.py'
+      - 'agent/test_r_global_idempotency.py'
+      - 'docs/OFC_R3_ED25519_VERIFIER.md'
       - 'agent/audit_c2_legacy_reuse.py'
       - 'agent/audit_operational_history.py'
       - '.github/workflows/ofc-c2.yml'
@@ -34,6 +36,10 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      - name: Install pinned R3 Ed25519 dependency
+        run: python -m pip install --disable-pip-version-check --only-binary=:all: cryptography==46.0.5
+      - name: Run R3 isolated Ed25519 replay, forgery, rotation and CAS tests
+        run: python agent/test_r_global_idempotency.py -v
       - name: Run C2 isolated CR pathname and cycle reuse tests
         run: python agent/test_c2_registry_safety.py -v
       - name: Audit actual registry Git history without REST rate-limit
