@@ -26,7 +26,7 @@ def download_zip(url: str, token: str = "") -> bytes:
             redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
             if redirected and urllib.parse.urlsplit(newurl).hostname != urllib.parse.urlsplit(req.full_url).hostname:
                 redirected.remove_header('Authorization')
-                redirected.remove_unredirected_header('Authorization')
+                redirected.unredirected_hdrs.pop('Authorization', None)
             return redirected
 
     try:
