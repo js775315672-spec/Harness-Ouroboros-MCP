@@ -1,0 +1,99 @@
+"""No-model-call contract tests for the 120-cycle DEV planner."""
+import tempfile
+import unittest
+from pathlib import Path
+from agent.adaptive_dev_120 import (
+    MAX_BATCHES, new_campaign, next_batch, reserve_batch, record_batch,
+    stable_key, persist, load,
+)
+
+class Adaptive120Tests(unittest.TestCase):
+    def receipt(self, pending, passed=True, cycles=12, seconds=1, cost=0):
+        return dict(pending, evaluator_sha="e"*40, evidence_sha256="f"*64,
+                    independent_pass=passed, elapsed_seconds=seconds,
+                    cost_usd=cost, cycles_completed=cycles)
+
+    def test_maximum_120_and_stable_keys(self):
+        s = new_campaign("Ouroboros", "test-campaign", 100, 0)
+        for i in range(1, MAX_BATCHES + 1):
+            self.assertEqual(next_batch(s), i)
+            p = reserve_batch(s, i, "a"*40)
+            self.assertEqual(p["operation_key"], stable_key("Ouroboros", "test-campaign", i, 1, "a"*40))
+            record_batch(s, self.receipt(p))
+        self.assertEqual(s["status"], "complete")
+        self.assertEqual(sum(b["cycles_completed"] for b in s["batches"]), 120)
+        self.assertIsNone(next_batch(s))
+
+    def test_pending_and_cross_agent_rejected(self):
+        s = new_campaign("Cerberus", "campaign", 60)
+        reserve_batch(s, 1, "a"*40)
+        with self.assertRaisesRegex(RuntimeError, "pending"):
+            next_batch(s)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "state.json"
+            persist(p, s)
+            with self.assertRaisesRegex(RuntimeError, "ledger mismatch"):
+                load(p, "Fenrir", "campaign")
+
+    def test_fail_closed_and_budget(self):
+        s = new_campaign("Fenrir", "campaign", 10)
+        p = reserve_batch(s, 1, "a"*40)
+        record_batch(s, self.receipt(p, passed=False))
+        self.assertEqual(s["status"], "blocked")
+        self.assertIsNone(next_batch(s))
+        t = new_campaign("Fenrir", "other", 10)
+        p = reserve_batch(t, 1, "b"*40)
+        record_batch(t, self.receipt(p, seconds=11))
+        self.assertEqual(t["status"], "budget_exhausted")
+
+    def test_unverified_receipt_preserves_pending(self):
+        s = new_campaign("Cerberus", "campaign", 60)
+        reserve_batch(s, 1, "a"*40)
+        with self.assertRaises(ValueError):
+            record_batch(s, {"batch": 1})
+        self.assertIsNotNone(s["pending"])
+
+
+    def test_external_execution_requires_verified_provenance_and_budget(self):
+        from agent.adaptive_dev_120 import authorize_external_execution
+        s = new_campaign("Cerberus", "preflight", 10, 0)
+        with self.assertRaisesRegex(RuntimeError, "unverified"):
+            authorize_external_execution(s, predicted_wall_seconds=1, predicted_cost_usd=0)
+        with self.assertRaisesRegex(RuntimeError, "time budget"):
+            authorize_external_execution(s, verified_free_provider=True,
+                evaluator_attested=True, exclusive_lease=True,
+                predicted_wall_seconds=11, predicted_cost_usd=0)
+        with self.assertRaisesRegex(RuntimeError, "cost budget"):
+            authorize_external_execution(s, verified_free_provider=True,
+                evaluator_attested=True, exclusive_lease=True,
+                predicted_wall_seconds=1, predicted_cost_usd=0.01)
+        self.assertTrue(authorize_external_execution(s, verified_free_provider=True,
+            evaluator_attested=True, exclusive_lease=True,
+            predicted_wall_seconds=1, predicted_cost_usd=0))
+        reserve_batch(s, 1, "a"*40)
+        with self.assertRaisesRegex(RuntimeError, "pending"):
+            authorize_external_execution(s, verified_free_provider=True,
+                evaluator_attested=True, exclusive_lease=True,
+                predicted_wall_seconds=1, predicted_cost_usd=0)
+
+
+    def test_attested_receipt_rejects_forgery(self):
+        from agent.adaptive_dev_120 import verify_attested_receipt
+        s = new_campaign("Fenrir", "attack", 100)
+        pending = reserve_batch(s, 1, "a"*40)
+        receipt = self.receipt(pending)
+        receipt["run_id"] = 42
+        kw = dict(trusted_evaluator_sha="e"*40,
+                  trusted_evidence_sha256="f"*64, trusted_run_id=42)
+        self.assertTrue(verify_attested_receipt(pending, receipt, **kw))
+        for field, value in (("run_id", 43), ("evidence_sha256", "0"*64),
+                             ("evaluator_sha", "0"*40), ("operation_key", "fake")):
+            forged = dict(receipt)
+            forged[field] = value
+            with self.assertRaises(RuntimeError):
+                verify_attested_receipt(pending, forged, **kw)
+        with self.assertRaises(RuntimeError):
+            verify_attested_receipt(pending, receipt, **dict(kw, trusted_run_id=0))
+
+if __name__ == "__main__":
+    unittest.main()

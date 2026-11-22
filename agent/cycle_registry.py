@@ -18,8 +18,8 @@ class Blocked(Exception):
 def git(*args, stdin=None):
     return subprocess.run(
         ["git", "-c", "user.name=OFC registry", "-c", "user.email=ofc@users.noreply.github.com", *args],
-        input=stdin, text=True, capture_output=True, check=True,
-    ).stdout.strip()
+        input=stdin.encode("utf-8") if stdin is not None else None, capture_output=True, check=True,
+    ).stdout.decode("utf-8").strip()
 
 
 def transition(state, command, owner, generation, source, value, now, ttl):
@@ -29,6 +29,24 @@ def transition(state, command, owner, generation, source, value, now, ttl):
         return state, False
     if not owner or not source:
         raise Blocked("owner and pinned source required")
+    if command == "recover":
+        # A recovery is not an acquire: the caller must prove the observed generation.
+        # Never silently resolve a pending external side effect.
+        if not state or state["phase"] != "open":
+            raise Blocked("no recoverable open cycle")
+        if generation != state["generation"]:
+            raise Blocked("stale recovery generation")
+        if source != state["source"]:
+            raise Blocked("source drift during recovery")
+        if state["expires"] > now:
+            raise Blocked("lease has not expired")
+        if state["pending"]:
+            raise Blocked("unresolved external operation: " + state["pending"])
+        if ttl < 1 or ttl > 3600:
+            raise Blocked("lease duration outside 1..3600 seconds")
+        state.update(owner=owner, expires=now + ttl,
+                     generation=state["generation"] + 1)
+        return state, True
     if command == "acquire":
         if ttl < 1 or ttl > 3600:
             raise Blocked("lease duration outside 1..3600 seconds")
@@ -81,8 +99,11 @@ def transact(remote, command, owner="", generation=0, source="", value="", ttl=6
     previous = heads.get(REF)
     state = {}
     if previous:
-        git("fetch", "--no-write-fetch-head", "--quiet", "--no-tags", remote, previous)
-        state = json.loads(git("show", previous + ":state.json"))
+        git("fetch", "--quiet", "--no-tags", remote, f"+{REF}:refs/remotes/ofc-registry-cache")
+        try:
+            state = json.loads(git("show", "refs/remotes/ofc-registry-cache:state.json"))
+        except subprocess.CalledProcessError as exc:
+            raise Blocked("registry read failed: " + (exc.stderr or str(exc))) from exc
     if command != "inspect" and heads.get("refs/heads/main") != source:
         raise Blocked("pinned main has changed")
     state, changed = transition(state, command, owner, generation, source, value, time.time(), ttl)
@@ -97,7 +118,7 @@ def transact(remote, command, owner="", generation=0, source="", value="", ttl=6
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices="inspect acquire checkpoint reserve record release complete stop".split())
+    parser.add_argument("command", choices="inspect acquire recover checkpoint reserve record release complete stop".split())
     parser.add_argument("--owner", default="")
     parser.add_argument("--generation", type=int, default=0)
     parser.add_argument("--source", default="")

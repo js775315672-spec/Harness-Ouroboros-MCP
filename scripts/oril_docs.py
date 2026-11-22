@@ -225,8 +225,17 @@ def trends(rows):
 
 
 def section(path, content):
-    prefix = path.read_text(encoding="utf-8").split(MARK)[0].rstrip()
-    path.write_bytes((prefix + "\n\n" + MARK + "\n" + content + "\n").encode())
+    original = path.read_text(encoding="utf-8")
+    prefix = original.split(MARK)[0].rstrip()
+    # README contains independently maintained DEV audit sections after the ORIL
+    # generated summary. Preserve those sections on every documentation replay.
+    suffix = ""
+    if path == Path("README.md") and MARK in original:
+        remainder = original.split(MARK, 1)[1]
+        match = re.search(r"(?m)^## OFC DEV 12-cycle expansion", remainder)
+        if match:
+            suffix = "\n\n" + remainder[match.start():].rstrip("\n") + "\n"
+    path.write_bytes((prefix + "\n\n" + MARK + "\n" + content + "\n" + suffix).encode())
 
 
 def generate(incoming):
