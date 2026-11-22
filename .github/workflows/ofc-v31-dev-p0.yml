@@ -1,0 +1,27 @@
+name: OFC v3.1 DEV P0 regression
+on:
+  pull_request:
+    paths:
+      - 'agent/cycle_registry.py'
+      - 'tests/test_ofc_v31_p0_regression.py'
+      - '.github/workflows/ofc-v31-dev-p0.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.11']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run isolated P0 regression without external effects
+        run: python -m unittest discover -s tests -p test_ofc_v31_p0_regression.py -v
