@@ -100,7 +100,10 @@ def transact(remote, command, owner="", generation=0, source="", value="", ttl=6
     state = {}
     if previous:
         git("fetch", "--quiet", "--no-tags", remote, f"+{REF}:refs/remotes/ofc-registry-cache")
-        state = json.loads(git("show", "refs/remotes/ofc-registry-cache:state.json"))
+        try:
+            state = json.loads(git("show", "refs/remotes/ofc-registry-cache:state.json"))
+        except subprocess.CalledProcessError as exc:
+            raise Blocked("registry read failed: " + (exc.stderr or str(exc))) from exc
     if command != "inspect" and heads.get("refs/heads/main") != source:
         raise Blocked("pinned main has changed")
     state, changed = transition(state, command, owner, generation, source, value, time.time(), ttl)
