@@ -11,6 +11,7 @@ on:
       - 'agent/test_c2_registry_safety.py'
       - 'agent/test_r_global_idempotency.py'
       - 'docs/OFC_R2_SIGNED_RECEIPTS.md'
+      - 'docs/OFC_R3_ED25519_VERIFIER.md'
       - '.github/workflows/ofc-registry.yml'
 permissions:
   contents: read
