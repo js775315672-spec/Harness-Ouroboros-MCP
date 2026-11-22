@@ -316,6 +316,28 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
             self.tx("record", value=op + "=" + json.dumps(signed))
         self.assertIsNone(self.tx("inspect")["pending"])
 
+    def test_malformed_or_cross_agent_trust_config_fails_closed(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        signed = self.receipt(op)
+        original_tip = self.tip()
+        cases = [
+            "{not-json",
+            json.dumps({"agent": "other-agent", "keys": self.r3_trust["keys"],
+                        "revoked": []}),
+            json.dumps({"agent": r.AGENT, "keys": {self.r3_key_id: "bad-base64%%%"},
+                        "revoked": []}),
+            json.dumps({"agent": r.AGENT, "keys": self.r3_trust["keys"],
+                        "revoked": [self.r3_key_id, self.r3_key_id]}),
+        ]
+        for config in cases:
+            with self.subTest(config=config):
+                with patch.dict(os.environ, {"OFC_R3_TRUSTED_KEYS_JSON": config}):
+                    with self.assertRaises(r.Blocked):
+                        self.tx("record", value=op + "=" + signed)
+                self.assertEqual(self.tip(), original_tip)
+        self.assertEqual(self.tx("inspect")["pending"], op)
+
     def test_no_success_by_legacy_merge_record_or_callback_recovery(self):
         intent = json.dumps({"repository": "fixture/repo", "pr": 17})
         with self.assertRaises(r.Blocked):
