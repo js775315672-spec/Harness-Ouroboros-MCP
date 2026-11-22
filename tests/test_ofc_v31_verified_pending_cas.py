@@ -114,5 +114,71 @@ class VerifiedPendingCASTests(unittest.TestCase):
         with self.assertRaises(registry.Blocked):
             verified_receipt(artifact, **kwargs)
 
+
+    def test_expired_lease_preserves_pending_and_blocks_record(self):
+        from unittest.mock import patch
+        before = registry.transact(self.remote, "inspect")
+        with patch.object(registry.time, "time", return_value=before["expires"] + 1):
+            with self.assertRaises(registry.Blocked):
+                self.commit()
+            with self.assertRaises(registry.Blocked):
+                registry.transact(self.remote, "recover", owner="new-owner",
+                    generation=self.generation, source=self.source, ttl=600)
+        self.assertEqual(registry.transact(self.remote, "inspect"), before)
+
+    def test_duplicate_receipt_after_restart_cannot_rewrite(self):
+        first = self.commit()
+        original_ref = git("ls-remote", self.remote, registry.REF)
+        for _ in range(2):
+            with self.assertRaises(registry.Blocked):
+                self.commit()
+        self.assertEqual(git("ls-remote", self.remote, registry.REF), original_ref)
+        self.assertEqual(registry.transact(self.remote, "inspect"), first)
+
+    def test_concurrent_processes_only_one_cas_receipt_wins(self):
+        # Separate Git checkouts and OS processes: no shared cwd or Python state.
+        from concurrent.futures import ThreadPoolExecutor
+        from pathlib import Path
+        import sys
+        import textwrap
+        root = Path(self.tmp.name)
+        script = root / "worker.py"
+        script.write_text(textwrap.dedent("""
+            import os, sys, json
+            sys.path.insert(0, sys.argv[1])
+            from agent import cycle_registry as registry
+            from agent.pending_reconcile import Observation
+            from agent.verified_pending_cas import reconcile_to_isolated_remote
+            remote, owner, generation, source, pending = sys.argv[2:]
+            observation = Observation(pending, source, "confirmed", '{"verified":true}')
+            try:
+                result = reconcile_to_isolated_remote(remote, owner=owner,
+                    generation=int(generation), source=source, now=__import__("time").time(),
+                    lookup=lambda _: observation, verify=lambda _: True,
+                    expected_pending=pending)
+                print("WIN", result["results"][pending])
+            except (registry.Blocked, subprocess.CalledProcessError) as exc:
+                print("BLOCKED", type(exc).__name__)
+        """).replace("import os, sys, json", "import os, sys, json, subprocess"))
+        source_root = str(Path(__file__).resolve().parents[1])
+        def contender(index):
+            clone = root / ("contender-" + str(index))
+            git("clone", "--quiet", self.remote, clone)
+            git("checkout", "-q", "main", cwd=clone)
+            return subprocess.run([sys.executable, str(script), source_root,
+                self.remote, self.owner, str(self.generation), self.source,
+                self.pending], cwd=clone, text=True, capture_output=True,
+                timeout=30)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(contender, (1, 2)))
+        for result in outcomes:
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sum("WIN " in r.stdout for r in outcomes), 1,
+                         [(r.stdout, r.stderr) for r in outcomes])
+        self.assertEqual(sum("BLOCKED " in r.stdout for r in outcomes), 1)
+        final = registry.transact(self.remote, "inspect")
+        self.assertIsNone(final["pending"])
+        self.assertEqual(final["results"][self.pending], self.receipt)
+
 if __name__ == "__main__":
     unittest.main()
