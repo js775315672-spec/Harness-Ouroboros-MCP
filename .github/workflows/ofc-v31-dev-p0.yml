@@ -15,6 +15,7 @@ on:
       - 'tests/test_ofc_v31_adversarial_cas.py'
       - 'scripts/ofc_v31_cas_stress.py'
       - 'tests/test_ofc_v31_p0_regression.py'
+      - 'tests/test_ofc_v31_d_recovery.py'
       - 'tests/test_ofc_v31_isolated_remote.py'
       - '.github/workflows/ofc-v31-dev-p0.yml'
   workflow_dispatch:
