@@ -1,6 +1,7 @@
 name: C2 Git registry safety
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     paths:
       - 'agent/cycle_registry.py'
       - 'agent/test_c2_registry_safety.py'
