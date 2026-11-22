@@ -11,7 +11,7 @@ from agent.artifact_integrity import verify_zip, download_zip
 
 repo = os.environ["GITHUB_REPOSITORY"]
 run_id = int(os.environ["GITHUB_RUN_ID"])
-sha = os.environ["GITHUB_SHA"]
+sha = os.environ["PINNED_HEAD_SHA"]
 token = os.environ["GITHUB_TOKEN"]
 prefix = "ofc-v31-p0-"
 
