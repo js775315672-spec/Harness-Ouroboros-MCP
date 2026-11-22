@@ -34,6 +34,8 @@ jobs:
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Install pinned Ed25519 verifier dependency
+        run: python -m pip install --disable-pip-version-check --only-binary=:all: cryptography==46.0.5
       - name: Run P0 registry regression tests
         run: |
           python agent/test_cycle_registry.py -v
@@ -42,7 +44,7 @@ jobs:
         run: python agent/test_p0_independent_audit.py -v
       - name: C2 isolated Windows CR and operation reuse safety tests
         run: python agent/test_c2_registry_safety.py -v
-      - name: R1/R2 signed receipt, cross-cycle replay and CAS safety
+      - name: R1/R3 Ed25519 receipt, cross-cycle replay and CAS safety
         run: python agent/test_r_global_idempotency.py -v
       - name: Read-only audit of real operational registry history
         env:
