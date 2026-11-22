@@ -6,6 +6,7 @@ on:
       - 'agent/pending_reconcile.py'
       - 'agent/actions_evidence.py'
       - 'agent/artifact_integrity.py'
+      - 'scripts/verify_live_actions_artifacts.py'
       - 'tests/test_ofc_v31_artifact_integrity.py'
       - 'tests/test_ofc_v31_actions_evidence.py'
       - 'tests/test_ofc_v31_pending_reconcile.py'
@@ -15,6 +16,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   isolated-regression:
     strategy:
@@ -32,3 +34,28 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Run isolated P0 regression without external effects
         run: python -m unittest discover -s tests -p 'test_ofc_v31_*.py' -v
+      - name: Prepare deterministic evidence
+        shell: bash
+        run: |
+          mkdir -p ofc-evidence
+          printf '%s\\n' 'run_id=${{ github.run_id }}' 'head_sha=${{ github.event.pull_request.head.sha || github.sha }}' 'os=${{ matrix.os }}' > ofc-evidence/provenance.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ofc-v31-p0-${{ matrix.os }}
+          path: ofc-evidence/provenance.txt
+          if-no-files-found: error
+  verify-live-artifacts:
+    needs: isolated-regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download real ZIPs and compare SHA-256 digests
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PINNED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python scripts/verify_live_actions_artifacts.py
