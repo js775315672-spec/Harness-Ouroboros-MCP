@@ -1,6 +1,7 @@
 name: P0 registry checks
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     paths:
       - 'agent/cycle_registry.py'
       - 'agent/test_cycle_registry.py'
