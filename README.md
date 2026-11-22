@@ -55,3 +55,8 @@ main의 P0 검산은 과거 Hydra 승인 9건과 공개 워크로드 해시 3건
 - Evidence limitations: test suite checks deterministic planner bounds, pending replay block, independent-agent ledger separation, fail-closed receipts and budget counters. It does not prove real Qwen inference, authenticated evaluation artifacts, real spend enforcement, or intelligence gains.
 - New README commit changes PR head: verify the new head separately before final gate promotion.
 - OPS registry / PROTECTED / main: unchanged. No automatic merge.
+
+### OFC C-gate read-only artifact verification (2026-11-23)
+- DEV-only: `agent/github_artifact_evidence.py` fetches GitHub run and artifact metadata using a separately provided read-only token; verifies repository, exact head SHA, successful completed run, artifact binding, expiry and SHA-256 of downloaded ZIP (50 MB limit).
+- Windows/Linux test: `tests/test_github_artifact_evidence.py` (mock transport). The workflow executes both planner and provenance tests. A mocked PASS is **not** a live authenticated artifact verification.
+- **BLOCKED** until the newest CI for this exact README head passes on both OSes, a real artifact is available and independently authenticated, lease and zero-cost provider are verified. No real Qwen calls, independent improvements, or operational cycles are claimed.
