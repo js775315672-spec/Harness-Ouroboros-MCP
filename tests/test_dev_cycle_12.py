@@ -27,7 +27,8 @@ class DevCycle12Tests(unittest.TestCase):
             self.assertEqual(state["status"], "failed")
             self.assertEqual(len(state["cycles"]), 0)
             self.assertEqual(state["pending"]["cycle"], 1)
-            self.assertEqual(len(run(p, "Ouroboros", OK, BAD, 12, 60)["cycles"]), 0)
+            with self.assertRaisesRegex(RuntimeError, "ambiguous pending"):
+                run(p, "Ouroboros", OK, BAD, 12, 60)
 
     def test_ambiguous_pending_never_retries(self):
         with tempfile.TemporaryDirectory() as d:
