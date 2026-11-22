@@ -127,3 +127,28 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def authorize_external_execution(state, *, verified_free_provider=False,
+                                 evaluator_attested=False, exclusive_lease=False,
+                                 predicted_wall_seconds=None, predicted_cost_usd=None):
+    """Strict preflight: no external calls without proven free execution and lease.
+
+    This is a gate, not a Qwen connector or proof of independent evaluation.
+    """
+    import math
+    if state.get("pending") is not None or state.get("status") != "ready":
+        raise RuntimeError("execution blocked: pending or non-ready state")
+    if not (verified_free_provider and evaluator_attested and exclusive_lease):
+        raise RuntimeError("execution blocked: provider/evaluator/lease unverified")
+    if predicted_wall_seconds is None or predicted_cost_usd is None:
+        raise RuntimeError("execution blocked: unmeasured budget")
+    if not all(isinstance(v, (int, float)) and math.isfinite(v) and v >= 0
+               for v in (predicted_wall_seconds, predicted_cost_usd)):
+        raise RuntimeError("execution blocked: invalid budget estimate")
+    if state["elapsed_seconds"] + predicted_wall_seconds > state["max_wall_seconds"]:
+        raise RuntimeError("execution blocked: time budget")
+    if state["spent_usd"] + predicted_cost_usd > state["max_cost_usd"]:
+        raise RuntimeError("execution blocked: cost budget")
+    if predicted_cost_usd != 0:
+        raise RuntimeError("execution blocked: paid calls not approved")
+    return True
