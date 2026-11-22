@@ -12,6 +12,7 @@ on:
       - 'tests/test_ofc_v31_actions_evidence.py'
       - 'tests/test_ofc_v31_pending_reconcile.py'
       - 'tests/test_ofc_v31_verified_pending_cas.py'
+      - 'tests/test_ofc_v31_adversarial_cas.py'
       - 'tests/test_ofc_v31_p0_regression.py'
       - 'tests/test_ofc_v31_isolated_remote.py'
       - '.github/workflows/ofc-v31-dev-p0.yml'
