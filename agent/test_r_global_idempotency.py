@@ -3,10 +3,9 @@
 Every Git operation runs against a newly created disposable bare repository.
 No production registry, main branch, external execution or real merge is used.
 """
+import base64
 import concurrent.futures
 import copy
-import hashlib
-import hmac
 import json
 import os
 import pathlib
@@ -14,6 +13,9 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import cycle_registry as r
 
@@ -28,11 +30,17 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
                             "-m", "R1 isolated baseline")
         r.git("push", self.remote, self.source + ":refs/heads/main")
         self.first = r.transact(self.remote, "acquire", "worker", 0, self.source)
-        # Isolated verifier fixture. Never set a production attestation secret.
-        self.r2_fixture_key = ("R2-TEST-KEY-ONLY:" + r.AGENT + ":" + "z" * 40)
+        # Fixture signer exists ONLY in this isolated test, never in core.
+        self.r3_private = Ed25519PrivateKey.generate()
+        self.r3_key_id = "isolated-ed25519-key-0001"
+        self.r3_public_b64 = base64.b64encode(self.r3_private.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw)).decode("ascii")
+        self.r3_trust = {"agent": r.AGENT,
+                         "keys": {self.r3_key_id: self.r3_public_b64},
+                         "revoked": []}
         fixture = patch.dict(os.environ, {
-            "OFC_R2_VERIFIER_KEY": self.r2_fixture_key,
-            "OFC_R2_VERIFIER_KEY_ID": "isolated-test-verifier"})
+            "OFC_R3_TRUSTED_KEYS_JSON": json.dumps(self.r3_trust)})
         fixture.start()
         self.addCleanup(fixture.stop)
 
@@ -51,14 +59,13 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
         value.update({"protocol": r.R1_RECEIPT, "receipt_id": receipt,
                       "proof": "ISOLATED TEST FIXTURE: no external execution"})
         value.update(overrides)
-        message = (b"OFC-R2-RECEIPT-V1\x00" +
+        message = (b"OFC-R3-RECEIPT-V1\x00" +
                    r.AGENT.encode("ascii") + b"\x00" +
                    json.dumps(value, sort_keys=True, ensure_ascii=False,
                               separators=(",", ":")).encode("utf-8"))
-        sig = hmac.new(self.r2_fixture_key.encode("utf-8"), message,
-                       hashlib.sha256).hexdigest()
-        value["attestation"] = {"scheme": "hmac-sha256",
-                                "key_id": "isolated-test-verifier",
+        sig = base64.b64encode(self.r3_private.sign(message)).decode("ascii")
+        value["attestation"] = {"scheme": "ed25519",
+                                "key_id": self.r3_key_id,
                                 "signature": sig}
         return json.dumps(value, sort_keys=True)
 
@@ -204,21 +211,40 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
     def test_signature_is_cryptographically_bound_to_independent_agent_domain(self):
         op = self.op()
         good = json.loads(self.receipt(op))
-        self.assertTrue(r.r2_verify_signed_receipt(good))
-        with patch.object(r, "AGENT", "unrelated-agent"):
+        self.assertTrue(r.r3_verify_signed_receipt(good))
+        other_agent = "unrelated-agent"
+        other_trust = dict(self.r3_trust, agent=other_agent)
+        with patch.object(r, "AGENT", other_agent), patch.dict(
+                os.environ, {"OFC_R3_TRUSTED_KEYS_JSON": json.dumps(other_trust)}):
             with self.assertRaisesRegex(r.Blocked, "signature invalid"):
-                r.r2_verify_signed_receipt(good)
+                r.r3_verify_signed_receipt(good)
 
-    def test_wrong_signing_secret_and_key_rotation_block(self):
+    def test_wrong_public_key_and_key_rotation_block(self):
         op = self.op()
         self.tx("reserve", value=op)
         signed = self.receipt(op)
         before = self.tip()
-        with patch.dict(os.environ, {"OFC_R2_VERIFIER_KEY": "other-secret-" + "x" * 48}):
+        attacker = Ed25519PrivateKey.generate()
+        attacker_pub = base64.b64encode(attacker.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw)).decode("ascii")
+        wrong_trust = {"agent": r.AGENT,
+                       "keys": {self.r3_key_id: attacker_pub}, "revoked": []}
+        with patch.dict(os.environ, {
+                "OFC_R3_TRUSTED_KEYS_JSON": json.dumps(wrong_trust)}):
             with self.assertRaisesRegex(r.Blocked, "signature invalid"):
                 self.tx("record", value=op + "=" + signed)
-        with patch.dict(os.environ, {"OFC_R2_VERIFIER_KEY_ID": "rotated-key"}):
-            with self.assertRaisesRegex(r.Blocked, "trusted verifier key missing"):
+        rotated = {"agent": r.AGENT, "keys": {"new-rotated-key-0002": attacker_pub},
+                   "revoked": [self.r3_key_id]}
+        with patch.dict(os.environ, {
+                "OFC_R3_TRUSTED_KEYS_JSON": json.dumps(rotated)}):
+            with self.assertRaisesRegex(r.Blocked, "signing key revoked"):
+                self.tx("record", value=op + "=" + signed)
+        unknown = {"agent": r.AGENT, "keys": {"new-rotated-key-0002": attacker_pub},
+                   "revoked": []}
+        with patch.dict(os.environ, {
+                "OFC_R3_TRUSTED_KEYS_JSON": json.dumps(unknown)}):
+            with self.assertRaisesRegex(r.Blocked, "unknown trusted signing key"):
                 self.tx("record", value=op + "=" + signed)
         self.assertEqual(before, self.tip())
         self.assertEqual(self.tx("inspect")["pending"], op)
@@ -228,8 +254,8 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
         self.tx("reserve", value=op)
         signed = self.receipt(op)
         before = self.tip()
-        with patch.dict(os.environ, {"OFC_R2_VERIFIER_KEY": ""}):
-            with self.assertRaisesRegex(r.Blocked, "trusted verifier key missing"):
+        with patch.dict(os.environ, {"OFC_R3_TRUSTED_KEYS_JSON": ""}):
+            with self.assertRaisesRegex(r.Blocked, "trusted public key configuration missing"):
                 self.tx("record", value=op + "=" + signed)
         self.assertEqual(self.tip(), before)
         self.assertEqual(self.tx("inspect")["pending"], op)
@@ -243,6 +269,52 @@ class R1GlobalIdempotencyTests(unittest.TestCase):
             with self.assertRaises(r.Blocked):
                 self.tx("record", value=op + "=" + json.dumps(good, sort_keys=True))
         self.assertEqual(self.tip(), before)
+
+
+    def test_hmac_downgrade_and_supplied_attacker_public_key_are_blocked(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        valid = json.loads(self.receipt(op))
+        before = self.tip()
+        downgraded = dict(valid)
+        downgraded["attestation"] = {
+            "scheme": "hmac-sha256", "key_id": self.r3_key_id,
+            "signature": "f" * 64}
+        injected = dict(valid)
+        injected["attestation"] = dict(valid["attestation"],
+                                       public_key=self.r3_public_b64)
+        for attempt in (downgraded, injected):
+            with self.assertRaisesRegex(r.Blocked, "Ed25519 attestation required"):
+                self.tx("record", value=op + "=" + json.dumps(attempt))
+            self.assertEqual(before, self.tip())
+
+    def test_rotation_allows_new_trusted_key_without_accepting_revoked_key(self):
+        op = self.op()
+        self.tx("reserve", value=op)
+        old_receipt = self.receipt(op)
+        replacement = Ed25519PrivateKey.generate()
+        replacement_pub = base64.b64encode(replacement.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw)).decode("ascii")
+        new_id = "independent-verifier-key-0002"
+        trust = {"agent": r.AGENT,
+                 "keys": {self.r3_key_id: self.r3_public_b64,
+                          new_id: replacement_pub},
+                 "revoked": [self.r3_key_id]}
+        signed = json.loads(old_receipt)
+        signed.pop("attestation")
+        message = (b"OFC-R3-RECEIPT-V1\x00" + r.AGENT.encode("ascii") + b"\x00" +
+                   json.dumps(signed, sort_keys=True, ensure_ascii=False,
+                              separators=(",", ":")).encode("utf-8"))
+        signed["attestation"] = {
+            "scheme": "ed25519", "key_id": new_id,
+            "signature": base64.b64encode(replacement.sign(message)).decode("ascii")}
+        with patch.dict(os.environ, {
+                "OFC_R3_TRUSTED_KEYS_JSON": json.dumps(trust)}):
+            with self.assertRaisesRegex(r.Blocked, "signing key revoked"):
+                self.tx("record", value=op + "=" + old_receipt)
+            self.tx("record", value=op + "=" + json.dumps(signed))
+        self.assertIsNone(self.tx("inspect")["pending"])
 
     def test_no_success_by_legacy_merge_record_or_callback_recovery(self):
         intent = json.dumps({"repository": "fixture/repo", "pr": 17})
