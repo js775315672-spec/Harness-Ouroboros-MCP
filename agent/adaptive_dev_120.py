@@ -152,3 +152,31 @@ def authorize_external_execution(state, *, verified_free_provider=False,
     if predicted_cost_usd != 0:
         raise RuntimeError("execution blocked: paid calls not approved")
     return True
+
+def verify_attested_receipt(pending, receipt, *, trusted_evaluator_sha,
+                            trusted_evidence_sha256, trusted_run_id):
+    """Compare evidence against independently obtained trusted values.
+
+    Trusted arguments MUST come from a separately authenticated GitHub run /
+    downloaded artifact, never from the candidate's own receipt. This helper
+    does not fetch or authenticate that evidence by itself.
+    """
+    import re
+    if not isinstance(receipt, dict) or not isinstance(pending, dict):
+        raise RuntimeError("untrusted receipt")
+    for k in ("batch", "candidate_sha", "operation_key"):
+        if receipt.get(k) != pending.get(k):
+            raise RuntimeError("receipt mismatch")
+    if not isinstance(trusted_run_id, int) or trusted_run_id <= 0:
+        raise RuntimeError("untrusted run ID")
+    if not re.fullmatch(r"[0-9a-f]{40}", trusted_evaluator_sha or ""):
+        raise RuntimeError("untrusted evaluator SHA")
+    if not re.fullmatch(r"[0-9a-f]{64}", trusted_evidence_sha256 or ""):
+        raise RuntimeError("untrusted evidence digest")
+    if (receipt.get("evaluator_sha") != trusted_evaluator_sha or
+        receipt.get("evidence_sha256") != trusted_evidence_sha256 or
+        receipt.get("run_id") != trusted_run_id):
+        raise RuntimeError("forged or mismatched evaluation provenance")
+    if receipt.get("independent_pass") is not True:
+        raise RuntimeError("evaluation did not pass")
+    return True
