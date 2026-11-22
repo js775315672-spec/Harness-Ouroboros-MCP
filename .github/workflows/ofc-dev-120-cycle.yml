@@ -1,0 +1,26 @@
+name: OFC DEV 120-cycle planner safety
+on:
+  pull_request:
+    paths:
+      - 'agent/adaptive_dev_120.py'
+      - 'tests/test_adaptive_dev_120.py'
+      - '.github/workflows/ofc-dev-120-cycle.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safety:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify adaptive 120-cycle fail-closed planner
+        run: python -m unittest discover -s tests -p 'test_adaptive_dev_120.py' -v
