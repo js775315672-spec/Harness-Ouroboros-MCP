@@ -8,7 +8,6 @@ permissions:
   contents: read
 jobs:
   r3:
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/ofc/p0-expired-lease-recovery-spec-20261122') || (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'ofc/p0-expired-lease-recovery-spec-20261122' && github.event.pull_request.head.repo.full_name == github.repository) }}
     strategy:
       fail-fast: false
       matrix:
@@ -16,6 +15,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     steps:
+      - name: Enforce same-repository Draft scope before checkout
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          SOURCE_REF: ${{ github.head_ref || github.ref_name }}
+          SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          test "$SOURCE_REF" = 'ofc/p0-expired-lease-recovery-spec-20261122'
+          test "$SOURCE_REPO" = "$TARGET_REPO"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
