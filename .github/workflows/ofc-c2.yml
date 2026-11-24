@@ -1,0 +1,57 @@
+name: C2 Git registry safety
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    paths:
+      - 'agent/cycle_registry.py'
+      - 'agent/test_c2_registry_safety.py'
+      - 'agent/test_r_global_idempotency.py'
+      - 'docs/OFC_R3_ED25519_VERIFIER.md'
+      - 'agent/audit_c2_legacy_reuse.py'
+      - 'agent/audit_operational_history.py'
+      - '.github/workflows/ofc-c2.yml'
+permissions:
+  contents: read
+jobs:
+  c2:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Checkout live registry ref read-only
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ofc-cycle-registry-v1
+          path: c2-ledger
+          fetch-depth: 256
+      - name: Verify exact reviewed source
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      - name: Install pinned R3 Ed25519 dependency
+        run: python -m pip install --disable-pip-version-check --only-binary=:all: cryptography==46.0.5
+      - name: Run R3 isolated Ed25519 replay, forgery, rotation and CAS tests
+        run: python agent/test_r_global_idempotency.py -v
+      - name: Run C2 isolated CR pathname and cycle reuse tests
+        run: python agent/test_c2_registry_safety.py -v
+      - name: Audit actual registry Git history without REST rate-limit
+        env:
+          OFC_AGENT: ouroboros
+          OFC_EXPECTED_MAIN: ${{ github.event.pull_request.base.sha }}
+        run: python agent/audit_c2_legacy_reuse.py
+      - name: Upload C2 immutable Git audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ofc-c2-live-git-${{ matrix.os }}
+          path: artifacts/ofc-c2-live-git-audit.json
+          if-no-files-found: warn

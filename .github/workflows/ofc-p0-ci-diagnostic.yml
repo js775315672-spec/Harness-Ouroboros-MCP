@@ -1,0 +1,57 @@
+name: OFC P0 isolated CI diagnostic
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ofc-p0-ci-diagnostic.yml'
+  push:
+    branches:
+      - 'ofc/p0-expired-lease-recovery-spec-20261122'
+permissions:
+  contents: read
+jobs:
+  runner-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - name: Verify runner starts without checkout or dependencies
+        shell: bash
+        run: |
+          echo "runner=$RUNNER_OS"
+          echo "event=$GITHUB_EVENT_NAME"
+          echo "run=$GITHUB_RUN_ID"
+          echo "sha=$GITHUB_SHA"
+      - name: Checkout exact candidate for isolated regression
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Isolated R3 regression
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: |
+          python -m pip install --only-binary=:all: cryptography==46.0.5
+          python agent/test_r_global_idempotency.py -v
+      - name: Isolated test_cycle_registry
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_cycle_registry.py -v
+      - name: Isolated test_a1_recovery_safety
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_a1_recovery_safety.py -v
+      - name: Isolated test_p0_independent_audit
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_p0_independent_audit.py -v
+      - name: Isolated test_c2_registry_safety
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_c2_registry_safety.py -v
+      - name: Cycle 006 isolated CAS stress
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_cycle006_cas_stress.py

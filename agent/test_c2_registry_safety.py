@@ -1,0 +1,347 @@
+"""C2 isolation audit: legacy CR pathname and cross-cycle operation identity.
+
+Tests run ONLY against TemporaryDirectory bare Git fixtures. No production
+registry, main branch, GitHub merge, or API write is touched.
+"""
+import importlib.util
+import json
+import os
+import pathlib
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import cycle_registry as r
+
+
+class C2GitSafety(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix="ofc-c2-isolated-")
+        self.addCleanup(temp.cleanup)
+        self.remote = str(pathlib.Path(temp.name) / "fixture.git")
+        r.git("init", "--quiet", "--bare", self.remote)
+        self.source = r.git("commit-tree", r.git("mktree", stdin=""),
+                            "-m", "fixture main")
+        r.git("push", self.remote, self.source + ":refs/heads/main")
+        self.first = r.transact(self.remote, "acquire", "initial", 0,
+                                self.source)
+
+    def tip(self):
+        return r.git("ls-remote", self.remote, r.REF).split()[0]
+
+    def append_tree(self, names):
+        state = r.transact(self.remote, "inspect")
+        blob = r.git("hash-object", "-w", "--stdin",
+                     stdin=json.dumps(state, sort_keys=True) + "\n")
+        tree = r.git("mktree", stdin="".join(
+            "100644 blob " + blob + "\t" + name + "\n" for name in names))
+        previous = self.tip()
+        commit = r.git("commit-tree", tree, "-p", previous, "-m",
+                       "C2 isolated malformed/legacy tree fixture")
+        r.git("push", self.remote, commit + ":" + r.REF)
+        return commit
+
+    def test_active_cr_suffixed_file_blocks_inspect_and_acquire(self):
+        bad = self.append_tree(["state.json\r"])
+        listing = r.git("--git-dir=" + self.remote, "ls-tree", "--name-only", bad)
+        self.assertIn("state.json", listing)
+        self.assertNotEqual(listing, "state.json")
+        for command in ("inspect", "acquire"):
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(r.Blocked, "noncanonical active registry tree"):
+                    r.transact(self.remote, command, "new", 0, self.source)
+                self.assertEqual(self.tip(), bad)
+
+    def test_ambiguous_both_canonical_and_cr_file_blocks(self):
+        bad = self.append_tree(["state.json", "state.json\r"])
+        names = r.git("--git-dir=" + self.remote, "ls-tree", "--name-only", bad)
+        self.assertIn("state.json", names)
+        self.assertIn("state.json\\r", names)
+        with self.assertRaisesRegex(r.Blocked, "noncanonical active registry tree"):
+            r.transact(self.remote, "inspect")
+        self.assertEqual(self.tip(), bad)
+
+    def test_legacy_parent_is_preserved_but_canonical_current_tip_is_readable(self):
+        old = self.append_tree(["state.json\r"])
+        # This models a manual, reviewed repair commit on an *isolated* ref.
+        # Production restoration always requires a separate human decision.
+        blob = r.git("hash-object", "-w", "--stdin",
+                     stdin=json.dumps(self.first, sort_keys=True) + "\n")
+        fixed_tree = r.git("mktree",
+                           stdin="100644 blob " + blob + "\tstate.json\n")
+        fixed = r.git("commit-tree", fixed_tree, "-p", old,
+                      "-m", "C2 isolated reviewed canonicalization fixture")
+        r.git("push", self.remote, fixed + ":" + r.REF)
+        self.assertEqual(r.transact(self.remote, "inspect"), self.first)
+        legacy = r.git("--git-dir=" + self.remote, "ls-tree",
+                       "--name-only", old)
+        self.assertNotEqual(legacy, "state.json")
+        self.assertEqual(
+            r.git("--git-dir=" + self.remote, "ls-tree",
+                  "--name-only", fixed), "state.json")
+
+    def test_expired_merge_recovery_refuses_cr_active_tree_before_verifier(self):
+        operation = json.dumps(
+            {"base_sha": self.source, "operation_id": "c2-merge-001"},
+            sort_keys=True)
+        r.transact(self.remote, "reserve", "initial", 1, self.source,
+                   operation)
+        bad = self.append_tree(["state.json\r"])
+        merged = r.git("commit-tree", r.git("mktree", stdin=""),
+                       "-p", self.source, "-m", "C2 local synthetic merge")
+        r.git("push", self.remote, merged + ":refs/heads/main")
+        evidence = json.dumps({"merge_commit_sha": merged}, sort_keys=True)
+        with patch.object(r, "REMOTE", self.remote), patch.object(
+                r, "verify_github_merge", return_value=True) as verifier:
+            with self.assertRaisesRegex(r.Blocked, "noncanonical active registry tree"):
+                r.recover_merged_pr(self.remote, owner="next",
+                                    source=self.source, operation=operation,
+                                    evidence=evidence)
+            verifier.assert_not_called()
+        self.assertEqual(self.tip(), bad)
+
+    def test_reused_operation_name_has_new_cycle_and_fenced_old_owner(self):
+        operation = "qwen-public-trial"
+        r.transact(self.remote, "reserve", "initial", 1, self.source, operation)
+        r.transact(self.remote, "record", "initial", 1, self.source,
+                   operation + "=evidence-cycle-one")
+        previous = r.transact(self.remote, "complete", "initial", 1, self.source)
+        old_tip = self.tip()
+        second = r.transact(self.remote, "acquire", "next", 0, self.source)
+        self.assertNotEqual(self.first["cycle"], second["cycle"])
+        self.assertEqual(second["generation"], 2)
+        self.assertEqual(second["results"], {})
+        r.transact(self.remote, "reserve", "next", 2, self.source, operation)
+        with self.assertRaisesRegex(r.Blocked, "stale lease"):
+            r.transact(self.remote, "record", "initial", 1, self.source,
+                       operation + "=stale-owner-evidence")
+        with self.assertRaisesRegex(r.Blocked, "operation key"):
+            r.transact(self.remote, "record", "next", 2, self.source,
+                       "wrong-task=evidence")
+        self.assertEqual(r.transact(self.remote, "inspect")["pending"], operation)
+        r.transact(self.remote, "record", "next", 2, self.source,
+                   operation + "=evidence-cycle-two")
+        current = r.transact(self.remote, "inspect")
+        self.assertEqual(current["results"], {operation: "evidence-cycle-two"})
+        old = json.loads(r.git("--git-dir=" + self.remote, "show",
+                              old_tip + ":state.json"))
+        self.assertEqual(old["results"], {operation: "evidence-cycle-one"})
+        self.assertEqual(old["phase"], "complete")
+        self.assertEqual(previous["cycle"], self.first["cycle"])
+
+
+class C2HistoricalAuditRules(unittest.TestCase):
+    def setUp(self):
+        path = pathlib.Path(__file__).resolve().parent / "audit_operational_history.py"
+        spec = importlib.util.spec_from_file_location("ofc_c2_history_audit", path)
+        self.audit = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ, {
+                "GITHUB_REPOSITORY": "isolated/c2-fixture",
+                "OFC_AGENT": r.AGENT,
+                "GITHUB_TOKEN": ""}):
+            spec.loader.exec_module(self.audit)
+
+    def synthetic_history(self, second_evidence):
+        base = "a" * 40
+        def state(cycle, generation, phase, results):
+            return {"agent": r.AGENT, "schema": 1, "source": base,
+                    "generation": generation, "phase": phase, "cycle": cycle,
+                    "pending": None, "results": results, "expires": 0}
+        return [
+            {"sha": "1" * 40, "path": "state.json",
+             "state": state("first", 1, "complete",
+                            {"qwen-public-trial": "receipt-cycle-one"})},
+            {"sha": "2" * 40, "path": "state.json\r",
+             "state": state("second", 2, "open", {})},
+            {"sha": "3" * 40, "path": "state.json",
+             "state": state("second", 2, "open",
+                            {"qwen-public-trial": second_evidence})},
+        ]
+
+    def test_readonly_pinned_git_fetch_preserves_legacy_cr_commit(self):
+        """History read must expose legacy CR, not silently repair or skip it."""
+        with tempfile.TemporaryDirectory(prefix="ofc-c2-fetch-") as tmp:
+            remote = str(pathlib.Path(tmp) / "origin.git")
+            r.git("init", "--quiet", "--bare", remote)
+            baseline = r.git("commit-tree", r.git("mktree", stdin=""),
+                             "-m", "C2 fetch baseline")
+            r.git("push", remote, baseline + ":refs/heads/main")
+            r.transact(remote, "acquire", "slot", 0, baseline)
+            first = r.git("ls-remote", remote, r.REF).split()[0]
+            state = r.transact(remote, "inspect")
+            blob = r.git("hash-object", "-w", "--stdin",
+                         stdin=json.dumps(state, sort_keys=True) + "\n")
+            corrupt_tree = r.git("mktree",
+                                 stdin="100644 blob " + blob +
+                                 "\tstate.json\r\n")
+            legacy = r.git("commit-tree", corrupt_tree, "-p", first,
+                           "-m", "C2 CR fixture")
+            r.git("push", remote, legacy + ":" + r.REF)
+            fixed_tree = r.git("mktree",
+                               stdin="100644 blob " + blob + "\tstate.json\n")
+            latest = r.git("commit-tree", fixed_tree, "-p", legacy,
+                           "-m", "C2 reviewed repair fixture")
+            r.git("push", remote, latest + ":" + r.REF)
+            observed, history = self.audit.traverse(
+                remote_url=remote, pinned_tip=latest)
+            self.assertEqual(observed, latest)
+            self.assertEqual(len(history), 3)
+            self.assertEqual([entry["path"] for entry in history],
+                             ["state.json", "state.json\r", "state.json"])
+            self.audit.check_active_registry_path(history)
+            self.assertEqual(self.audit.errors, [])
+            with self.assertRaisesRegex(RuntimeError, "drifted"):
+                self.audit.traverse(remote_url=remote, pinned_tip=first)
+
+    def test_api_budget_pin_uses_git_ref_without_rest(self):
+        a = self.audit
+        with tempfile.TemporaryDirectory(prefix="ofc-p0-pin-") as tmp:
+            remote = str(pathlib.Path(tmp) / "read-only.git")
+            r.git("init", "--quiet", "--bare", remote)
+            source = r.git("commit-tree", r.git("mktree", stdin=""),
+                           "-m", "P0 isolated main")
+            r.git("push", remote, source + ":refs/heads/main")
+            with patch.object(a, "urlopen", side_effect=AssertionError("REST not allowed")):
+                self.assertEqual(a.tip("main", remote_url=remote), source)
+                with self.assertRaises(RuntimeError):
+                    a.tip("unapproved", remote_url=remote)
+
+    def test_http_403_diagnostics_fail_closed(self):
+        import io
+        from urllib.error import HTTPError
+
+        a = self.audit
+        response = io.BytesIO(b'{"message":"API rate limit exceeded"}')
+        error = HTTPError(a.API + "pulls/7", 403, "Forbidden",
+                          {"X-RateLimit-Remaining": "0",
+                           "X-RateLimit-Reset": "1234567890"}, response)
+        with patch.object(a, "urlopen", side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403; rate_remaining=0"):
+                a.get("pulls/7")
+
+    def test_rate_exhaustion_uses_only_real_public_https_get_for_pr(self):
+        import io
+        from urllib.error import HTTPError
+
+        a = self.audit
+        first = HTTPError(
+            a.API + "pulls/7", 403, "Forbidden",
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Resource": "core"},
+            io.BytesIO(b'{"message":"API rate limit exceeded for installation"}'))
+        observed = []
+        def source(request, timeout=25):
+            observed.append((request.full_url, request.get_header("Authorization")))
+            if len(observed) == 1:
+                raise first
+            return io.BytesIO(b'{"number":7,"merged":false}')
+        with patch.object(a, "urlopen", side_effect=source):
+            self.assertEqual(a.get("pulls/7")["number"], 7)
+        self.assertEqual(len(observed), 2)
+        self.assertEqual(observed[0][0], observed[1][0])
+        self.assertEqual(observed[1][1], None)
+        self.assertEqual(a.api_modes["pulls/7"],
+                         "public_tls_after_installation_core_limit")
+        self.assertTrue(any("core quota exhausted" in w for w in a.warnings))
+
+    def test_permission_denial_does_not_trigger_public_fallback(self):
+        import io
+        from urllib.error import HTTPError
+
+        a = self.audit
+        denied = HTTPError(a.API + "pulls/7", 403, "Forbidden",
+                           {"X-RateLimit-Remaining": "15",
+                            "X-RateLimit-Resource": "core"},
+                           io.BytesIO(b'{"message":"Resource not accessible by integration"}'))
+        with patch.object(a, "urlopen", side_effect=denied) as mocked:
+            with self.assertRaisesRegex(RuntimeError, "rate_remaining=15"):
+                a.get("pulls/7")
+        self.assertEqual(mocked.call_count, 1)
+        self.assertNotIn("pulls/7", a.api_modes)
+
+    def test_b2_live_public_fallback_after_confirmed_app_quota(self):
+        import io
+        from urllib.error import HTTPError
+
+        path = pathlib.Path(__file__).resolve().parent / "audit_github_source_permissions.py"
+        spec = importlib.util.spec_from_file_location("ofc_b2_testable", path)
+        b2 = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ, {
+                "GITHUB_REPOSITORY": "isolated/c2-fixture",
+                "OFC_EXPECTED_PR": "7", "OFC_AGENT": r.AGENT,
+                "GITHUB_RUN_ID": "1", "GITHUB_TOKEN": "test-fixture",
+                "GITHUB_EVENT_PATH": "no-real-file-used"}):
+            spec.loader.exec_module(b2)
+        first = HTTPError(
+            b2.API_ROOT + "pulls/7", 403, "Forbidden",
+            {"X-RateLimit-Remaining": "0", "X-RateLimit-Resource": "core"},
+            io.BytesIO(b'{"message":"API rate limit exceeded for installation"}'))
+        requests = []
+        class Response(io.BytesIO):
+            status = 200
+        def fake(request, timeout=25):
+            requests.append((request.full_url,
+                             request.get_header("Authorization")))
+            if len(requests) == 1:
+                raise first
+            return Response(b'{"number":7,"state":"open","merged":false}')
+        with patch.object(b2, "urlopen", side_effect=fake):
+            self.assertEqual(b2.get("pulls/7")["number"], 7)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0][0], requests[1][0])
+        self.assertIsNotNone(requests[0][1])
+        self.assertIsNone(requests[1][1])
+        self.assertEqual(b2.api_calls[-1]["source"],
+                         "public_GitHub_TLS_after_core_quota")
+
+    def test_b2_actual_permission_denial_remains_blocked(self):
+        import io
+        from urllib.error import HTTPError
+
+        path = pathlib.Path(__file__).resolve().parent / "audit_github_source_permissions.py"
+        spec = importlib.util.spec_from_file_location("ofc_b2_denied", path)
+        b2 = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ, {
+                "GITHUB_REPOSITORY": "isolated/c2-fixture",
+                "OFC_EXPECTED_PR": "7", "OFC_AGENT": r.AGENT,
+                "GITHUB_RUN_ID": "1", "GITHUB_TOKEN": "test-fixture",
+                "GITHUB_EVENT_PATH": "no-real-file-used"}):
+            spec.loader.exec_module(b2)
+        err = HTTPError(
+            b2.API_ROOT + "pulls/7", 403, "Forbidden",
+            {"X-RateLimit-Remaining": "12", "X-RateLimit-Resource": "core"},
+            io.BytesIO(b'{"message":"Resource not accessible by integration"}'))
+        with patch.object(b2, "urlopen", side_effect=err) as api:
+            with self.assertRaisesRegex(RuntimeError, "rate_remaining=12"):
+                b2.get("pulls/7")
+        self.assertEqual(api.call_count, 1)
+
+    def test_legacy_cr_in_history_is_allowed_but_current_tip_is_not(self):
+        a = self.audit
+        historical = self.synthetic_history("receipt-cycle-two")
+        a.check_active_registry_path(historical)
+        self.assertEqual(a.errors, [])
+        a.check_active_registry_path(historical[:2])
+        self.assertTrue(any("noncanonical" in error for error in a.errors))
+
+    def test_reused_name_distinct_evidence_is_separately_identified(self):
+        a = self.audit
+        summary = a.validate_history(
+            self.synthetic_history("receipt-cycle-two"), "a" * 40)
+        self.assertEqual(a.errors, [])
+        self.assertEqual(summary["cross_cycle_duplicate_receipt_values"], 0)
+        self.assertEqual(summary["reused_operation_names_across_cycles"],
+                         ["qwen-public-trial"])
+        self.assertTrue(any("cycle-qualified" in msg for msg in a.warnings))
+
+    def test_repeated_identical_receipt_across_cycles_is_rejected(self):
+        a = self.audit
+        summary = a.validate_history(
+            self.synthetic_history("receipt-cycle-one"), "a" * 40)
+        self.assertEqual(summary["cross_cycle_duplicate_receipt_values"], 1)
+        self.assertTrue(any("duplicated across distinct cycles" in err
+                            for err in a.errors))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

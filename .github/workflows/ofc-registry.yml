@@ -1,18 +1,75 @@
 name: P0 registry checks
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     paths:
       - 'agent/cycle_registry.py'
       - 'agent/test_cycle_registry.py'
+      - 'agent/test_a1_recovery_safety.py'
+      - 'agent/test_p0_independent_audit.py'
+      - 'agent/audit_operational_history.py'
+      - 'agent/audit_github_source_permissions.py'
+      - 'agent/test_c2_registry_safety.py'
+      - 'agent/test_r_global_idempotency.py'
+      - 'docs/OFC_R2_SIGNED_RECEIPTS.md'
+      - 'docs/OFC_R3_ED25519_VERIFIER.md'
       - '.github/workflows/ofc-registry.yml'
 permissions:
   contents: read
+  pull-requests: read
+  actions: read
 jobs:
   registry:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - run: python agent/test_cycle_registry.py -v
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Confirm exact PR head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Install pinned Ed25519 verifier dependency
+        run: python -m pip install --disable-pip-version-check --only-binary=:all: cryptography==46.0.5
+      - name: Run P0 registry regression tests
+        run: |
+          python agent/test_cycle_registry.py -v
+          python agent/test_a1_recovery_safety.py -v
+      - name: Run isolated P0 recovery audit
+        run: python agent/test_p0_independent_audit.py -v
+      - name: C2 isolated Windows CR and operation reuse safety tests
+        run: python agent/test_c2_registry_safety.py -v
+      - name: R1/R3 Ed25519 receipt, cross-cycle replay and CAS safety
+        run: python agent/test_r_global_idempotency.py -v
+      - name: Read-only audit of real operational registry history
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OFC_AGENT: ouroboros
+        run: python agent/audit_operational_history.py
+      - name: B2 check real GitHub API and read-only authority
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OFC_AGENT: ouroboros
+          OFC_EXPECTED_PR: "356"
+        run: python agent/audit_github_source_permissions.py
+      - name: Upload operational Git history audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ofc-operational-ledger-${{ matrix.os }}
+          path: artifacts/ofc-operational-ledger-audit.json
+          if-no-files-found: warn
+      - name: Upload B2 authenticated-source audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ofc-b2-github-source-${{ matrix.os }}
+          path: artifacts/ofc-b2-github-source-read-only.json
+          if-no-files-found: warn
