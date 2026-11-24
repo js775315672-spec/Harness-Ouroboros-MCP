@@ -1,0 +1,26 @@
+name: OFC P0 isolated CI diagnostic
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ofc-p0-ci-diagnostic.yml'
+  push:
+    branches:
+      - 'ofc/p0-expired-lease-recovery-spec-20261122'
+permissions:
+  contents: read
+jobs:
+  runner-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - name: Verify runner starts without checkout or dependencies
+        shell: bash
+        run: |
+          echo "runner=$RUNNER_OS"
+          echo "event=$GITHUB_EVENT_NAME"
+          echo "run=$GITHUB_RUN_ID"
+          echo "sha=$GITHUB_SHA"
