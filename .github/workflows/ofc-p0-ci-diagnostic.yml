@@ -40,3 +40,15 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: cryptography==46.0.5
           python agent/test_r_global_idempotency.py -v
+      - name: Isolated test_cycle_registry
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_cycle_registry.py -v
+      - name: Isolated test_a1_recovery_safety
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_a1_recovery_safety.py -v
+      - name: Isolated test_p0_independent_audit
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_p0_independent_audit.py -v
+      - name: Isolated test_c2_registry_safety
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: python agent/test_c2_registry_safety.py -v
