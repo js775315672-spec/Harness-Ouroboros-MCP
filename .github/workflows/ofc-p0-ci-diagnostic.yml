@@ -24,3 +24,19 @@ jobs:
           echo "event=$GITHUB_EVENT_NAME"
           echo "run=$GITHUB_RUN_ID"
           echo "sha=$GITHUB_SHA"
+      - name: Checkout exact candidate for isolated regression
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Isolated R3 regression
+        if: ${{ github.event_name == 'push' && github.ref_name == 'ofc/p0-expired-lease-recovery-spec-20261122' }}
+        run: |
+          python -m pip install --only-binary=:all: cryptography==46.0.5
+          python agent/test_r_global_idempotency.py -v
