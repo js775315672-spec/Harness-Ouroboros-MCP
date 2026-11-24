@@ -16,7 +16,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
           ref: ${{ github.event_name == 'push' && github.sha || github.event.pull_request.head.sha }}
@@ -25,6 +25,9 @@ jobs:
         env:
           EXPECTED: ${{ github.event_name == 'push' && github.sha || github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install pinned Ed25519 verifier dependency
         run: python -m pip install --disable-pip-version-check --only-binary=:all: cryptography==46.0.5
       - name: Run R3 signed receipt, rotation and global replay attack tests
