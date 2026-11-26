@@ -1,0 +1,36 @@
+name: Ponytail D1 read-only all-ref audit
+on:
+  push:
+    branches: [dev/ponytail-d1-audit-20261127]
+    paths: ['.github/workflows/ponytail-d1-audit.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inventory all branch-reachable commits in all three public repos
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit
+          for repo in Harness-Ouroboros-MCP Cerberus Fenrir-Agent; do
+            dir="$(mktemp -d)"
+            git init --bare "$dir"
+            git -C "$dir" fetch --no-tags "https://github.com/js775315672-spec/$repo.git" '+refs/heads/*:refs/heads/*'
+            git -C "$dir" for-each-ref --format='%(objectname) %(refname)' refs/heads > "audit/$repo.refs.txt"
+            git -C "$dir" rev-list --all > "audit/$repo.shas.txt"
+            git -C "$dir" log --all --format='%H%x09%P%x09%cI%x09%s' > "audit/$repo.commits.tsv"
+            git -C "$dir" log --all --diff-merges=first-parent --format='commit %H' --numstat > "audit/$repo.changes.txt"
+            printf '%s branches=%s unique_commits=%s\n' "$repo" "$(wc -l < "audit/$repo.refs.txt")" "$(wc -l < "audit/$repo.shas.txt")" | tee -a audit/summary.txt
+            test "$(sort -u "audit/$repo.shas.txt" | wc -l)" = "$(wc -l < "audit/$repo.shas.txt")"
+            test "$(wc -l < "audit/$repo.commits.tsv")" = "$(wc -l < "audit/$repo.shas.txt")"
+            rm -rf "$dir"
+          done
+          (cd audit && sha256sum *.txt *.tsv > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ofc-d1-all-ref-audit
+          path: audit/
+          retention-days: 14
