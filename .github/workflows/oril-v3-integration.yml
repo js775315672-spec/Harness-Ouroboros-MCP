@@ -1,0 +1,31 @@
+name: Ponytail D1 Ouroboros one-cycle recovery
+on:
+  pull_request:
+    branches: [main]
+    paths: ['oril/**', '.github/workflows/oril-v3-*.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: oril-public-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: |
+          set -eu
+          for t in test_oril_campaign.py test_oril_v2_pretrained_qwen_cpu_smoke.py test_oril_v2_slot1_30_public_qwen_pairs.py test_oril_v2_slot2_pretrained_paired_diagnostic.py test_oril_v2_slot2_public30_independent_audit.py test_oril_v2_slot3_public30_pretrained_aa_null.py; do
+            python3 -B -m unittest discover -s tests -p "$t" -v
+          done
+  first:
+    needs: regression
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'dev/ponytail-d1-ouroboros-20261127'
+    uses: ./.github/workflows/oril-v3-cycle.yml
+    with:
+      cycle: 1
