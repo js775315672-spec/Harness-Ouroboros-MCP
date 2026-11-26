@@ -21,6 +21,22 @@ class RegistryTest(unittest.TestCase):
     def call(self, command, owner="slot", gen=1, value=""):
         return transact(self.remote, command, owner, gen, self.source, value)
 
+    def test_mktree_path_bytes(self):
+        blob = git("hash-object", "-w", "--stdin", stdin="{}")
+        entry = f"100644 blob {blob}\tstate.json\n"
+        # Observe the bytes produced by the legacy text pipe on each platform.
+        echo = "import sys; print(sys.stdin.buffer.read().hex())"
+        legacy = bytes.fromhex(subprocess.check_output(
+            [sys.executable, "-c", echo], input=entry, text=True))
+        legacy_tree = subprocess.check_output(["git", "mktree"], input=legacy).strip().decode()
+        def path_bytes(tree):
+            return subprocess.check_output(["git", "ls-tree", "-z", "--name-only", tree])
+        legacy_name = path_bytes(legacy_tree)
+        self.assertEqual(legacy_name, b"state.json\r\0" if sys.platform == "win32" else b"state.json\0")
+        fixed_name = path_bytes(git("mktree", stdin=entry))
+        print(f"legacy stdin={legacy.hex()} path={legacy_name.hex()} fixed path={fixed_name.hex()}")
+        self.assertEqual(fixed_name, b"state.json\0")
+
     def test_ten_contenders(self):
         def acquire(i):
             try:

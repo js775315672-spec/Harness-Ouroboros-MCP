@@ -18,8 +18,8 @@ class Blocked(Exception):
 def git(*args, stdin=None):
     return subprocess.run(
         ["git", "-c", "user.name=OFC registry", "-c", "user.email=ofc@users.noreply.github.com", *args],
-        input=stdin, text=True, capture_output=True, check=True,
-    ).stdout.strip()
+        input=None if stdin is None else stdin.encode("utf-8"), capture_output=True, check=True,
+    ).stdout.decode("utf-8").strip()
 
 
 def transition(state, command, owner, generation, source, value, now, ttl):
